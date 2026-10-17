@@ -2,7 +2,7 @@
 
 通用模型 → 优化 → Static 刚性绑定 → Bedrock 1.8.0 poly_mesh → mcpack。
 
-目前完成 **第 3C 阶段：初始姿态烘焙与模型变换**。可检查 OBJ/MTL/贴图、GLB、glTF/外部资源；尚未实现 convert/validate，不宣称已有完整转换器或客户端穿戴支持。
+目前完成 **第 4A 阶段：Static 绑定与 poly_mesh 几何导出**。可检查 OBJ/MTL/贴图、GLB、glTF/外部资源；尚未实现 convert/validate，不宣称已有完整转换器或客户端穿戴支持。
 
 ## 运行验证
 
@@ -24,7 +24,8 @@ CLI、样本脚本与自动化测试均通过 Bun 执行，不再重复运行 No
 | 1 | strict TS、版本锁定、原生/WASM 依赖验证 | 完成 |
 | 2 | OBJ/MTL/贴图、GLB、外部 glTF 导入及 inspect | 完成 |
 | 3 | 网格清理、误差受限减面、模型变换、贴图和显式图集 | 完成 |
-| 4 | Static 绑定、旧版 poly_mesh、完整 mcpack | 待实现 |
+| 4A | Static 绑定、旧版 poly_mesh、独立几何校验 | 完成 |
+| 4B | 完整 mcpack、convert/validate CLI | 待实现 |
 | 5 | 独立 validate、真实复杂模型演示、使用文档 | 待实现 |
 
 每个阶段完成验证后独立提交。Humanoid、Web UI、其它输入格式留待后续。
@@ -68,7 +69,7 @@ bun run src/cli.ts inspect .cache/samples/ToyCar.glb
 - 外部资源限制为模型文件所在目录及其子目录，拒绝网络 URI、越界路径和越界符号链接。共享上级贴图目录需要先整理到模型目录下。
 - PNG/JPEG 等由 Sharp 可解码的图片可检查；KTX2/Basis/Draco 尚未接入解码依赖，会明确失败。已注册 Meshopt 解码器。
 - 未识别的可选 glTF 扩展记录警告，必需但无法读取的扩展报错。复杂材质当前保存在中间模型，报告列出将来导出时需要降级的效果。
-- 当前没有生成 Minecraft 几何/皮肤包，尚未验证加载器或 Minecraft 客户端兼容性。
+- 已生成真实 poly_mesh 几何和 PNG；完整皮肤包与 convert/validate CLI 尚未完成，加载器与 Minecraft 客户端兼容性未经实测。
 
 网格优化 API 与真实模型证据见 [docs/stage-3-mesh.md](docs/stage-3-mesh.md)。
 
@@ -78,4 +79,11 @@ bun run src/cli.ts inspect .cache/samples/ToyCar.glb
 
 ```sh
 bun run scripts/prepare-sample.ts ToyCar 32
+```
+
+Static 绑定、旧版几何格式、真实皮肤参考及导出证据见 [docs/stage-4-geometry.md](docs/stage-4-geometry.md)。
+
+```sh
+bun run sample:export ToyCar
+bun run sample:export Avocado
 ```

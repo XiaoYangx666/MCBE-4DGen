@@ -10,7 +10,8 @@
     "inspect": "bun run src/cli.ts inspect",
     "sample:fetch": "bun run scripts/fetch-sample.ts",
     "sample:check": "bun run scripts/check-sample.ts",
-    "sample:prepare": "bun run scripts/prepare-sample.ts"
+    "sample:prepare": "bun run scripts/prepare-sample.ts",
+    "sample:export": "bun run scripts/export-sample.ts"
   },
   "engines": {
     "bun": ">=1.4.3"
