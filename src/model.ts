@@ -12,4 +12,5 @@ export interface IntermediateModel {
     backend?: 'native' | 'wasm';
   };
   warnings: string[];
+  preparation?: { snapshot: 'initial-pose'; worldTransformsBaked: true; scene: number };
 }

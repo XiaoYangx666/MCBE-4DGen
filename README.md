@@ -2,22 +2,20 @@
 
 通用模型 → 优化 → Static 刚性绑定 → Bedrock 1.8.0 poly_mesh → mcpack。
 
-目前完成 **第 3B 阶段：网格减面、贴图优化与图集**。可检查 OBJ/MTL/贴图、GLB、glTF/外部资源；尚未实现 convert/validate，不宣称已有完整转换器或客户端穿戴支持。
+目前完成 **第 3C 阶段：初始姿态烘焙与模型变换**。可检查 OBJ/MTL/贴图、GLB、glTF/外部资源；尚未实现 convert/validate，不宣称已有完整转换器或客户端穿戴支持。
 
 ## 运行验证
 
-使用 Node 24.19.0 或 Bun 1.4.3。当前 Linux x64 测试通过，其它系统未验证。
+统一使用 Bun 1.4.3 运行、安装依赖和测试。当前 Linux x64 测试通过，其它系统未验证。
 
 ```sh
 bun install --frozen-lockfile
 bun run check
 bun test
-node --test tests/importer.test.ts tests/mesh-optimizer.test.ts tests/texture-optimizer.test.ts
-node scripts/probe.ts
 bun run probe
 ```
 
-Node 可直接运行当前不含需编译语法的 TypeScript。Bun 用于安装锁定依赖与自动化测试，不将业务代码绑定到 Bun 专属 API。
+CLI、样本脚本与自动化测试均通过 Bun 执行，不再重复运行 Node 验证。依赖中的 NodeIO 和 node: 标准库 API 由 Bun 兼容层提供。
 
 ## 阶段计划
 
@@ -25,7 +23,7 @@ Node 可直接运行当前不含需编译语法的 TypeScript。Bun 用于安装
 | --- | --- | --- |
 | 1 | strict TS、版本锁定、原生/WASM 依赖验证 | 完成 |
 | 2 | OBJ/MTL/贴图、GLB、外部 glTF 导入及 inspect | 完成 |
-| 3 | 网格清理、误差受限减面、模型变换、贴图和显式图集 | 网格/贴图完成；模型变换待完成 |
+| 3 | 网格清理、误差受限减面、模型变换、贴图和显式图集 | 完成 |
 | 4 | Static 绑定、旧版 poly_mesh、完整 mcpack | 待实现 |
 | 5 | 独立 validate、真实复杂模型演示、使用文档 | 待实现 |
 
@@ -42,10 +40,10 @@ GLB/glTF 直接由 glTF Transform 读取以保留节点、材质和蒙皮。OBJ 
 ## inspect 用法
 
 ```sh
-node src/cli.ts inspect model.obj
-node src/cli.ts inspect model.glb --json
+bun run src/cli.ts inspect model.obj
+bun run src/cli.ts inspect model.glb --json
 bun run src/cli.ts inspect model.gltf
-node src/cli.ts inspect model.obj --backend wasm
+bun run src/cli.ts inspect model.obj --backend wasm
 ```
 
 输出顶点/三角面/Mesh/材质/贴图统计、节点层级、局部变换、骨骼、初始姿态世界边界及警告。普通文本便于查看，`--json` 包含完整报告；错误返回非零退出码，stdout 不输出成功报告。
@@ -55,14 +53,14 @@ node src/cli.ts inspect model.obj --backend wasm
 ## 免费模型复现
 
 ```sh
-node scripts/fetch-sample.ts Avocado
-node scripts/check-sample.ts Avocado
-node scripts/fetch-sample.ts ToyCar
-node scripts/check-sample.ts ToyCar
-node src/cli.ts inspect .cache/samples/ToyCar.glb
+bun run scripts/fetch-sample.ts Avocado
+bun run scripts/check-sample.ts Avocado
+bun run scripts/fetch-sample.ts ToyCar
+bun run scripts/check-sample.ts ToyCar
+bun run src/cli.ts inspect .cache/samples/ToyCar.glb
 ```
 
-下载脚本固定上游修订并检查 SHA256。需要环境代理时使用 `node --use-env-proxy scripts/fetch-sample.ts ToyCar`。模型只下载到忽略的缓存目录，不作为默认发行内容。[样本来源、许可证及实测数据](docs/stage-2.md)。
+下载脚本固定上游修订并检查 SHA256。模型只下载到忽略的缓存目录，不作为默认发行内容。[样本来源、许可证及实测数据](docs/stage-2.md)。
 
 ## 当前限制
 
@@ -75,3 +73,9 @@ node src/cli.ts inspect .cache/samples/ToyCar.glb
 网格优化 API 与真实模型证据见 [docs/stage-3-mesh.md](docs/stage-3-mesh.md)。
 
 贴图优化、显式图集、复现命令与限制见 [docs/stage-3-textures.md](docs/stage-3-textures.md)。
+
+模型变换、初始蒙皮/Morph 冻结及指定高度见 [docs/stage-3-preparation.md](docs/stage-3-preparation.md)。
+
+```sh
+bun run scripts/prepare-sample.ts ToyCar 32
+```

@@ -1,9 +1,10 @@
-import { test } from 'node:test';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { Document } from '@gltf-transform/core';
 import { optimizeMesh } from '../src/mesh-optimizer.ts';
 import { documentFixture } from './fixtures.ts';
 import type { IntermediateModel } from '../src/model.ts';
+import { prepareStaticModel } from '../src/prepare-model.ts';
 
 const model = (document: Document): IntermediateModel => ({ document,
   source: { path: 'generated', format: 'gltf', units: 'meters', coordinates: 'right-handed-y-up', importer: 'gltf-transform' }, warnings: [] });
@@ -95,12 +96,14 @@ test('adjacent rigid skin regions retain their shared boundary during real simpl
   }
   p.setAttribute('JOINTS_0', doc.createAccessor().setType('VEC4').setArray(joints).setBuffer(root.listBuffers()[0]!));
   p.setAttribute('WEIGHTS_0', doc.createAccessor().setType('VEC4').setArray(weights).setBuffer(root.listBuffers()[0]!));
-  const result = await optimizeMesh(input, { ratio: 0.5, maxError: 0.01 });
-  assert.ok(result.report.after < result.report.before);
-  const out = result.model.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!.getAttribute('POSITION')!;
-  const actual = new Set<string>();
-  for (let i = 0; i < out.getCount(); i++) { const v: number[] = []; out.getElement(i, v); actual.add(v.join(',')); }
-  for (const v of protectedVertices) assert.ok(actual.has(v), `Missing skin-boundary vertex ${v}`);
+  for (const source of [input, (await prepareStaticModel(input)).model]) {
+    const result = await optimizeMesh(source, { ratio: 0.5, maxError: 0.01 });
+    assert.ok(result.report.after < result.report.before);
+    const out = result.model.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!.getAttribute('POSITION')!;
+    const actual = new Set<string>();
+    for (let i = 0; i < out.getCount(); i++) { const v: number[] = []; out.getElement(i, v); actual.add(v.join(',')); }
+    for (const v of protectedVertices) assert.ok(actual.has(v), `Missing skin-boundary vertex ${v}`);
+  }
 });
 
 test('invalid options and all-degenerate geometry fail', async () => {

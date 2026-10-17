@@ -10,6 +10,7 @@
 | @gltf-transform/extensions | 4.5.1 | MIT | 注册扩展并读取 Assimp 材质 |
 | meshoptimizer | 1.3.0 | MIT | WASM 初始化、simplify API 存在；实际减面留待阶段 3 |
 | sharp | 0.35.5 | Apache-2.0 | PNG 生成/缩放、透明通道读取 |
+| gl-matrix | 3.4.4 | MIT | 第 3C 阶段新增：骨骼矩阵、法线逆转置和模型变换；Bun 实测 |
 | jszip | 3.10.2 | MIT OR GPL-3.0-or-later | 使用 MIT 选项；ZIP 写入/读回 |
 | typescript | 7.0.2 | Apache-2.0 | strict tsc --noEmit 通过 |
 | @types/bun | 1.4.3 | MIT | 测试类型检查通过 |
@@ -37,3 +38,5 @@ libassimp 已同时满足原生和 WASM 基础测试，当前无理由切换 ass
 ## 后续样本计划
 
 第 2 阶段已选择并实际验证 Khronos glTF-Sample-Assets 的 CC0 Avocado 与 ToyCar；逐个读取模型自己的许可说明，并记录 URL、修订号、哈希与贡献者。详见 [stage-2.md](stage-2.md)。尚未实现最终端到端转换，不把导入检查当作 mcpack 演示。
+
+第 3C 阶段起统一使用 Bun，不继续重复 Node 验证。gl-matrix 版本由 bun add --exact 解析并锁定，其安装包 package.json 及许可证文件已核对；未自行实现通用矩阵运算库。

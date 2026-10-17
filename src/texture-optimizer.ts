@@ -64,7 +64,7 @@ export async function optimizeTextures(input: IntermediateModel, options: Textur
   }
   validateModel(input);
   const inspection = await inspectModel(input);
-  const model: IntermediateModel = { document: cloneDocument(input.document), source: { ...input.source }, warnings: [...inspection.warnings] };
+  const model: IntermediateModel = { ...input, document: cloneDocument(input.document), source: { ...input.source }, warnings: [...inspection.warnings] };
   const doc = model.document, root = doc.getRoot();
   const grouped = new Map<Material | null, Primitive[]>();
   for (const mesh of root.listMeshes()) for (const p of mesh.listPrimitives()) {

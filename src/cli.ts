@@ -1,7 +1,7 @@
 import { importModel } from './importer.ts';
 import { formatInspection, inspectModel } from './inspect.ts';
 
-const help = `Usage: node src/cli.ts inspect <model.obj|model.glb|model.gltf> [--json] [--backend auto|native|wasm]
+const help = `Usage: bun run src/cli.ts inspect <model.obj|model.glb|model.gltf> [--json] [--backend auto|native|wasm]
 
 inspect reads model geometry, materials, textures, hierarchy and skin data.
 --backend selects the OBJ Assimp backend. GLB/glTF are read directly.

@@ -85,7 +85,7 @@ function locks(p: Primitive, indices: Uint32Array, vertices: number): Uint8Array
   for (let i = 0; i < indices.length; i += 3) { const root = find(indices[i]!); faces[root] = faces[root]! + 1; }
   const result = new Uint8Array(vertices);
   for (let i = 0; i < vertices; i++) if (faces[find(i)]! <= 12) result[i] = 1;
-  const skin = p.listSemantics().filter((s) => /^(JOINTS|WEIGHTS)_\d+$/.test(s)).sort();
+  const skin = p.listSemantics().filter((s) => /^(JOINTS|WEIGHTS)_\d+$/.test(s) || s === '_SOURCE_SKIN_REGION').sort();
   if (skin.length) {
     const signatures = Array.from({ length: vertices }, (_, i) => skin.map((s) => {
       const a = p.getAttribute(s)!, array = a.getArray()!, size = a.getElementSize();
@@ -125,7 +125,7 @@ export async function optimizeMesh(input: IntermediateModel, options: MeshOption
   if (!Number.isFinite(maxError) || maxError < 0) throw new Error('maxError must be finite and nonnegative');
   validateModel(input);
   await MeshoptSimplifier.ready;
-  const model: IntermediateModel = { document: cloneDocument(input.document), source: { ...input.source }, warnings: [...input.warnings] };
+  const model: IntermediateModel = { ...input, document: cloneDocument(input.document), source: { ...input.source }, warnings: [...input.warnings] };
   const doc = model.document;
   const initial = doc.getRoot().listMeshes().flatMap((m) => m.listPrimitives());
   const before = initial.reduce((n, p) => n + count(p), 0);

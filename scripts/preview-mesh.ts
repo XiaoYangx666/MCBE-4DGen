@@ -5,7 +5,7 @@ import { getBounds } from '@gltf-transform/core';
 
 // Diagnostic orthographic geometry preview, deliberately without PBR or texture rendering.
 const paths = process.argv.slice(2);
-if (paths.length !== 2) throw new Error('Usage: node scripts/preview-mesh.ts before.glb after.glb');
+if (paths.length !== 2) throw new Error('Usage: bun run scripts/preview-mesh.ts before.glb after.glb');
 const tiles: string[] = [];
 for (const [row, path] of paths.entries()) {
   const { document } = await importModel(path);

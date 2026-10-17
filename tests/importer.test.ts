@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, readFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -163,16 +163,15 @@ test('invalid indices, non-finite positions, non-triangle primitives and unknown
   await assert.rejects(importModel(gltf), /extension/i);
 }));
 
-test('Node CLI outputs parseable JSON and returns failure without a success report', () => temporary(async (dir) => {
+test('CLI outputs parseable JSON and returns failure without a success report', () => temporary(async (dir) => {
   const path = await writeDocument(dir, 'glb');
   const cli = resolve('src/cli.ts');
-  // Node binary is explicit: Bun's process.execPath points to Bun.
-  const node = process.env.CODEX_PRIMARY_RUNTIME_NODE ?? 'node';
-  const result = spawnSync(node, [cli, 'inspect', path, '--json'], { encoding: 'utf8' });
+  const runtime = process.execPath;
+  const result = spawnSync(runtime, [cli, 'inspect', path, '--json'], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).counts.triangles, 1);
   for (const args of [['inspect', join(dir, 'missing.glb')], ['inspect', path, '--oops'], ['convert', path]]) {
-    const failure = spawnSync(node, [cli, ...args], { encoding: 'utf8' });
+    const failure = spawnSync(runtime, [cli, ...args], { encoding: 'utf8' });
     assert.equal(failure.status, 1);
     assert.equal(failure.stdout, '');
     assert.match(failure.stderr, /Error:/);
