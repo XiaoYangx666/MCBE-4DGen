@@ -1,34 +1,135 @@
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { basename, parse as parsePath, resolve } from 'node:path';
 import { importModel } from './importer.ts';
 import { formatInspection, inspectModel } from './inspect.ts';
+import { optimizeModel } from './optimizer.ts';
+import { bindStatic } from './bone-mapper.ts';
+import { exportBedrockGeometry } from './bedrock-exporter.ts';
+import { buildSkinPack, validateSkinPackFiles, validateSkinPackPath, zipSkinPack } from './skin-pack.ts';
 
-const help = `Usage: bun run src/cli.ts inspect <model.obj|model.glb|model.gltf> [--json] [--backend auto|native|wasm]
+const help = [
+  'Minecraft Bedrock 4D/5D Skin Converter',
+  '',
+  'Usage:',
+  '  bun run src/cli.ts inspect <model.obj|model.glb|model.gltf> [--json] [--backend auto|native|wasm]',
+  '  bun run src/cli.ts convert <model.obj|model.glb|model.gltf> [options]',
+  '  bun run src/cli.ts validate <directory|file.mcpack>',
+  '',
+  'Convert options:',
+  '  --out <directory>    Output folder (default: ./<model-name>-skin-pack)',
+  '  --name <name>        Pack name (default: Custom Skin Pack)',
+  '  --height <number>    Final model height (default: 32)',
+  '  --ratio <0..1>       Optional triangle reduction target (default: original)',
+  '  --max-texture <int>  Maximum source texture edge (default: 256)',
+  '  --atlas <int>        Fixed atlas edge (default: automatic)',
+  '  --backend <name>     OBJ importer: auto, native, wasm',
+  '  --no-mcpack         Write unpacked files only (default: also create .mcpack)',
+  '',
+  'Output: manifest.json, skins.json, geometry.json, skin0.png, and optionally .mcpack.',
+  'Static binding only: the entire model is attached to the player body as rigid geometry.',
+].join('\n');
 
-inspect reads model geometry, materials, textures, hierarchy and skin data.
---backend selects the OBJ Assimp backend. GLB/glTF are read directly.
-convert and validate are planned for later milestones and are not implemented yet.`;
-
-try {
+function positive(value: string | undefined, label: string, integer = false): number {
+  const n = Number(value);
+  if (value === undefined || !Number.isFinite(n) || n <= 0 || (integer && !Number.isSafeInteger(n))) {
+    throw new Error(label + ' must be a positive ' + (integer ? 'integer' : 'number'));
+  }
+  return n;
+}
+function backend(value: string | undefined): 'auto' | 'native' | 'wasm' {
+  if (value !== 'auto' && value !== 'native' && value !== 'wasm') {
+    throw new Error('Invalid --backend: expected auto, native or wasm');
+  }
+  return value;
+}
+async function main() {
   const args = process.argv.slice(2);
-  if (args.length === 0 || args[0] === '--help' || args[0] === '-h') console.log(help);
-  else {
-    if (args.shift() !== 'inspect') throw new Error('Only inspect is available in this milestone. Use --help.');
-    const input = args.shift();
-    if (!input || input.startsWith('--')) throw new Error('inspect requires a model path');
-    let json = false;
-    let backend: 'auto' | 'native' | 'wasm' = 'auto';
+  const command = args.shift();
+  if (command === undefined || command === '--help' || command === '-h') {
+    console.log(help);
+    return;
+  }
+  const input = args.shift();
+  if (!input || input.startsWith('--')) throw new Error(command + ' requires an input path');
+  if (command === 'inspect') {
+    let json = false, importer: 'auto' | 'native' | 'wasm' = 'auto';
     while (args.length) {
       const option = args.shift();
       if (option === '--json') json = true;
-      else if (option === '--backend') {
-        const value = args.shift();
-        if (value !== 'auto' && value !== 'native' && value !== 'wasm') throw new Error('Invalid --backend: expected auto, native or wasm');
-        backend = value;
-      } else throw new Error(`Unknown argument: ${option}`);
+      else if (option === '--backend') importer = backend(args.shift());
+      else throw new Error('Unknown inspect argument: ' + option);
     }
-    const report = await inspectModel(await importModel(input, { backend }));
+    const report = await inspectModel(await importModel(input, { backend: importer }));
     console.log(json ? JSON.stringify(report, null, 2) : formatInspection(report));
+    return;
   }
-} catch (error) {
-  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  if (command === 'validate') {
+    if (args.length) throw new Error('validate expects exactly one directory or .mcpack');
+    const result = await validateSkinPackPath(input);
+    console.log(JSON.stringify({ valid: true, ...result }, null, 2));
+    return;
+  }
+  if (command !== 'convert') throw new Error('Unknown command: ' + command + '\n' + help);
+  let out: string | undefined, packName = 'Custom Skin Pack', height = 32;
+  let ratio: number | undefined, textureSize = 256, atlas: number | undefined;
+  let importer: 'auto' | 'native' | 'wasm' = 'auto', mcpack = true;
+  const requireValue = (flag: string): string => {
+    const next = args.shift();
+    if (next === undefined || next.startsWith('--')) throw new Error('Missing value for ' + flag);
+    return next;
+  };
+  while (args.length) {
+    const flag = args.shift()!;
+    if (flag === '--out') out = requireValue(flag);
+    else if (flag === '--name') packName = requireValue(flag);
+    else if (flag === '--height') height = positive(requireValue(flag), flag);
+    else if (flag === '--ratio') {
+      ratio = positive(requireValue(flag), flag);
+      if (ratio > 1) throw new Error('--ratio must not exceed 1');
+    }
+    else if (flag === '--max-texture') textureSize = positive(requireValue(flag), flag, true);
+    else if (flag === '--atlas') atlas = positive(requireValue(flag), flag, true);
+    else if (flag === '--backend') importer = backend(requireValue(flag));
+    else if (flag === '--no-mcpack') mcpack = false;
+    else throw new Error('Unknown convert argument: ' + flag);
+  }
+  const outputDir = resolve(out ?? (parsePath(basename(input)).name + '-skin-pack'));
+  try {
+    const entries = await readdir(outputDir);
+    if (entries.length) throw new Error('Output directory is not empty: ' + outputDir + '. Choose another --out path.');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const options = {
+    prepare: { height, center: 'ground' as const },
+    mesh: ratio === undefined ? { preset: 'original' as const } : { ratio, maxError: 0.001 },
+    texture: { maxTextureSize: textureSize, ...(atlas !== undefined ? { atlasSize: atlas } : {}) },
+  };
+  const model = await importModel(input, { backend: importer });
+  const optimized = await optimizeModel(model, options);
+  const exported = await exportBedrockGeometry(bindStatic(optimized.model), { identifier: 'geometry.skin0' });
+  const files = buildSkinPack({ geometry: exported.file, png: exported.png, packName, identifier: 'geometry.skin0' });
+  await validateSkinPackFiles(files);
+  const zip = mcpack ? await zipSkinPack(files) : null;
+  await mkdir(outputDir, { recursive: true });
+  for (const [name, bytes] of Object.entries(files)) await writeFile(resolve(outputDir, name), bytes);
+  const result = await validateSkinPackPath(outputDir);
+  const archivePath = outputDir + '.mcpack';
+  if (zip) {
+    await writeFile(archivePath, zip);
+    await validateSkinPackPath(archivePath);
+  }
+  console.log(JSON.stringify({
+    outputDir,
+    ...(zip ? { mcpack: archivePath } : {}),
+    ...result,
+    triangles: exported.report.triangles,
+    warnings: exported.report.warnings,
+  }, null, 2));
+}
+
+try { await main(); }
+catch (error) {
+  console.error('Error: ' + (error instanceof Error ? error.message : String(error)));
   process.exitCode = 1;
 }

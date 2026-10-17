@@ -11,7 +11,9 @@
     "sample:fetch": "bun run scripts/fetch-sample.ts",
     "sample:check": "bun run scripts/check-sample.ts",
     "sample:prepare": "bun run scripts/prepare-sample.ts",
-    "sample:export": "bun run scripts/export-sample.ts"
+    "sample:export": "bun run scripts/export-sample.ts",
+    "convert": "bun run src/cli.ts convert",
+    "validate": "bun run src/cli.ts validate"
   },
   "engines": {
     "bun": ">=1.4.3"

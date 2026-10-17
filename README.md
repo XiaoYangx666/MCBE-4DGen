@@ -2,7 +2,7 @@
 
 通用模型 → 优化 → Static 刚性绑定 → Bedrock 1.8.0 poly_mesh → mcpack。
 
-目前完成 **第 4A 阶段：Static 绑定与 poly_mesh 几何导出**。可检查 OBJ/MTL/贴图、GLB、glTF/外部资源；尚未实现 convert/validate，不宣称已有完整转换器或客户端穿戴支持。
+当前已实现 **第 4B 阶段的皮肤包生成 CLI**：OBJ/GLB/glTF → Static poly_mesh → manifest.json、skins.json、geometry.json、skin0.png，并可生成 .mcpack。格式与交叉引用可独立校验；客户端穿戴能力仍需实机验证。
 
 ## 运行验证
 
@@ -25,8 +25,8 @@ CLI、样本脚本与自动化测试均通过 Bun 执行，不再重复运行 No
 | 2 | OBJ/MTL/贴图、GLB、外部 glTF 导入及 inspect | 完成 |
 | 3 | 网格清理、误差受限减面、模型变换、贴图和显式图集 | 完成 |
 | 4A | Static 绑定、旧版 poly_mesh、独立几何校验 | 完成 |
-| 4B | 完整 mcpack、convert/validate CLI | 待实现 |
-| 5 | 独立 validate、真实复杂模型演示、使用文档 | 待实现 |
+| 4B | 完整 mcpack、convert/validate CLI | 已实现（待 CI 与实机验证） |
+| 5 | 多模型与真实客户端演示、完整使用文档 | 待实现 |
 
 每个阶段完成验证后独立提交。Humanoid、Web UI、其它输入格式留待后续。
 
@@ -69,7 +69,7 @@ bun run src/cli.ts inspect .cache/samples/ToyCar.glb
 - 外部资源限制为模型文件所在目录及其子目录，拒绝网络 URI、越界路径和越界符号链接。共享上级贴图目录需要先整理到模型目录下。
 - PNG/JPEG 等由 Sharp 可解码的图片可检查；KTX2/Basis/Draco 尚未接入解码依赖，会明确失败。已注册 Meshopt 解码器。
 - 未识别的可选 glTF 扩展记录警告，必需但无法读取的扩展报错。复杂材质当前保存在中间模型，报告列出将来导出时需要降级的效果。
-- 已生成真实 poly_mesh 几何和 PNG；完整皮肤包与 convert/validate CLI 尚未完成，加载器与 Minecraft 客户端兼容性未经实测。
+- 已实现完整皮肤包文件与 convert/validate CLI；第三方加载器与 Minecraft 客户端兼容性仍未经实测。
 
 网格优化 API 与真实模型证据见 [docs/stage-3-mesh.md](docs/stage-3-mesh.md)。
 
@@ -87,3 +87,16 @@ Static 绑定、旧版几何格式、真实皮肤参考及导出证据见 [docs/
 bun run sample:export ToyCar
 bun run sample:export Avocado
 ```
+
+## 一键生成皮肤包（第 4B 阶段）
+
+```sh
+bun install --frozen-lockfile
+bun run src/cli.ts convert model.glb --out ./my-skin --name "My Skin"
+bun run src/cli.ts validate ./my-skin
+bun run src/cli.ts validate ./my-skin.mcpack
+```
+
+输出目录包含且仅包含 `manifest.json`、`skins.json`、`geometry.json`、`skin0.png`；默认还在目录旁生成 `my-skin.mcpack`。使用 `--no-mcpack` 可仅保留四个文件。`--ratio 0.5` 可以选择减面（默认保留原面数）；`--height 32` 设置模型高度，`--max-texture 256` 设置单图边长上限，`--atlas 512` 可指定图集大小。
+
+当前支持单模型 Static 绑定到 body，不处理动态肢体跟随。输出路径已经包含文件时拒绝覆盖，防止覆盖已有资源。详见 [第 4B 阶段：皮肤包导出](docs/stage-4-pack.md)。
