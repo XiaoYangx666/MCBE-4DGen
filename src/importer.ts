@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 import { basename, dirname, extname } from 'node:path';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
+import { convertPrimitiveToTriangles } from '@gltf-transform/functions';
 import { createAssimp } from 'libassimp';
 import { MeshoptDecoder } from 'meshoptimizer';
 import type { IntermediateModel } from './model.ts';
@@ -57,6 +58,12 @@ export async function importModel(input: string, options: ImportOptions = {}): P
     if (!supported.has(extension)) warn(`Unsupported glTF extension: ${extension}`);
   }
   const document = await io.readJSON(json);
+  for (const mesh of document.getRoot().listMeshes()) for (const p of mesh.listPrimitives()) {
+    if (p.getMode() === 5 || p.getMode() === 6) {
+      convertPrimitiveToTriangles(p);
+      warn('Triangle strip/fan topology was normalized to indexed triangles.');
+    }
+  }
   const model: IntermediateModel = {
     document,
     source: {

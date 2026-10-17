@@ -2,7 +2,7 @@
 
 通用模型 → 优化 → Static 刚性绑定 → Bedrock 1.8.0 poly_mesh → mcpack。
 
-目前完成 **第 3A 阶段：网格清理与真实减面**。可检查 OBJ/MTL/贴图、GLB、glTF/外部资源；尚未实现 convert/validate，不宣称已有完整转换器或客户端穿戴支持。
+目前完成 **第 3B 阶段：网格减面、贴图优化与图集**。可检查 OBJ/MTL/贴图、GLB、glTF/外部资源；尚未实现 convert/validate，不宣称已有完整转换器或客户端穿戴支持。
 
 ## 运行验证
 
@@ -12,7 +12,7 @@
 bun install --frozen-lockfile
 bun run check
 bun test
-node --test tests/importer.test.ts
+node --test tests/importer.test.ts tests/mesh-optimizer.test.ts tests/texture-optimizer.test.ts
 node scripts/probe.ts
 bun run probe
 ```
@@ -25,7 +25,7 @@ Node 可直接运行当前不含需编译语法的 TypeScript。Bun 用于安装
 | --- | --- | --- |
 | 1 | strict TS、版本锁定、原生/WASM 依赖验证 | 完成 |
 | 2 | OBJ/MTL/贴图、GLB、外部 glTF 导入及 inspect | 完成 |
-| 3 | 网格清理、误差受限减面、模型变换、贴图和显式图集 | 网格完成；贴图/变换待完成 |
+| 3 | 网格清理、误差受限减面、模型变换、贴图和显式图集 | 网格/贴图完成；模型变换待完成 |
 | 4 | Static 绑定、旧版 poly_mesh、完整 mcpack | 待实现 |
 | 5 | 独立 validate、真实复杂模型演示、使用文档 | 待实现 |
 
@@ -66,10 +66,12 @@ node src/cli.ts inspect .cache/samples/ToyCar.glb
 
 ## 当前限制
 
-- glTF/GLB 目前要求三角形 Primitive；OBJ 多边形由 Assimp 三角化。不支持线/点，三角带/扇留待优化阶段处理。
+- OBJ 多边形由 Assimp 三角化，glTF/GLB 的三角带/扇会规范化为索引三角形。不支持线/点。
 - 外部资源限制为模型文件所在目录及其子目录，拒绝网络 URI、越界路径和越界符号链接。共享上级贴图目录需要先整理到模型目录下。
 - PNG/JPEG 等由 Sharp 可解码的图片可检查；KTX2/Basis/Draco 尚未接入解码依赖，会明确失败。已注册 Meshopt 解码器。
 - 未识别的可选 glTF 扩展记录警告，必需但无法读取的扩展报错。复杂材质当前保存在中间模型，报告列出将来导出时需要降级的效果。
 - 当前没有生成 Minecraft 几何/皮肤包，尚未验证加载器或 Minecraft 客户端兼容性。
 
 网格优化 API 与真实模型证据见 [docs/stage-3-mesh.md](docs/stage-3-mesh.md)。
+
+贴图优化、显式图集、复现命令与限制见 [docs/stage-3-textures.md](docs/stage-3-textures.md)。

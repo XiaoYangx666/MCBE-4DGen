@@ -79,6 +79,30 @@ test('material and skin boundaries do not weld together; small components remain
   assert.ok(output.report.warnings.length);
 });
 
+test('adjacent rigid skin regions retain their shared boundary during real simplification', async () => {
+  const input = grid(), doc = input.document, root = doc.getRoot();
+  const p = root.listMeshes()[0]!.listPrimitives()[0]!, position = p.getAttribute('POSITION')!;
+  const joint0 = doc.createNode('left'), joint1 = doc.createNode('right');
+  root.getDefaultScene()!.addChild(joint0).addChild(joint1);
+  const skin = doc.createSkin().addJoint(joint0).addJoint(joint1);
+  root.listNodes()[0]!.setSkin(skin);
+  const joints = new Uint16Array(position.getCount() * 4), weights = new Float32Array(position.getCount() * 4);
+  const protectedVertices = new Set<string>();
+  for (let i = 0; i < position.getCount(); i++) {
+    const v: number[] = []; position.getElement(i, v);
+    joints[i * 4] = v[0]! > 0.5 ? 1 : 0; weights[i * 4] = 1;
+    if (Math.abs(v[0]! - 0.5) < 1e-6 || Math.abs(v[0]! - 13 / 24) < 1e-6) protectedVertices.add(v.join(','));
+  }
+  p.setAttribute('JOINTS_0', doc.createAccessor().setType('VEC4').setArray(joints).setBuffer(root.listBuffers()[0]!));
+  p.setAttribute('WEIGHTS_0', doc.createAccessor().setType('VEC4').setArray(weights).setBuffer(root.listBuffers()[0]!));
+  const result = await optimizeMesh(input, { ratio: 0.5, maxError: 0.01 });
+  assert.ok(result.report.after < result.report.before);
+  const out = result.model.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!.getAttribute('POSITION')!;
+  const actual = new Set<string>();
+  for (let i = 0; i < out.getCount(); i++) { const v: number[] = []; out.getElement(i, v); actual.add(v.join(',')); }
+  for (const v of protectedVertices) assert.ok(actual.has(v), `Missing skin-boundary vertex ${v}`);
+});
+
 test('invalid options and all-degenerate geometry fail', async () => {
   for (const options of [{ ratio: 0 }, { triangles: 1.5 }, { maxError: NaN }, { ratio: 0.5, preset: 'high' as const }]) {
     await assert.rejects(optimizeMesh(grid(), options));

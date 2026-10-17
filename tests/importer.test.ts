@@ -103,6 +103,20 @@ test('percent-encoded texture filenames resolve without losing image data', () =
   assert.equal((await inspectModel(await importModel(path))).textures[0]?.width, 8);
 }));
 
+test('glTF triangle strip/fan topology normalizes without changing triangle winding', () => temporary(async (dir) => {
+  for (const mode of [5, 6] as const) {
+    const doc = await documentFixture();
+    const p = doc.getRoot().listMeshes()[0]!.listPrimitives()[0]!;
+    p.setMode(mode);
+    const path = join(dir, `topology-${mode}.glb`);
+    await new NodeIO().write(path, doc);
+    const imported = await importModel(path);
+    const result = imported.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!;
+    assert.equal(result.getMode(), 4);
+    assert.deepEqual(Array.from(result.getIndices()!.getArray()!), [0, 1, 2]);
+  }
+}));
+
 test('missing MTL, missing PNG, missing external buffer and corrupt texture fail explicitly', () => temporary(async (dir) => {
   const obj = await writeObj(dir);
   await rm(join(dir, 'material.mtl'));

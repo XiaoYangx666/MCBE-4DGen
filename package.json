@@ -8,7 +8,7 @@
     "test": "bun test",
     "probe": "node scripts/probe.ts",
     "inspect": "node src/cli.ts inspect",
-    "test:node": "node --test tests/importer.test.ts",
+    "test:node": "node --test tests/importer.test.ts tests/mesh-optimizer.test.ts tests/texture-optimizer.test.ts",
     "sample:fetch": "node scripts/fetch-sample.ts",
     "sample:check": "node scripts/check-sample.ts"
   },
