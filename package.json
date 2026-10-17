@@ -6,7 +6,11 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "bun test",
-    "probe": "node scripts/probe.ts"
+    "probe": "node scripts/probe.ts",
+    "inspect": "node src/cli.ts inspect",
+    "test:node": "node --test tests/importer.test.ts",
+    "sample:fetch": "node scripts/fetch-sample.ts",
+    "sample:check": "node scripts/check-sample.ts"
   },
   "engines": {
     "node": ">=24.0.0"

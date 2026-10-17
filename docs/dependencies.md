@@ -36,4 +36,4 @@ libassimp 已同时满足原生和 WASM 基础测试，当前无理由切换 ass
 
 ## 后续样本计划
 
-优先选择 Khronos glTF-Sample-Assets（逐个读取模型 LICENSE，不能套用仓库代码许可证）或 Kenney CC0 模型，记录原始 URL、修订号、哈希和署名要求。尚未下载或验证真实复杂样本，不把自写三角形当作最终端到端演示。
+第 2 阶段已选择并实际验证 Khronos glTF-Sample-Assets 的 CC0 Avocado 与 ToyCar；逐个读取模型自己的许可说明，并记录 URL、修订号、哈希与贡献者。详见 [stage-2.md](stage-2.md)。尚未实现最终端到端转换，不把导入检查当作 mcpack 演示。
