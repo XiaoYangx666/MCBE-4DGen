@@ -2,7 +2,7 @@
 
 通用模型 → 优化 → Static 刚性绑定 → Bedrock 1.8.0 poly_mesh → mcpack。
 
-目前完成 **第 2 阶段：模型导入与 inspect CLI**。可检查 OBJ/MTL/贴图、GLB、glTF/外部资源；尚未实现 convert/validate，不宣称已有完整转换器或客户端穿戴支持。
+目前完成 **第 3A 阶段：网格清理与真实减面**。可检查 OBJ/MTL/贴图、GLB、glTF/外部资源；尚未实现 convert/validate，不宣称已有完整转换器或客户端穿戴支持。
 
 ## 运行验证
 
@@ -25,7 +25,7 @@ Node 可直接运行当前不含需编译语法的 TypeScript。Bun 用于安装
 | --- | --- | --- |
 | 1 | strict TS、版本锁定、原生/WASM 依赖验证 | 完成 |
 | 2 | OBJ/MTL/贴图、GLB、外部 glTF 导入及 inspect | 完成 |
-| 3 | 网格清理、误差受限减面、模型变换、贴图和显式图集 | 下一阶段 |
+| 3 | 网格清理、误差受限减面、模型变换、贴图和显式图集 | 网格完成；贴图/变换待完成 |
 | 4 | Static 绑定、旧版 poly_mesh、完整 mcpack | 待实现 |
 | 5 | 独立 validate、真实复杂模型演示、使用文档 | 待实现 |
 
@@ -71,3 +71,5 @@ node src/cli.ts inspect .cache/samples/ToyCar.glb
 - PNG/JPEG 等由 Sharp 可解码的图片可检查；KTX2/Basis/Draco 尚未接入解码依赖，会明确失败。已注册 Meshopt 解码器。
 - 未识别的可选 glTF 扩展记录警告，必需但无法读取的扩展报错。复杂材质当前保存在中间模型，报告列出将来导出时需要降级的效果。
 - 当前没有生成 Minecraft 几何/皮肤包，尚未验证加载器或 Minecraft 客户端兼容性。
+
+网格优化 API 与真实模型证据见 [docs/stage-3-mesh.md](docs/stage-3-mesh.md)。
