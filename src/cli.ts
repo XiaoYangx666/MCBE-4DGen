@@ -1,6 +1,6 @@
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, writeFile } from 'node:fs/promises';
 import { basename, parse as parsePath, resolve } from 'node:path';
-import { importModel } from './importer.ts';
+import { importModel, INPUT_FORMATS } from './importer.ts';
 import { formatInspection, inspectModel } from './inspect.ts';
 import { optimizeModel } from './optimizer.ts';
 import { bindStatic } from './bone-mapper.ts';
@@ -11,8 +11,8 @@ const help = [
   'Minecraft Bedrock 4D/5D Skin Converter',
   '',
   'Usage:',
-  '  bun run src/cli.ts inspect <model.obj|model.glb|model.gltf> [--json] [--backend auto|native|wasm]',
-  '  bun run src/cli.ts convert <model.obj|model.glb|model.gltf> [options]',
+  '  bun run src/cli.ts inspect <model> [--json] [--backend auto|native|wasm]',
+  '  bun run src/cli.ts convert <model> [options]',
   '  bun run src/cli.ts validate <directory|file.mcpack>',
   '',
   'Convert options:',
@@ -22,10 +22,11 @@ const help = [
   '  --ratio <0..1>       Optional triangle reduction target (default: original)',
   '  --max-texture <int>  Maximum source texture edge (default: 256)',
   '  --atlas <int>        Fixed atlas edge (default: automatic)',
-  '  --backend <name>     OBJ importer: auto, native, wasm',
+  '  --backend <name>     Assimp importer: auto, native, wasm (except GLB/glTF)',
   '  --no-mcpack         Write unpacked files only (default: also create .mcpack)',
   '',
   'Output: manifest.json, skins.json, geometry.json, skin0.png, and optionally .mcpack.',
+  'Input formats: ' + INPUT_FORMATS.join(', '),
   'Static binding only: the entire model is attached to the player body as rigid geometry.',
 ].join('\n');
 
@@ -94,6 +95,15 @@ async function main() {
     else throw new Error('Unknown convert argument: ' + flag);
   }
   const outputDir = resolve(out ?? (parsePath(basename(input)).name + '-skin-pack'));
+  const archivePath = outputDir + '.mcpack';
+  if (mcpack) {
+    try {
+      await lstat(archivePath);
+      throw new Error('Output archive already exists: ' + archivePath + '. Choose another --out path.');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
   try {
     const entries = await readdir(outputDir);
     if (entries.length) throw new Error('Output directory is not empty: ' + outputDir + '. Choose another --out path.');
@@ -112,18 +122,23 @@ async function main() {
   await validateSkinPackFiles(files);
   const zip = mcpack ? await zipSkinPack(files) : null;
   await mkdir(outputDir, { recursive: true });
-  for (const [name, bytes] of Object.entries(files)) await writeFile(resolve(outputDir, name), bytes);
+  for (const [name, bytes] of Object.entries(files)) await writeFile(resolve(outputDir, name), bytes, { flag: 'wx' });
   const result = await validateSkinPackPath(outputDir);
-  const archivePath = outputDir + '.mcpack';
   if (zip) {
-    await writeFile(archivePath, zip);
+    await writeFile(archivePath, zip, { flag: 'wx' });
     await validateSkinPackPath(archivePath);
   }
   console.log(JSON.stringify({
     outputDir,
     ...(zip ? { mcpack: archivePath } : {}),
     ...result,
+    sourceTriangles: optimized.report.mesh.before,
+    optimizedTriangles: exported.report.sourceTriangles,
+    addedBackfaces: exported.report.addedBackfaces,
     triangles: exported.report.triangles,
+    geometryBytes: files['geometry.json']!.byteLength,
+    textureBytes: files['skin0.png']!.byteLength,
+    ...(zip ? { archiveBytes: zip.byteLength } : {}),
     warnings: exported.report.warnings,
   }, null, 2));
 }
@@ -133,3 +148,4 @@ catch (error) {
   console.error('Error: ' + (error instanceof Error ? error.message : String(error)));
   process.exitCode = 1;
 }
+

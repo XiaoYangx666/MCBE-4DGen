@@ -102,7 +102,7 @@ export async function validateSkinPackFiles(files: Readonly<SkinPackFiles>): Pro
     required(files, entry.texture);
   }
   const parsed = parseGeometryJSON(geometry, { atlasUVs: true });
-  const available = new Set(parsed.geometries.map((g) => g.identifier));
+  const available = new Set<string>(parsed.geometries.map((g) => g.identifier));
   for (const id of geometries) assert(available.has(id), 'missing referenced geometry ' + id);
   for (const texture of textures) {
     const image = await sharp(required(files, texture)).metadata();
@@ -148,6 +148,8 @@ export async function readSkinPack(path: string): Promise<SkinPackFiles> {
     const zip = await JSZip.loadAsync(await readFile(path), { checkCRC32: true, createFolders: false });
     for (const entry of Object.values(zip.files)) {
       assert(!entry.dir, 'unexpected directory in archive');
+      assert(!entry.unsafeOriginalName || entry.unsafeOriginalName === entry.name,
+        'unexpected or unsafe filename ' + entry.unsafeOriginalName);
       add(entry.name, await entry.async('uint8array'));
     }
   }
@@ -157,3 +159,4 @@ export async function readSkinPack(path: string): Promise<SkinPackFiles> {
 export async function validateSkinPackPath(path: string): Promise<PackValidation> {
   return validateSkinPackFiles(await readSkinPack(path));
 }
+

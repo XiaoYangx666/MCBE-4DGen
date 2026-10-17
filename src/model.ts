@@ -5,7 +5,7 @@ export interface IntermediateModel {
   document: Document;
   source: {
     path: string;
-    format: 'obj' | 'gltf' | 'glb';
+    format: 'obj' | 'gltf' | 'glb' | 'fbx' | 'dae' | 'stl' | 'ply';
     units: 'meters' | 'unspecified';
     coordinates: 'right-handed-y-up' | 'unspecified';
     importer: 'gltf-transform' | 'libassimp';

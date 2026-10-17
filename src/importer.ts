@@ -10,11 +10,15 @@ import { validateModel } from './validate-model.ts';
 
 export interface ImportOptions { backend?: 'auto' | 'native' | 'wasm' }
 
+/** Only formats covered by import and full conversion tests are advertised. */
+export const INPUT_FORMATS = ['obj', 'glb', 'gltf', 'fbx', 'dae', 'stl', 'ply'] as const;
+
 export async function importModel(input: string, options: ImportOptions = {}): Promise<IntermediateModel> {
   const extension = extname(input).toLowerCase();
-  if (!['.obj', '.glb', '.gltf'].includes(extension)) throw new Error(`Unsupported input format: ${extension || '(none)'}`);
+  if (!INPUT_FORMATS.some((format) => extension === '.' + format)) throw new Error(`Unsupported input format: ${extension || '(none)'}. Supported: ${INPUT_FORMATS.join(', ')}`);
   const path = await realpath(input);
-  const format = extension.slice(1) as 'obj' | 'glb' | 'gltf';
+  const format = extension.slice(1) as IntermediateModel['source']['format'];
+  const direct = format === 'glb' || format === 'gltf';
   const resources = new ModelResources(dirname(path));
   const warnings: string[] = [];
   const warn = (message: string) => { if (!warnings.includes(message)) warnings.push(message); };
@@ -24,7 +28,7 @@ export async function importModel(input: string, options: ImportOptions = {}): P
     .setStrictResources(true).setLogger({ debug() {}, info() {}, warn, error: warn });
   let entry = path;
   let backend: 'native' | 'wasm' | undefined;
-  if (format === 'obj') {
+  if (!direct) {
     const assimp = await createAssimp({ backend: options.backend ?? 'auto', onLog: (log) => {
       if (log.level !== 'info') warn(log.message);
     } });
@@ -42,13 +46,13 @@ export async function importModel(input: string, options: ImportOptions = {}): P
           }
         },
       });
-      if (missing.size) throw new Error(`Missing OBJ resources: ${[...missing].join(', ')}`);
+      if (missing.size) throw new Error(`Missing ${format.toUpperCase()} resources: ${[...missing].join(', ')}`);
       // Every returned file participates in the same virtual resource directory.
       for (const file of result.files) resources.virtual.set(resources.path(file.name), file.bytes);
       const glb = result.files.find((file) => file.name.toLowerCase().endsWith('.glb'));
       if (!glb) throw new Error('Assimp did not produce a GLB');
       entry = resources.path(glb.name);
-      warn('OBJ units and source coordinate convention are unspecified; coordinates are preserved without guessing.');
+      warn(`${format.toUpperCase()} is normalized through Assimp; source units and axis metadata are not retained. Inspect orientation before use.`);
     } finally { assimp.dispose(); }
   }
   const json = await io.readAsJSON(entry);
@@ -67,9 +71,9 @@ export async function importModel(input: string, options: ImportOptions = {}): P
   const model: IntermediateModel = {
     document,
     source: {
-      path, format, units: format === 'obj' ? 'unspecified' : 'meters',
-      coordinates: format === 'obj' ? 'unspecified' : 'right-handed-y-up',
-      importer: format === 'obj' ? 'libassimp' : 'gltf-transform',
+      path, format, units: direct ? 'meters' : 'unspecified',
+      coordinates: direct ? 'right-handed-y-up' : 'unspecified',
+      importer: direct ? 'gltf-transform' : 'libassimp',
       ...(backend ? { backend } : {}),
     }, warnings,
   };

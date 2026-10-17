@@ -1,7 +1,8 @@
 import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import JSZip from 'jszip';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { documentFixture, writeDocument } from './fixtures.ts';
@@ -48,6 +49,37 @@ test('builds exactly the three reference JSON files and linked skin0.png', async
   });
 });
 
+test('CLI refuses an existing sibling archive before creating output, and no-mcpack leaves it intact', async () => {
+  const dir = await mkdtemp(join(tmpdir(), '4d-collision-'));
+  try {
+    const input = await writeDocument(dir, 'glb'), output = join(dir, 'output');
+    const original = 'existing archive';
+    await writeFile(output + '.mcpack', original);
+    const run = (extra: string[]) => spawnSync(process.execPath, [
+      'src/cli.ts', 'convert', input, '--out', output, '--atlas', '32', ...extra,
+    ], { encoding: 'utf8' });
+    const rejected = run([]);
+    assert.equal(rejected.status, 1);
+    assert.equal(rejected.stdout, '');
+    assert.match(rejected.stderr, /archive already exists/);
+    await assert.rejects(readFile(join(output, 'geometry.json')), { code: 'ENOENT' });
+    assert.equal(run(['--no-mcpack']).status, 0);
+    assert.equal(await readFile(output + '.mcpack', 'utf8'), original);
+    assert.equal((await validateSkinPackPath(output)).skins, 1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('pack reader rejects archive names that JSZip would otherwise silently normalize', async () => {
+  const dir = await mkdtemp(join(tmpdir(), '4d-zip-names-'));
+  try {
+    const zip = new JSZip();
+    zip.file('../manifest.json', '{}', { createFolders: false });
+    const path = join(dir, 'unsafe.mcpack');
+    await writeFile(path, await zip.generateAsync({ type: 'uint8array' }));
+    await assert.rejects(readSkinPack(path), /unsafe filename/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('validates actual mcpack zip contents and rejects broken links', async () => {
   const files = await fixturePack();
   const zip = await zipSkinPack(files);
@@ -92,6 +124,7 @@ test('CLI converts a real imported GLB to unpacked files and installable archive
     const again = spawnSync(process.execPath, ['run', 'src/cli.ts', 'convert', input, '--out', output],
       { cwd: process.cwd(), encoding: 'utf8' });
     assert.notEqual(again.status, 0);
-    assert.match(again.stderr, /not empty/);
+    assert.match(again.stderr, /not empty|already exists/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+

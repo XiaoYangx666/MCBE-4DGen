@@ -170,7 +170,7 @@ test('CLI outputs parseable JSON and returns failure without a success report', 
   const result = spawnSync(runtime, [cli, 'inspect', path, '--json'], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).counts.triangles, 1);
-  for (const args of [['inspect', join(dir, 'missing.glb')], ['inspect', path, '--oops'], ['convert', path]]) {
+  for (const args of [['inspect', join(dir, 'missing.glb')], ['inspect', path, '--oops'], ['unknown', path]]) {
     const failure = spawnSync(runtime, [cli, ...args], { encoding: 'utf8' });
     assert.equal(failure.status, 1);
     assert.equal(failure.stdout, '');
