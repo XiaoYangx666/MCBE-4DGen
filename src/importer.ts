@@ -2,7 +2,6 @@ import { realpath } from 'node:fs/promises';
 import { basename, dirname, extname } from 'node:path';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { convertPrimitiveToTriangles } from '@gltf-transform/functions';
-import { createAssimp } from 'libassimp';
 import { MeshoptDecoder } from 'meshoptimizer';
 import type { IntermediateModel } from './model.ts';
 import { ModelIO, ModelResources } from './resources.ts';
@@ -34,6 +33,8 @@ export async function importModel(input: string, options: ImportOptions = {}): P
   let entry = path;
   let backend: 'native' | 'wasm' | undefined;
   if (!direct) {
+    // Direct glTF/VRM inputs must not load the optional native Assimp addon.
+    const { createAssimp } = await import('libassimp');
     const assimp = await createAssimp({ backend: options.backend ?? 'auto', onLog: (log) => {
       if (log.level !== 'info') warn(log.message);
     } });

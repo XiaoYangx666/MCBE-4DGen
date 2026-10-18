@@ -14,6 +14,15 @@ export function prepareVRM(json: JSONDocument, warn: (message: string) => void) 
   const version = vrm.specVersion ?? (vrm0 ? '0.x' : undefined);
   if (typeof version !== 'string' || (vrm1 ? version !== '1.0' : !/^0\.(?:\d+|x)$/.test(version))) throw new Error('Unsupported VRM specVersion');
   const meta = record(vrm.meta) ? vrm.meta : {};
+  const humanoid = record(vrm.humanoid) ? vrm.humanoid : {};
+  const humanBones = Array.isArray(humanoid.humanBones) ? humanoid.humanBones :
+    record(humanoid.humanBones) ? Object.entries(humanoid.humanBones).map(([bone, value]) =>
+      record(value) ? { ...value, bone } : {}) : [];
+  for (const value of humanBones) {
+    if (!record(value) || typeof value.bone !== 'string' || typeof value.node !== 'number') continue;
+    const node = root.nodes?.[value.node];
+    if (node) node.extras = { ...node.extras, _vrmHumanBone: value.bone };
+  }
   warn(`VRM ${version}: importing static initial pose only; humanoid animation, expressions, spring bones, constraints and first-person rules are not evaluated.`);
   if (vrm0 && Array.isArray(vrm.materialProperties)) {
     for (const [index, properties] of vrm.materialProperties.entries()) {

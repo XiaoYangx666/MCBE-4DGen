@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "skinPacksRoot": "D:/Minecraft/Content/data/skin_packs",
+  "stateDir": ".skin-pack-manager",
+  "slots": {
+    "custom": { "manifestFormat": 2 },
+    "persona": { "manifestFormat": 1 }
+  }
+}

@@ -31,9 +31,9 @@ async function fixturePack() {
 const parsed = (value: Uint8Array): any => JSON.parse(new TextDecoder().decode(value));
 const encoded = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value));
 
-test('builds exactly the three reference JSON files and linked skin0.png', async () => {
+test('builds localized pack metadata and linked skin0.png', async () => {
   const files = await fixturePack();
-  assert.deepEqual(Object.keys(files).sort(), ['geometry.json', 'manifest.json', 'skin0.png', 'skins.json']);
+  assert.deepEqual(Object.keys(files).sort(), ['geometry.json', 'manifest.json', 'skin0.png', 'skins.json', 'texts/en_US.lang', 'texts/languages.json', 'texts/zh_CN.lang']);
   const metadata = await validateSkinPackFiles(files);
   assert.equal(metadata.name, 'Test Pack');
   assert.equal(metadata.skins, 1);

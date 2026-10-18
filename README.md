@@ -1,12 +1,23 @@
-# Minecraft Bedrock 4D/5D Skin Converter
+# 4DGen：模型绑定与皮肤包管理
 
-通用模型 → 优化 → Static 刚性绑定 → Bedrock 1.8.0 poly_mesh → mcpack。
+通用模型 → 优化 → 静态/人形绑定 → Bedrock 1.8.0 poly_mesh → mcpack → 可恢复的皮肤包管理。
 
-当前已实现 **皮肤包生成 CLI 与第 5A 阶段的格式扩展**：OBJ/GLB/glTF/FBX/DAE/STL/PLY/PMX/VRM → Static poly_mesh → manifest.json、skins.json、geometry.json、skin0.png，并可生成 .mcpack。格式与交叉引用可独立校验；客户端穿戴能力仍需实机验证。
+日常使用从 **[完整工作流程](docs/workflow.md)** 开始，覆盖可配置目标路径、目录/mcpack 导入、多包启停、备份恢复、原始权重与衣物归属、模型独立姿势调校，以及客户端验收。
+
+```powershell
+bun run packs status
+bun run workflow workflows/shino.example.json
+# 看过预览后启用；第一次使用先按文档配置目标路径
+bun run packs enable persona shino-release
+```
+
+本地环境已将最终测试版本登记为 `<sample-id>` 和 `<sample-id>`，原始空包备份已接入新管理器。默认 workflow 不部署；添加 `--deploy` 才写游戏目录。配置与管理状态不提交到 Git。
+
+已实现模型导入、静态/VRM 人形绑定、带本地化的 mcpack、预览、配置化工作流和可恢复的包管理。Shino 的显示、穿戴、衣物归属及姿势已由用户在 Windows 客户端迭代验证；其它模型仍需单独验收。
 
 ## 运行验证
 
-统一使用 Bun 1.4.3 运行、安装依赖和测试。当前 Linux x64 测试通过，其它系统未验证。
+统一使用 Bun 1.4.3 运行、安装依赖和测试。Windows 可运行 `bun run test:workflow` 检查本流程；完整原生 Assimp 测试在该环境有已知加载崩溃，详见工作流程文档。早期 Linux 格式验证记录保留在阶段文档中。
 
 ```sh
 bun install --frozen-lockfile
@@ -25,11 +36,12 @@ CLI、样本脚本与自动化测试均通过 Bun 执行，不再重复运行 No
 | 2 | OBJ/MTL/贴图、GLB、外部 glTF 导入及 inspect | 完成 |
 | 3 | 网格清理、误差受限减面、模型变换、贴图和显式图集 | 完成 |
 | 4A | Static 绑定、旧版 poly_mesh、独立几何校验 | 完成 |
-| 4B | 完整 mcpack、convert/validate CLI | 本地类型检查与测试通过；待实机验证 |
+| 4B | 完整 mcpack、convert/validate CLI | 文件校验通过；Windows 示例已实测 |
 | 5A | FBX/DAE/STL/PLY、完整转换回归、覆盖保护 | 完成 |
 | 5B-1 | 实际导出文件四视图预览 | 完成 |
 | 6A | PMX、VRM 静态角色导入与真实样本验证 | 完成 |
-| 后续 | 人形肢体绑定、真实客户端验证、完整使用文档 | 待实现 |
+| 人形与管理 | VRM 六部分绑定、源衣物规则、Shino 客户端调校、可恢复包管理 | 已实现；见工作流程 |
+| 后续 | 平滑关节、布料物理、更多角色与动作验收 | 待实现 |
 
 每个阶段完成验证后独立提交。Humanoid、Web UI、其它输入格式留待后续。
 
@@ -72,7 +84,7 @@ bun run src/cli.ts inspect .cache/samples/ToyCar.glb
 - 外部资源限制为模型文件所在目录及其子目录，拒绝网络 URI、越界路径和越界符号链接。共享上级贴图目录需要先整理到模型目录下。
 - PNG/JPEG 等由 Sharp 可解码的图片可检查；KTX2/Basis/Draco 尚未接入解码依赖，会明确失败。已注册 Meshopt 解码器。
 - 未识别的可选 glTF 扩展记录警告，必需但无法读取的扩展报错。复杂材质当前保存在中间模型，报告列出将来导出时需要降级的效果。
-- 已实现完整皮肤包文件与 convert/validate CLI；第三方加载器与 Minecraft 客户端兼容性仍未经实测。
+- Windows 示例客户端结果见工作流程；第三方加载器及其它模型、设备仍需独立验证。
 
 网格优化 API 与真实模型证据见 [docs/stage-3-mesh.md](docs/stage-3-mesh.md)。
 
@@ -100,9 +112,11 @@ bun run src/cli.ts validate ./my-skin
 bun run src/cli.ts validate ./my-skin.mcpack
 ```
 
-输出目录包含且仅包含 `manifest.json`、`skins.json`、`geometry.json`、`skin0.png`；默认还在目录旁生成 `my-skin.mcpack`。使用 `--no-mcpack` 可仅保留四个文件。`--ratio 0.5` 可以选择减面（默认保留原面数）；`--height 32` 设置模型高度，`--max-texture 256` 设置单图边长上限，`--atlas 512` 可指定图集大小。
+输出目录包含 `manifest.json`、`skins.json`、`geometry.json`、`skin0.png` 和 `texts/` 本地化文件；默认还在目录旁生成 `my-skin.mcpack`。使用 `--no-mcpack` 可仅输出目录。`--ratio 0.5` 可以选择减面（默认保留原面数）；`--height 32` 设置模型高度，`--max-texture 256` 设置单图边长上限，`--atlas 512` 可指定中间图集大小。
 
-当前支持单模型 Static 绑定到 body，不处理动态肢体跟随。输出路径已经包含文件时拒绝覆盖，防止覆盖已有资源。详见 [第 4B 阶段：皮肤包导出](docs/stage-4-pack.md)。
+Windows 客户端实测：同一生成几何使用 128×128 贴图可显示，512/1024 贴图版本未正常显示。CLI 最终图集固定为 128×128，并同步几何贴图尺寸；上述参数控制中间图集，最终缩小会损失贴图细节。Shino 后续穿戴和动作调校结果见工作流程。
+
+默认 Static 绑定到 body；VRM 可选 humanoid 人形模式。输出路径已经包含文件时拒绝覆盖，防止覆盖已有资源。初始导出实现记录见 [第 4B 阶段](docs/stage-4-pack.md)。
 
 FBX、DAE、STL、PLY 可使用同样的命令，例如 `bun run convert model.fbx --out ./my-fbx-skin`。`--backend native|wasm` 适用于所有 Assimp 输入。已有同名 `.mcpack` 时也拒绝覆盖；`--no-mcpack` 仅写目录并保留该归档。转换报告区分原始面数、优化后正面数、补充反面数、最终面数，以及几何、贴图和归档字节数。
 
@@ -132,6 +146,16 @@ bun run preview ./mmd-pack.mcpack --out ./mmd-preview.png --unlit
 
 PMX 2.0/2.1 经 Assimp 导入，补回材质双面标记、原名和 diffuse alpha，保留 PNG 透明；中文目录和 Windows 风格贴图路径已测试。VRM 0.x/1.0 直接读取 glTF 数据，提供明确的 MToon 基础色/主贴图/透明降级，并在 inspect.source.avatar 中列出可读的作者与许可元数据。FBX 已有导入路径，本轮补测了带骨骼的 FBX。
 
-当前转换仍冻结初始姿态并整体挂在 body：不会随 MC 四肢独立运动，不运行 MMD/Unity 动画、IK、物理或 VRM 表情。MToon 描边和复杂着色不能原样搬入皮肤包。PMD 请先转 PMX；.unitypackage、.prefab、.asset、AssetBundle 请先在来源工具导出 FBX/VRM 与贴图。
+默认 Static 转换仍冻结初始姿态并整体挂在 body：不会随 MC 四肢独立运动，不运行 MMD/Unity 动画、IK、物理或 VRM 表情。MToon 描边和复杂着色不能原样搬入皮肤包。PMD 请先转 PMX；.unitypackage、.prefab、.asset、AssetBundle 请先在来源工具导出 FBX/VRM 与贴图。
+
+VRM 可显式使用 `--binding humanoid`：按 VRM humanoid 节点与原始权重将三角面划分到头、躯干、左右臂和左右腿，保留源关节枢轴，并将手臂转到下垂的玩家静止姿势。此模式保留原面数，不接受 `--ratio`。它是六部分刚性绑定，不是运行时平滑蒙皮；肩/胯边界可能出现接缝，不保留肘膝弯曲和头发物理。Shino 最终配置已有用户验收反馈，新模型仍需单独调校。
+
+```sh
+bun run convert avatar.vrm --out ./avatar-humanoid --binding humanoid
+```
+
+不同体型可使用独立 JSON 调校肩部外移量和手臂外展角度，例如 Shino：`--humanoid-profile profiles/shino.json`。`shoulderOutset` 使用高度适配后的模型单位，`armSpreadDegrees` 为手臂相对竖直方向的外展角度。当前 Shino 配置为每侧外移 0.5、外展 6°；此配置不作为其他模型的默认值。改变目标高度后应重新检查间距。
+
+人形静止姿势先修改源肩关节，再用原始混合权重计算皮肤、袖子和肩部的形变，之后冻结到目标骨骼。profile 的 `materialRules` 可按源材质设置 `body`（整件衣物归躯干）或 `arm-components`（按源索引拓扑连通部分及累计骨骼权重区分袖子，`minArmWeight` 指定阈值）。Shino 的 Bottoms 整体归躯干，Tops 的连通袖子归手臂；规则精确匹配源材质，拼错或未命中会报错。用 `bun run binding:inspect avatar.vrm outputs/avatar-binding.json` 保存源归属检查报告。
 
 可运行 `bun run scripts/fetch-avatar-sample.ts GeneLight` 或 `Shino` 获取固定修订、SHA256 校验的角色样本；二进制只放缓存。具体兼容范围、来源/许可和验证数据见 [角色格式接入](docs/stage-6-avatars.md)。

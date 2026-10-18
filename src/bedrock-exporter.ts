@@ -7,6 +7,8 @@ import { validateGeometry } from './geometry-validator.ts';
 
 export interface ExportOptions {
   identifier: string;
+  /** Optional final skin atlas edge; normalized UVs stay unchanged. */
+  skinTextureSize?: 64 | 128;
   /** Duplicate back-facing triangles when glTF material is double-sided (default). */
   doubleSided?: 'duplicate' | 'front-only';
 }
@@ -36,13 +38,21 @@ export async function exportBedrockGeometry(binding: StaticBinding, options: Exp
   const primitives = root.listMeshes().flatMap((mesh) => mesh.listPrimitives());
   const textures = new Set(primitives.map((p) => p.getMaterial()?.getBaseColorTexture()));
   if (textures.size !== 1 || textures.has(null) || textures.has(undefined)) throw new Error('Export requires one baked base-color atlas');
-  const texture = [...textures][0]!, image = texture.getImage();
+  const texture = [...textures][0]!;
+  let image = texture.getImage();
   if (!image) throw new Error('Atlas image is missing');
-  const metadata = await sharp(image).metadata();
+  let metadata = await sharp(image).metadata();
   if (metadata.format !== 'png' || !metadata.width || !metadata.height) throw new Error('Export requires a valid PNG atlas');
+  const resized = options.skinTextureSize !== undefined &&
+    (metadata.width !== options.skinTextureSize || metadata.height !== options.skinTextureSize);
+  if (resized) {
+    image = await sharp(image).resize(options.skinTextureSize!, options.skinTextureSize!).png().toBuffer();
+    metadata = await sharp(image).metadata();
+  }
   const positions = new Stream<V3>(), normals = new Stream<V3>(), uvs = new Stream<V2>();
   const pm: PolyMesh = { normalized_uvs: true, positions: positions.values, normals: normals.values, uvs: uvs.values, polys: [] };
   const warnings = [...binding.model.warnings];
+  if (resized) warnings.push(`Final skin atlas resized to ${options.skinTextureSize}x${options.skinTextureSize} for client compatibility; normalized UVs preserved, downsampling can reduce detail.`);
   let sourceTriangles = 0, addedBackfaces = 0, ignoredBackfaces = 0;
   for (const p of primitives) {
     const material = p.getMaterial()!, info = material.getBaseColorTextureInfo()!;
