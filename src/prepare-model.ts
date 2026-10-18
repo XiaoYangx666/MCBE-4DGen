@@ -63,7 +63,7 @@ function morph(source: Primitive, node: Node, semantic: string): Float32Array<Ar
 }
 
 function snapshotPrimitive(doc: Document, source: Primitive, node: Node, warn: (s: string) => void): Primitive {
-  const out = doc.createPrimitive().setMode(4).setMaterial(source.getMaterial());
+  const out = doc.createPrimitive().setMode(4).setMaterial(source.getMaterial()).setExtras({ ...source.getExtras() });
   for (const semantic of source.listSemantics()) {
     if (['POSITION', 'NORMAL', 'TANGENT'].includes(semantic)) continue;
     out.setAttribute(semantic, source.getAttribute(semantic)!.clone());

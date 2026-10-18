@@ -1,5 +1,6 @@
 import { test } from 'bun:test';
 import assert from 'node:assert/strict';
+import sharp from 'sharp';
 import { documentFixture } from './fixtures.ts';
 import { optimizeModel } from '../src/optimizer.ts';
 import type { IntermediateModel } from '../src/model.ts';
@@ -13,6 +14,21 @@ async function prepared() {
   return (await optimizeModel(input, { prepare: {}, mesh: { preset: 'original' }, texture: { maxTextureSize: 8, atlasSize: 32 } })).model;
 }
 const close = (a: number[], b: number[]) => a.forEach((v, i) => assert.ok(Math.abs(v - b[i]!) < 1e-6, `${a} != ${b}`));
+
+test('skin atlas limit resizes PNG and dimensions together without changing normalized mesh data', async () => {
+  const model = await prepared();
+  const texture = model.document.getRoot().listMaterials()[0]!.getBaseColorTexture()!;
+  texture.setImage(await sharp(texture.getImage()!).resize(512, 512).png().toBuffer());
+  const binding = bindStatic(model);
+  const original = await exportBedrockGeometry(binding, { identifier: 'geometry.fixture' });
+  const limited = await exportBedrockGeometry(binding, { identifier: 'geometry.fixture', skinTextureSize: 128 });
+  const png = await sharp(limited.png).metadata();
+  assert.equal(png.width, 128); assert.equal(png.height, 128);
+  assert.equal(limited.file['geometry.fixture']!.texturewidth, 128);
+  assert.equal(limited.file['geometry.fixture']!.textureheight, 128);
+  assert.deepEqual(limited.file['geometry.fixture']!.bones, original.file['geometry.fixture']!.bones);
+  assert.equal((await sharp(texture.getImage()!).metadata()).width, 512);
+});
 
 test('legacy export uses independent position/normal/UV indices and repeated triangle corner', async () => {
   const model = await prepared();

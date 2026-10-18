@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, parse as parsePath, resolve } from 'node:path';
 import { importModel, INPUT_FORMATS } from './importer.ts';
 import { formatInspection, inspectModel } from './inspect.ts';
@@ -8,6 +8,8 @@ import type { PreviewOptions } from './geometry-preview.ts';
 import { bindStatic } from './bone-mapper.ts';
 import { exportBedrockGeometry } from './bedrock-exporter.ts';
 import { buildSkinPack, validateSkinPackFiles, validateSkinPackPath, zipSkinPack } from './skin-pack.ts';
+import { exportHumanoid } from './humanoid.ts';
+import type { HumanoidProfile } from './humanoid.ts';
 
 const help = [
   'Minecraft Bedrock 4D/5D Skin Converter',
@@ -23,15 +25,17 @@ const help = [
   '  --out <directory>    Output folder (default: ./<model-name>-skin-pack)',
   '  --name <name>        Pack name (default: Custom Skin Pack)',
   '  --height <number>    Final model height (default: 32)',
+  '  --binding <mode>     static (default) or humanoid (VRM rigid player limbs)',
+  '  --humanoid-profile <json>  Per-avatar shoulderOutset and armSpreadDegrees',
   '  --ratio <0..1>       Optional triangle reduction target (default: original)',
   '  --max-texture <int>  Maximum source texture edge (default: 256)',
   '  --atlas <int>        Fixed atlas edge (default: automatic)',
   '  --backend <name>     Assimp importer: auto, native, wasm (except GLB/glTF)',
   '  --no-mcpack         Write unpacked files only (default: also create .mcpack)',
   '',
-  'Output: manifest.json, skins.json, geometry.json, skin0.png, and optionally .mcpack.',
+  'Output: manifest.json, skins.json, geometry.json, skin0.png, texts/, and optionally .mcpack.',
   'Input formats: ' + INPUT_FORMATS.join(', '),
-  'Static binding only: the entire model is attached to the player body as rigid geometry.',
+  'Default static binding attaches the whole model to body; --binding humanoid uses VRM player limbs.',
 ].join('\n');
 
 function positive(value: string | undefined, label: string, integer = false): number {
@@ -101,6 +105,8 @@ async function main() {
   let out: string | undefined, packName = 'Custom Skin Pack', height = 32;
   let ratio: number | undefined, textureSize = 256, atlas: number | undefined;
   let importer: 'auto' | 'native' | 'wasm' = 'auto', mcpack = true;
+  let binding: 'static' | 'humanoid' = 'static';
+  let profilePath: string | undefined;
   const requireValue = (flag: string): string => {
     const next = args.shift();
     if (next === undefined || next.startsWith('--')) throw new Error('Missing value for ' + flag);
@@ -111,6 +117,12 @@ async function main() {
     if (flag === '--out') out = requireValue(flag);
     else if (flag === '--name') packName = requireValue(flag);
     else if (flag === '--height') height = positive(requireValue(flag), flag);
+    else if (flag === '--humanoid-profile') profilePath = requireValue(flag);
+    else if (flag === '--binding') {
+      const value = requireValue(flag);
+      if (value !== 'static' && value !== 'humanoid') throw new Error('--binding must be static or humanoid');
+      binding = value;
+    }
     else if (flag === '--ratio') {
       ratio = positive(requireValue(flag), flag);
       if (ratio > 1) throw new Error('--ratio must not exceed 1');
@@ -143,13 +155,26 @@ async function main() {
     texture: { maxTextureSize: textureSize, ...(atlas !== undefined ? { atlasSize: atlas } : {}) },
   };
   const model = await importModel(input, { backend: importer });
-  const optimized = await optimizeModel(model, options);
-  const exported = await exportBedrockGeometry(bindStatic(optimized.model), { identifier: 'geometry.skin0' });
+  if (binding === 'humanoid' && ratio !== undefined) throw new Error('Humanoid binding currently preserves original triangles; omit --ratio');
+  let profile: HumanoidProfile | undefined;
+  if (profilePath) {
+    if (binding !== 'humanoid') throw new Error('--humanoid-profile requires --binding humanoid');
+    const value: unknown = JSON.parse(await readFile(profilePath, 'utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).some((key) => !['shoulderOutset', 'armSpreadDegrees', 'materialRules'].includes(key))) throw new Error('Invalid humanoid profile fields');
+    profile = value as HumanoidProfile;
+  }
+  const humanoid = binding === 'humanoid' ? await exportHumanoid(model, { height, textureSize, ...(profile ? { profile } : {}), ...(atlas ? { atlas } : {}) }) : null;
+  const optimized = humanoid ? null : await optimizeModel(model, options);
+  const exported = humanoid ?? await exportBedrockGeometry(bindStatic(optimized!.model), { identifier: 'geometry.skin0', skinTextureSize: 128 });
   const files = buildSkinPack({ geometry: exported.file, png: exported.png, packName, identifier: 'geometry.skin0' });
   await validateSkinPackFiles(files);
   const zip = mcpack ? await zipSkinPack(files) : null;
   await mkdir(outputDir, { recursive: true });
-  for (const [name, bytes] of Object.entries(files)) await writeFile(resolve(outputDir, name), bytes, { flag: 'wx' });
+  for (const [name, bytes] of Object.entries(files)) {
+    const path = resolve(outputDir, name); await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, bytes, { flag: 'wx' });
+  }
   const result = await validateSkinPackPath(outputDir);
   if (zip) {
     await writeFile(archivePath, zip, { flag: 'wx' });
@@ -159,7 +184,9 @@ async function main() {
     outputDir,
     ...(zip ? { mcpack: archivePath } : {}),
     ...result,
-    sourceTriangles: optimized.report.mesh.before,
+    binding,
+    ...(humanoid ? { humanoid: humanoid.binding } : {}),
+    sourceTriangles: optimized?.report.mesh.before ?? exported.report.sourceTriangles,
     optimizedTriangles: exported.report.sourceTriangles,
     addedBackfaces: exported.report.addedBackfaces,
     triangles: exported.report.triangles,

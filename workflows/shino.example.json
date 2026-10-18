@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "../.cache/anime/sample.vrm",
+  "output": "../outputs/shino-release",
+  "name": "Shino",
+  "binding": "humanoid",
+  "profile": "../profiles/shino.json",
+  "height": 32,
+  "managerConfig": "../skin-manager.local.json",
+  "libraryId": "shino-release",
+  "slot": "persona"
+}

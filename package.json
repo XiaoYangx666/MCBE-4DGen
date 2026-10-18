@@ -6,6 +6,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "bun test",
+    "test:workflow": "bun test tests/pack-manager.test.ts tests/humanoid.test.ts tests/bedrock-export.test.ts tests/geometry-validator.test.ts tests/prepare-model.test.ts tests/skin-pack.test.ts tests/preview.test.ts --timeout 30000",
     "probe": "bun run scripts/probe.ts",
     "inspect": "bun run src/cli.ts inspect",
     "sample:fetch": "bun run scripts/fetch-sample.ts",
@@ -14,7 +15,11 @@
     "sample:export": "bun run scripts/export-sample.ts",
     "convert": "bun run src/cli.ts convert",
     "validate": "bun run src/cli.ts validate",
-    "preview": "bun run src/cli.ts preview"
+    "preview": "bun run src/cli.ts preview",
+    "packs": "bun run src/pack-cli.ts",
+    "binding:inspect": "bun run scripts/inspect-avatar-binding.ts",
+    "binding:preview": "bun run scripts/preview-binding.ts",
+    "workflow": "bun run scripts/workflow.ts"
   },
   "engines": {
     "bun": ">=1.4.3"

@@ -1,0 +1,8 @@
+{
+  "shoulderOutset": 0.5,
+  "armSpreadDegrees": 6,
+  "materialRules": [
+    { "material": "F00_001_01_Bottoms_01_CLOTH", "mode": "body" },
+    { "material": "F00_001_01_Tops_01_CLOTH", "mode": "arm-components", "minArmWeight": 0.35 }
+  ]
+}

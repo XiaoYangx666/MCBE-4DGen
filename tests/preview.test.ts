@@ -1,8 +1,8 @@
 import { test } from 'bun:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import sharp from 'sharp';
 import type { BedrockGeometryFile, V3 } from '../src/bedrock-types.ts';
@@ -79,7 +79,10 @@ test('preview CLI reads JSON/PNG, directory and mcpack without original source, 
   try {
     const file = fixture(), png = await texture();
     const files = buildSkinPack({ geometry: file, png, identifier: 'geometry.skin0' });
-    for (const [name, bytes] of Object.entries(files)) await writeFile(join(dir, name), bytes);
+    for (const [name, bytes] of Object.entries(files)) {
+      await mkdir(dirname(join(dir, name)), { recursive: true });
+      await writeFile(join(dir, name), bytes);
+    }
     // Archive must be outside the unpacked directory, which rejects extraneous files.
     const archiveDir = await mkdtemp(join(tmpdir(), '4d-preview-archive-'));
     try {

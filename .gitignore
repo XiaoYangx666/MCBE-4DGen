@@ -1,3 +1,5 @@
 node_modules/
 outputs/
 .cache/
+skin-manager.local.json
+.skin-pack-manager/
