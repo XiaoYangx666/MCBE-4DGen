@@ -33,7 +33,11 @@ async function rewriteEntries(from: string, to: string, entriesRoot = storage.mo
   }
 }
 /** Copy old data, keeping originals available. Completed destinations are reused. */
-export async function initializeStorage() {
+let initialization: Promise<void> | undefined;
+export function initializeStorage() {
+  return initialization ??= initialize().catch(error=>{initialization=undefined;throw error;});
+}
+async function initialize() {
   if (configured.migrateFrom && !process.env.FOURDGEN_DATA_DIR) {
     const from = resolve(appRoot, configured.migrateFrom);
     if (within(from,dataRoot) || within(dataRoot,from)) throw Error('新旧数据目录不能互相包含');

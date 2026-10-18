@@ -35,6 +35,7 @@ export interface PackStats {
 /** Project metadata kept beside the pack; not part of the installable pack files. */
 export interface PackMeta {
   template?: "image";
+  sourceMime?: string;
   importWarnings?: string[];
   versionName?: string;
   modelId?: string;
@@ -409,19 +410,17 @@ export class PackManager {
   }
   /** Backfill stats for packs imported before stats existed. */
   async ensureStats() {
-    const dir = join(this.config.stateDir, 'library');
-    if (!(await exists(dir))) return [];
-    for (const name of (await readdir(dir)).filter((entry) => /^[a-z][a-z0-9_-]*\.json$/.test(entry))) {
-      const path = join(dir, name);
+    const packs = await this.list();
+    for (const pack of packs) {
+      if (pack.stats || pack.draft) continue;
       try {
-        const pack = await json<LibraryPack>(path);
-        if (pack.stats) continue;
         pack.stats = await statsFor(await readSkinPack(this.revisionPath(pack.id, pack.revision)));
-        await atomicJSON(path, pack);
+        await atomicJSON(this.libraryPath(pack.id), pack);
       } catch { /* leave unreadable entries for the CLI to report */ }
     }
-    return this.list();
+    return packs;
   }
+
   async exportPack(id: string, output: string) {
     return this.locked(async () => {
       const pack = await json<LibraryPack>(this.libraryPath(id));

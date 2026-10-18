@@ -30,3 +30,12 @@ test('image template rejects invalid data and unreasonable dimensions',async()=>
   await expect(createImageSkin(bytes,{name:' ',height:32})).rejects.toThrow('名称');
   await expect(createImageSkin(new Uint8Array([1,2,3]),{name:'test',height:32})).rejects.toThrow();
 });
+
+test('template keeps original JPEG bytes and applies EXIF rotation to aspect and export',async()=>{
+  const bytes=await sharp({create:{width:80,height:40,channels:3,background:'#6acb9d'}}).jpeg().withMetadata({orientation:6}).toBuffer();
+  const image=await createImageSkin(bytes,{name:'rotated photo',height:32});
+  expect(image.sourceImage).toBe(bytes);
+  expect(image.sourceMime).toBe('image/jpeg');
+  expect(image.width).toBe(16);
+  expect((await validateSkinPackFiles(image.files)).skins).toBe(1);
+});

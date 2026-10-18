@@ -1,3 +1,4 @@
+import { createDemandRender } from "./demand-render";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -52,6 +53,8 @@ export function Viewer({
   settings.current = { excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect };
   const frameRef = useRef<((part?: string) => void) | null>(null);
   const frontRef = useRef<(() => void) | null>(null);
+  const invalidate = useRef<(() => void) | null>(null);
+  useEffect(()=>{invalidate.current?.();},[excluded,wire,unlit,focus,solo,mode,compareOriginal,profile,height,binding]);
   const cameraState = useRef<CameraState | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -61,7 +64,7 @@ export function Viewer({
     setError("");
     const el = host.current!;
     let disposed = false;
-    let frame = 0;
+
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#15191e");
     const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 10000);
@@ -243,6 +246,7 @@ export function Viewer({
         if (!disposed) {
           setProgress(1);
           setLoading(false);
+          invalidate.current?.();
         }
       }
     }
@@ -252,6 +256,7 @@ export function Viewer({
       camera.aspect = el.clientWidth / el.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(el.clientWidth, el.clientHeight);
+      invalidate.current?.();
     });
     resize.observe(el);
     const ray = new THREE.Raycaster();
@@ -273,28 +278,33 @@ export function Viewer({
     };
     renderer.domElement.addEventListener("pointerdown", pointerDown);
     renderer.domElement.addEventListener("pointerup", pointerUp);
-    function animate() {
-      if (disposed) return;
-      frame = requestAnimationFrame(animate);
-      applyPose();
-      group.traverse((object) => {
-        if (!(object instanceof THREE.Mesh)) return;
-        const current = settings.current;
-        object.visible = current.mode !== "result"
-          ? current.solo !== null
-            ? object.userData.materialNames?.includes(current.solo)
-            : !object.userData.materialNames?.some((name: string) => current.excluded.includes(name))
-          : current.focus === "all" || object.name === current.focus;
-        const materials = current.unlit ? object.userData.flat : object.userData.original;
-        if (materials) {
-          object.material = materials.length === 1 ? materials[0] : materials;
-          for (const material of materials) material.wireframe = current.wire;
-        }
-      });
-      controls.update();
+    let modelDirty = true;
+    const render = createDemandRender(() => {
+      if(modelDirty) {
+        modelDirty = false;
+        applyPose();
+        group.traverse((object) => {
+          if (!(object instanceof THREE.Mesh)) return;
+          const current = settings.current;
+          object.visible = current.mode !== "result"
+            ? current.solo !== null
+              ? object.userData.materialNames?.includes(current.solo)
+              : !object.userData.materialNames?.some((name: string) => current.excluded.includes(name))
+            : current.focus === "all" || object.name === current.focus;
+          const materials = current.unlit ? object.userData.flat : object.userData.original;
+          if (materials) {
+            object.material = materials.length === 1 ? materials[0] : materials;
+            for (const material of materials) material.wireframe = current.wire;
+          }
+        });
+      }
+      const moving = controls.update();
       renderer.render(scene, camera);
-    }
-    animate();
+      return moving;
+    });
+    invalidate.current = () => {modelDirty = true;render.request();};
+    controls.addEventListener("change",render.request);
+    render.request();
     return () => {
       disposed = true;
       setLoading(false);
@@ -302,7 +312,9 @@ export function Viewer({
         sessionId: session?.id ?? "",
         ...captureCameraView(camera.position, controls.target, camera.up, camera.zoom),
       };
-      cancelAnimationFrame(frame);
+      invalidate.current = null;
+      controls.removeEventListener("change",render.request);
+      render.dispose();
       resize.disconnect();
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
@@ -360,3 +372,4 @@ function disposeObject(object: THREE.Object3D) {
   textures.forEach((texture) => texture.dispose());
   skeletons.forEach((skeleton) => skeleton.dispose());
 }
+
