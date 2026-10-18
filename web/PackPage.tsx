@@ -6,6 +6,7 @@ import type { BedrockGeometryFile } from "../src/bedrock-types";
 import { api, post } from "./api";
 
 type PackMeta = {
+  template?: "image";
   importWarnings?: string[];
   versionName?: string;
   modelId?: string;
@@ -51,6 +52,8 @@ type SlotStatus = {
 };
 export type Packs = {
   configured: boolean;
+  gameConfigured?: boolean;
+  gameError?: string;
   configPath?: string;
   error?: string;
   root?: string;
@@ -362,7 +365,7 @@ export function PackPage() {
   return <div className="page-content pack-manager-page">
     <div className="pack-toolbar"><div><h1>{view === "game" ? "游戏中的皮肤" : "皮肤包"}</h1><span>{view === "game" ? "查看已启用内容，更新或恢复游戏目录。" : "整理转换成品与外部皮肤，组合成包或导出分享。"}</span></div><div className="pack-top-actions"><button disabled={!!busy} onClick={() => void run('正在刷新…', refresh)}>刷新</button><>{view === "library" ? <><button disabled={!!busy || !data?.configured} onClick={() => show('import')}>导入皮肤包</button><button className="primary" disabled={!!busy || !data?.configured} onClick={() => show('create')}>＋ 新建皮肤包</button></> : <a className="button-link" href="#/packs">管理本地皮肤包 →</a>}</></div></div>
     <div className="collection-tabs"><a className={view==='library'?'active':''} href="#/packs">本地皮肤包 <span>{local.length}</span></a><a className={view==='game'?'active':''} href="#/game">游戏中 <span>{presets.length}</span></a><small>本地编辑 → 导出或加入游戏</small></div>
-    {view==='game'&&<div className="game-context"><b>游戏目录</b><span>{data?.root ?? "尚未配置"}</span><small>更新和移除在这里生效；本地皮肤包会保留。</small></div>}
+    {view==='game'&&data?.gameConfigured===false&&<div className="pack-message">尚未配置游戏目录。本地皮肤包可以正常保存、整理与导出；安装到游戏前请配置 skin-manager.local.json。</div>}{view==='game'&&<div className="game-context"><b>游戏目录</b><span>{data?.gameConfigured===false ? '尚未配置' : data?.root ?? '正在读取'}</span><small>更新和移除在这里生效；本地皮肤包会保留。</small></div>}
     {error && <div role="alert" className="pack-message error">{error}</div>}{notice && <div role="status" className="pack-message">{notice}</div>}{busy && <div role="status" className="busy-line"><span className="spinner"/>{busy}</div>}
     {!data ? <div className="empty-state">正在读取皮肤包…</div> : !data.configured ? <div className="empty-state"><h2>尚未配置游戏目录</h2><p>{data.error}</p></div> : <>
       <div className="pack-browser"><aside className="pack-list-pane organized-packs"><div className="pack-sidebar-head"><h2>{view === "game" ? "游戏目标位置" : "我的皮肤包"}</h2><input aria-label="搜索皮肤包" placeholder="搜索皮肤包…" value={query} onChange={e => setQuery(e.target.value)}/></div>
@@ -372,7 +375,7 @@ export function PackPage() {
           <button disabled={!!busy || locked} onClick={() => show('add')}>＋ 添加皮肤</button>
           {row.preset ? <><button disabled={!!busy || !state?.managed || !state.active?.length || locked} onClick={() => void run('正在恢复…', () => post('/api/packs/restore', { slot: row.id }), '已恢复初始皮肤包')}>恢复初始</button>{!!state?.pending && <button disabled={!!busy} onClick={() => void run('正在恢复…', () => post('/api/packs/recover', { slot: row.id }))}>恢复中断</button>}</> : <><a className="button-link" href={row.skins ? `/api/packs/${encodeURIComponent(row.id)}/download` : undefined} aria-disabled={!row.skins} title={row.skins ? "下载完整皮肤包" : "先添加皮肤再导出"} download>导出 .mcpack</a><button disabled={!!busy} onClick={() => show('rename-pack')}>修改包名</button><button className="danger-button" disabled={!!busy || enabled(row.id).length > 0} title={enabled(row.id).length ? '先从游戏中移除，才能删除本地包' : ''} onClick={() => show('delete')}>{enabled(row.id).length ? '游戏中，暂不可删除' : '删除包'}</button></>}
         </div></div>
-        {row && !row.preset && <div className="inline-note">{sourceModel ? <>关联源模型：<a href={'#/models?model='+encodeURIComponent(sourceModel.id)}>{sourceModel.name} →</a></> : <div className="button-row"><span>未关联源模型</span><select aria-label="关联源模型" value={linkTarget} onChange={e => setLinkTarget(e.target.value)}><option value="">选择源模型…</option>{models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button disabled={!linkTarget || !!busy} onClick={() => void run('正在关联…', async () => { await post('/api/models/update', {id:linkTarget, packId:row.id}); setLinkTarget(''); }, '已关联源模型')}>关联</button></div>}</div>}
+        {row && !row.preset && <div className="inline-note">{row.pack?.meta?.template === "image" ? <>来源：图片模板 · <a href={"#/templates?pack="+encodeURIComponent(row.id)}>继续编辑图片皮肤 →</a></> : sourceModel ? <>关联源模型：<a href={'#/models?model='+encodeURIComponent(sourceModel.id)}>{sourceModel.name} →</a></> : <div className="button-row"><span>未关联源模型</span><select aria-label="关联源模型" value={linkTarget} onChange={e => setLinkTarget(e.target.value)}><option value="">选择源模型…</option>{models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><button disabled={!linkTarget || !!busy} onClick={() => void run('正在关联…', async () => { await post('/api/models/update', {id:linkTarget, packId:row.id}); setLinkTarget(''); }, '已关联源模型')}>关联</button></div>}</div>}
         {state?.changedOutsideManager && <p className="inline-note">游戏目录有外部改动，已暂停写入。你仍可查看包内皮肤。</p>}
         {!!row.pack?.meta?.importWarnings?.length && <details className="inline-note"><summary>导入提示：{row.pack?.meta.importWarnings.length} 条无效皮肤未导入</summary>{row.pack?.meta.importWarnings.map((message, index) => <p key={index}>{message}</p>)}</details>}
         <div className="skin-content-layout"><div className="skin-list-pane"><div className="pane-caption">包内皮肤</div>{!contents ? <p className="muted">正在读取…</p> : contents.skins.map(s => <button className={'skin-item text-only' + (s.index === skinIndex ? ' selected' : '')} key={s.index} onClick={() => setSkinIndex(s.index)}><span className="skin-order">{s.index + 1}</span><span><b>{s.name}</b></span></button>)}</div>

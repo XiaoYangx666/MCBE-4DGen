@@ -1,9 +1,10 @@
-import { mkdir, readFile, writeFile, readdir, stat, rename, unlink } from 'node:fs/promises';
-import { resolve, isAbsolute } from 'node:path';
+import { copyFile, rm, mkdir, readFile, writeFile, readdir, stat, rename, unlink } from 'node:fs/promises';
+import { resolve, isAbsolute, relative } from 'node:path';
 import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 
-export const libraryRoot = resolve(import.meta.dir, '../.cache/model-library');
+import { storage, dataRoot, within } from '../src/workspace-storage.ts';
+export const libraryRoot = storage.models;
 export const modelPattern = /\.(pmx|vrm|glb|gltf|obj|fbx|dae|stl|ply)$/i;
 export async function modelFiles(folder: string): Promise<string[]> {
   const files: string[] = [];
@@ -32,7 +33,7 @@ export async function importLocal(path: string) {
   for (const entry of entries) {
     const name = (entry as typeof entry & { unsafeOriginalName?: string }).unsafeOriginalName ?? entry.name;
     if (name.replaceAll('\\', '/').split('/').some(p => !p || p === '.' || p === '..' || /[:\x00-\x1f]/.test(p))) throw Error('包内路径无效');
-    const target = resolve(folder, name);
+    const target = resolve(folder, name.replaceAll('\\','/'));
     const data = await entry.async('uint8array');
     total += data.length;
     if (total > 256 * 1024 * 1024) throw Error('解压内容超过 256 MB');
@@ -66,7 +67,7 @@ async function store(entry: ModelEntry) {
 export async function rememberModel(path: string, name: string, details: Partial<ModelEntry> = {}, existingId?: string) {
   const id = existingId ?? createHash('sha256').update(path).digest('hex');
   const old = await readFile(entryPath(id), 'utf8').then(v => JSON.parse(v) as ModelEntry).catch(() => null);
-  return store({ id, path, name, created: old?.created ?? new Date().toISOString(), ...old, ...details, updated: new Date().toISOString() });
+  return store({ id, name, created: old?.created ?? new Date().toISOString(), ...old, ...details, path, updated: new Date().toISOString() });
 }
 export async function updateModel(id: string, patch: { name?: string; settings?: EditSettings; packIds?: string[]; path?: string }) {
   const entry = JSON.parse(await readFile(entryPath(id), 'utf8')) as ModelEntry;
@@ -91,3 +92,33 @@ export async function listModels(): Promise<ModelEntry[]> {
   return result.sort((a,b) => b.updated.localeCompare(a.updated));
 }
 
+
+/** Keep the source model and its sidecars together, independent of Downloads. */
+export async function ownModel(path: string) {
+  if (within(dataRoot,path)) return path;
+  if (!(await stat(path)).isFile()) throw Error('源模型文件不存在');
+  const source = resolve(path,'..');
+  const key = createHash('sha256').update(path).digest('hex');
+  const folder = resolve(storage.sources,'local',key);
+  const target = resolve(folder,relative(source,path));
+  if (await Bun.file(resolve(folder,'.complete')).exists()) return target;
+  let total=0,count=0;
+  const stage=folder+'.import-'+crypto.randomUUID();
+  async function copy(dir:string) {
+    for (const entry of await readdir(dir,{withFileTypes:true})) {
+      const file=resolve(dir,entry.name),dest=resolve(stage,relative(source,file));
+      if (within(dataRoot,file) || entry.isSymbolicLink() || ['node_modules','.git','.cache'].includes(entry.name)) continue;
+      if (entry.isDirectory()) await copy(file);
+      else {
+        if (modelPattern.test(file) && file!==path) continue;
+        if (file!==path && !/\.(png|jpe?g|tga|bmp|webp|dds|ktx2?|bin|mtl|json)$/i.test(file)) continue;
+        total+=(await stat(file)).size;count++;
+        if(total>256*1024*1024||count>2000)throw Error('模型及贴图超过 256 MB 或 2000 个文件，请将模型整理到独立文件夹后导入');
+        await mkdir(resolve(dest,'..'),{recursive:true});await copyFile(file,dest);
+      }
+    }
+  }
+  try { await copy(source);await writeFile(resolve(stage,'.complete'),'ok');await mkdir(resolve(folder,'..'),{recursive:true});await rename(stage,folder); }
+  finally { await rm(stage,{recursive:true,force:true}); }
+  return target;
+}

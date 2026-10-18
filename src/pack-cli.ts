@@ -1,3 +1,4 @@
+import { resolveManagerConfig, storage } from "./workspace-storage.ts";
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { PackManager } from './pack-manager.ts';
@@ -31,7 +32,7 @@ async function main() {
   const command = args.shift();
   if (!command || command === '--help' || command === 'help') { console.log(help); return; }
   if (command === 'init') {
-    let root: string | undefined, state = '.skin-pack-manager';
+    let root: string | undefined, state = storage.skins;
     while (args.length) {
       const flag = args.shift(), value = args.shift();
       if (!value || !['--root', '--state'].includes(flag!)) throw new Error('init requires --root <path> and optional --state <path>');
@@ -45,8 +46,7 @@ async function main() {
     console.log(JSON.stringify({ configPath, ...config }, null, 2)); return;
   }
   const raw = JSON.parse(await readFile(configPath, 'utf8')) as ManagerConfig;
-  const manager = new PackManager({ ...raw, skinPacksRoot: resolve(dirname(configPath), raw.skinPacksRoot),
-    stateDir: resolve(dirname(configPath), raw.stateDir) });
+  const manager = new PackManager(await resolveManagerConfig(raw,configPath));
   const count = (min: number, max = min) => { if (args.length < min || args.length > max) throw new Error('Wrong arguments for ' + command + '\n' + help); };
   let result: unknown;
   switch (command) {
@@ -66,3 +66,4 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 try { await main(); } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
+

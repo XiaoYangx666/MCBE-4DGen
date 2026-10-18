@@ -1,5 +1,7 @@
+import { storage, dataRoot, initializeStorage, resolveManagerConfig, requestStorageLocation, within } from "../src/workspace-storage.ts";
+import { createImageSkin } from "../src/image-template.ts";
 import { autoProfile } from "../src/auto-profile.ts";
-import { importLocal, rememberModel, listModels, updateModel, removeModel } from "./model-library.ts";
+import { ownModel, importLocal, rememberModel, listModels, updateModel, removeModel } from "./model-library.ts";
 import { build } from "vite";
 import { resolve, basename, dirname, relative } from "node:path";
 import { createHash } from "node:crypto";
@@ -22,6 +24,7 @@ import { buildPreviewGlb, PREVIEW_TEXTURE_LIMIT } from "../src/preview-asset.ts"
 import { MeshoptEncoder } from "meshoptimizer";
 import type { IntermediateModel } from "../src/model.ts";
 
+await initializeStorage();
 const root = resolve(import.meta.dir, ".."),
   dist = resolve(root, ".cache/web-dist");
 await build({
@@ -90,7 +93,7 @@ const stableJson = (value: unknown) =>
 const io = new NodeIO()
   .registerExtensions(ALL_EXTENSIONS)
   .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
-const previewCacheDir = resolve(root, ".cache/web-preview");
+const previewCacheDir = resolve(storage.cache, "web-preview");
 function previewCachePath(key: string) {
   return resolve(previewCacheDir, key + ".glb");
 }
@@ -150,21 +153,24 @@ const managerConfigPath = resolve(
 );
 let manager: PackManager | null = null;
 let managerError = "";
+let gameConfigured = false;
 try {
   const config = JSON.parse(
     await readFile(managerConfigPath, "utf8"),
   ) as ManagerConfig;
-  manager = new PackManager({
-    ...config,
-    skinPacksRoot: resolve(dirname(managerConfigPath), config.skinPacksRoot),
-    stateDir: resolve(dirname(managerConfigPath), config.stateDir),
-  });
+  manager = new PackManager(await resolveManagerConfig(config,managerConfigPath));
+  gameConfigured = true;
 } catch (error) {
   managerError =
     `未找到或无法读取皮肤包管理配置 ${managerConfigPath}：` +
     (error instanceof Error ? error.message : String(error));
 }
-if (manager) await manager.initializePresetSources();
+if (!manager) manager = new PackManager({libraryOnly:true,version:1,skinPacksRoot:resolve(dataRoot,"game-targets"),stateDir:storage.skins,slots:{custom:{manifestFormat:2},persona:{manifestFormat:1}}});
+if (gameConfigured) await manager.initializePresetSources();
+for (const entry of await listModels()) {
+  try { const path = await ownModel(entry.path); if(path!==entry.path) await updateModel(entry.id,{path}); }
+  catch (error) { console.warn("源模型归档未完成：",entry.name,String(error)); }
+}
 function requireManager() {
   if (!manager) throw Error(managerError);
   return manager;
@@ -185,13 +191,14 @@ async function load(
   cachePreview = true,
   existingId?: string,
 ) {
+  path = await ownModel(path);
   if (sessions.size >= 4) sessions.delete(sessions.keys().next().value!);
   const source =
     cache && (await Bun.file(resolve(root, cache)).exists())
       ? resolve(root, cache)
       : path;
   const modelKey = await previewCacheKey(source);
-  const modelCache = resolve(root, ".cache/web-models", modelKey);
+  const modelCache = resolve(storage.cache, "web-models", modelKey);
   let model: IntermediateModel;
   try {
     const meta = JSON.parse(await readFile(modelCache + ".json", "utf8"));
@@ -286,13 +293,13 @@ async function warmPresetPreviews() {
 // Upgrade previous library entries from existing parsed-model caches, without importing sources again.
 for (const entry of await listModels()) {
   if (entry.previewKey && entry.stats && entry.profile !== undefined) continue;
-  for (const file of await readdir(resolve(root, ".cache/web-models")).catch(() => [] as string[])) {
+  for (const file of await readdir(resolve(storage.cache, "web-models")).catch(() => [] as string[])) {
     if (!file.endsWith(".json")) continue;
     try {
-      const meta = JSON.parse(await readFile(resolve(root, ".cache/web-models", file), "utf8"));
+      const meta = JSON.parse(await readFile(resolve(storage.cache, "web-models", file), "utf8"));
       if (meta.source?.path !== entry.path) continue;
       const key = file.slice(0, -5);
-      const doc = await io.read(resolve(root, ".cache/web-models", key + ".glb"));
+      const doc = await io.read(resolve(storage.cache, "web-models", key + ".glb"));
       let triangles = 0;
       for (const mesh of doc.getRoot().listMeshes()) for (const p of mesh.listPrimitives()) triangles += (p.getIndices()?.getCount() ?? p.getAttribute("POSITION")!.getCount()) / 3;
       await rememberModel(entry.path, entry.name, { profile: autoProfile(doc), previewKey: key, stats: { triangles, materials: doc.getRoot().listMaterials().length, bytes: (await stat(entry.path)).size } });
@@ -317,6 +324,28 @@ const server = Bun.serve({
         return json({ error: "Invalid host" }, 403);
       if (req.method !== "GET" && req.headers.get("origin") !== url.origin)
         return json({ error: "同源请求校验失败" }, 403);
+      if (url.pathname === "/api/storage" && req.method === "GET") return json({root:dataRoot,models:storage.models,sources:storage.sources,skins:storage.skins,cache:storage.cache,environment:!!process.env.FOURDGEN_DATA_DIR});
+      if (url.pathname === "/api/storage" && req.method === "POST") {
+        const body=await req.json() as {path:string}; await requestStorageLocation(String(body.path??""));
+        return json({restartRequired:true,message:"数据目录已设置，重启后自动复制数据。旧目录保留。"});
+      }
+      if (url.pathname === "/api/templates/image" && req.method === "POST") {
+        if (busy) return json({error:"已有任务正在运行"},409);
+        busy=true;
+        try {
+          const form=await req.formData(),file=form.get("image");
+          if (!(file instanceof File) || file.size>20*1024*1024) throw Error("请选择 20 MB 以内的图片");
+          const name=String(form.get("name")||file.name.replace(/\.[^.]+$/,"")).trim();
+          const height=Number(form.get("height")??32),bytes=new Uint8Array(await file.arrayBuffer());
+          const image=await createImageSkin(bytes,{name,height});
+          const imageId=createHash("sha256").update(bytes).digest("hex"),source=resolve(storage.sources,"images",imageId+".png");
+          await mkdir(dirname(source),{recursive:true});await writeFile(source,image.sourcePng);
+          const id=crypto.randomUUID();
+          if(jobs.size>=8)jobs.delete(jobs.keys().next().value!);
+          jobs.set(id,{status:"done",message:"图片皮肤已生成",files:image.files,geometry:image.geometry,texture:image.png,meta:{source,template:"image",height},result:{report:{triangles:4},details:{},excluded:[]}});
+          return json({id,name,width:image.width,height,source});
+        } finally {busy=false;}
+      }
       if (url.pathname === "/api/models" && req.method === "GET")
         return json(await listModels());
       if (url.pathname === "/api/models/update" && req.method === "POST") {
@@ -403,7 +432,7 @@ const server = Bun.serve({
           }
           const digest = uploadHash.digest("hex");
           const uploadId = `${digest.slice(0,8)}-${digest.slice(8,12)}-${digest.slice(12,16)}-${digest.slice(16,20)}-${digest.slice(20,36)}`;
-          const folder = resolve(root, ".cache/web-uploads", uploadId);
+          const folder = resolve(storage.sources, "uploads", uploadId);
           await mkdir(folder, { recursive: true });
           let total = 0;
           const paths: string[] = [];
@@ -461,7 +490,7 @@ const server = Bun.serve({
           const body = (await req.json()) as { pending?: string; main?: string };
           const id = String(body.pending ?? "");
           if (!/^[0-9a-f-]{36}$/.test(id)) throw Error("上传会话无效或已过期");
-          const folder = resolve(root, ".cache/web-uploads", id);
+          const folder = resolve(storage.sources, "uploads", id);
           const main = resolve(folder, safeName(String(body.main ?? "")));
           if (!main.startsWith(folder + "\\") && !main.startsWith(folder + "/"))
             throw Error("模型路径无效");
@@ -669,6 +698,7 @@ const server = Bun.serve({
             result: j.result,
           });
         if (j.status !== "done") throw Error("任务尚未完成");
+        if (asset === "scene") return json({name:j.meta?.source??"图片皮肤",identifier:"geometry.skin0",geometry:j.geometry,skins:1,texture:`/api/job/${parts[2]}/texture`});
         if (asset === "download") return new Response(await zipSkinPack(j.files!) as BodyInit, {
           headers: { "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="skin.mcpack"' },
         });
@@ -682,15 +712,17 @@ const server = Bun.serve({
         if (!manager)
           return json({ configured: false, configPath: managerConfigPath, error: managerError });
         const [status, library] = await Promise.all([
-          manager.status(),
+          gameConfigured ? manager.status() : Promise.resolve([]),
           manager.ensureStats(),
         ]);
         return json({
           configured: true,
+          gameConfigured,
+          gameError:gameConfigured ? undefined : managerError,
           configPath: managerConfigPath,
           root: manager.config.skinPacksRoot,
           stateDir: manager.config.stateDir,
-          slots: manager.config.slots,
+          slots: gameConfigured ? manager.config.slots : {},
           status,
           library: library.sort((a, b) => b.imported.localeCompare(a.imported)),
         });
@@ -735,8 +767,14 @@ const server = Bun.serve({
         if (parts[3] === "texture") return new Response(scene.texture as BodyInit, { headers: { "Content-Type": "image/png" } });
         if (parts[3] === "scene") return json({ ...scene, texture: `data:image/png;base64,${Buffer.from(scene.texture).toString("base64")}` });
       }
+      if (parts[0] === "api" && parts[1] === "packs" && parts[3] === "source-image" && req.method === "GET") {
+        const pack=(await requireManager().list()).find(p=>p.id===parts[2]);
+        const source=pack?.meta?.source;
+        if(pack?.meta?.template!=="image" || typeof source!=="string" || !within(storage.sources,source)) throw Error("没有可编辑的模板源图片");
+        return new Response(new Uint8Array(await readFile(source)),{headers:{"Content-Type":"image/png"}});
+      }
       if (parts[0] === "api" && parts[1] === "packs" && parts[3] === "download" && req.method === "GET") {
-        const folder = resolve(root, ".cache/pack-exports", crypto.randomUUID());
+        const folder = resolve(storage.cache, "pack-exports", crypto.randomUUID());
         await mkdir(folder, { recursive: true });
         const output = resolve(folder, "skin.mcpack");
         try {
@@ -765,7 +803,7 @@ const server = Bun.serve({
         }
         const form = await req.formData(), file = form.get("file");
         if (!(file instanceof File) || !/\.(mcpack|zip)$/i.test(file.name)) throw Error("请选择 .mcpack 或皮肤包 ZIP");
-        const folder = resolve(root, ".cache/pack-imports");
+        const folder = resolve(storage.cache, "pack-imports");
         await mkdir(folder, { recursive: true });
         const path = resolve(folder, id + ".mcpack");
         try { await writeFile(path, new Uint8Array(await file.arrayBuffer()), { flag: "wx" }); return json(await m.importPack(id, path)); }
@@ -776,6 +814,7 @@ const server = Bun.serve({
         return json(await requireManager().renameNames(body.id, body));
       }
       if (url.pathname === "/api/packs/apply-update" && req.method === "POST") {
+        if(!gameConfigured)throw Error("请先配置游戏目录");
         const body = await req.json() as { id: string; slot: string };
         return json(await requireManager().updateEnabled(body.slot, body.id));
       }
@@ -797,7 +836,7 @@ const server = Bun.serve({
           { ...job.meta, versionName: String(body.label ?? "").trim().slice(0, 120) || new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) },
         );
         if (body.label?.trim()) await m.renameNames(pack.id, {name: body.label.trim().slice(0, 120), skinIndex: 0, skinName: body.label.trim().slice(0, 120)});
-        if (!body.slot) return json({ pack, enabled: false });
+        if (!body.slot || !gameConfigured) return json({ pack, enabled: false });
         try {
           await m.enable(body.slot, pack.id);
           return json({ pack, enabled: true });
@@ -809,6 +848,7 @@ const server = Bun.serve({
           });
         }
       }
+      if (["/api/packs/enable","/api/packs/disable","/api/packs/restore","/api/packs/recover","/api/packs/apply-update"].includes(url.pathname) && !gameConfigured) throw Error("请先配置游戏 skin_packs 目录；本地保存和导出仍可使用");
       if (url.pathname === "/api/packs/enable" && req.method === "POST") {
         const body = (await req.json()) as { slot?: string; id?: string };
         const m = requireManager(), slot = String(body.slot ?? "");
