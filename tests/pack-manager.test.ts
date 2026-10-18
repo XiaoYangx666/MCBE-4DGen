@@ -213,3 +213,20 @@ test('empty user packs accept selected skin copies while preset views reflect ac
     assert.ok(!(await f.manager.list()).some(p => p.id === empty.id));
   } finally { await cleanup(f.dir); }
 });
+
+
+test('offline collection is usable before game configuration and keeps existing installed state protected',async()=>{
+  const f=await fixture();
+  try {
+    const offline=new PackManager({...f.manager.config,libraryOnly:true,skinPacksRoot:join(f.dir,'not-configured')});
+    await offline.importFiles('offline-skin',f.files,['texts']);
+    await assert.rejects(()=>offline.enable('custom','offline-skin'),/not configured/);
+    await f.manager.enable('custom','offline-skin');
+    assert.equal((await f.manager.status())[0]!.active![0]!.id,'offline-skin');
+    // Losing the config must not allow deletion of a still-installed pack.
+    await assert.rejects(()=>offline.remove('offline-skin'),/Disable/);
+    const collection=await offline.createPack('offline collection');
+    await offline.addSkins(collection.id,'offline-skin',[0]);
+    assert.equal((await offline.contents(collection.id)).skins.length,1);
+  }finally{await cleanup(f.dir);}
+});

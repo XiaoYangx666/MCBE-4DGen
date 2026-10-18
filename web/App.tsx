@@ -1,3 +1,5 @@
+import { TemplatesPage } from "./TemplatesPage";
+import { StorageDialog } from "./StorageDialog";
 import { useEffect, useState } from "react";
 import { SaveSkinDialog } from "./SaveSkinDialog";
 import { Viewer } from "./Viewer";
@@ -11,7 +13,8 @@ import { estimateTriangles } from "./estimate";
 import type { Result, Session } from "./types";
 
 export function App() {
-  const [saveOpen, setSaveOpen] = useState(false),
+  const [storageOpen,setStorageOpen] = useState(false),
+    [saveOpen, setSaveOpen] = useState(false),
     [savedRevision, setSavedRevision] = useState(0),
     [session, setSession] = useState<Session | null>(null),
     [result, setResult] = useState<Result | null>(null),
@@ -45,7 +48,7 @@ export function App() {
   useEffect(() => {
     const change = () => {
       setHash(location.hash);
-      const label = location.hash.startsWith("#/models") ? "源模型" : location.hash.startsWith("#/game") ? "游戏中的皮肤" : location.hash.startsWith("#/packs") ? "皮肤包" : location.hash.startsWith("#/workbench") ? "工作台" : "首页";
+      const label = location.hash.startsWith("#/templates") ? "皮肤模板" : location.hash.startsWith("#/models") ? "源模型" : location.hash.startsWith("#/game") ? "游戏中的皮肤" : location.hash.startsWith("#/packs") ? "皮肤包" : location.hash.startsWith("#/workbench") ? "工作台" : "首页";
       document.title = `4DGen · ${label}`;
     };
     change();
@@ -165,9 +168,9 @@ export function App() {
     setSavedRevision(revision); setMessage("编辑配置已保存");
   }
   const stale = !!result && revision !== resultRevision;
-  const page = hash.startsWith("#/models") ? "models" : (hash.startsWith("#/packs") || hash.startsWith("#/game")) ? "packs" : hash.startsWith("#/workbench") ? "workbench" : "home";
-  const navigation = <header className="app-nav"><a className="brand" href="#/">4D<span>Gen</span><i>LOCAL STUDIO</i></a><nav aria-label="主导航">{[["home","概览","#/"],["models","源模型","#/models"],["workbench","工作台","#/workbench"],["packs","皮肤包","#/packs"]].map(([key,label,to])=><a key={key} className={page===key?"active":""} aria-current={page===key?"page":undefined} href={to}>{label}</a>)}</nav><div className="header-right">{session&&<span className="current-model" title={session.name}>{session.name}</span>}{page==="workbench"&&session?.modelId&&<button disabled={busy} onClick={()=>void action(async()=>{await saveSettings();})}>{dirty ? "保存配置 ●" : "配置已保存"}</button>}<span className="local"><b/> 本地环境运行</span></div></header>;
-  if (page !== "workbench") return <div className="app">{navigation}{page === "packs" ? <PackPage/> : <LibraryPage key={page} home={page==="home"} onOpen={(s,settings)=>{if(busy)return;if(dirty&&!window.confirm("当前模型的配置尚未保存，仍要打开另一个模型吗？"))return;accept(settings?{...s,settings}:s,!!settings);}}/>}</div>;
+  const page = hash.startsWith("#/templates") ? "templates" : hash.startsWith("#/models") ? "models" : (hash.startsWith("#/packs") || hash.startsWith("#/game")) ? "packs" : hash.startsWith("#/workbench") ? "workbench" : "home";
+  const navigation = <><header className="app-nav"><a className="brand" href="#/">4D<span>Gen</span><i>LOCAL STUDIO</i></a><nav aria-label="主导航">{[["home","概览","#/"],["models","源模型","#/models"],["workbench","工作台","#/workbench"],["templates","皮肤模板","#/templates"],["packs","皮肤包","#/packs"]].map(([key,label,to])=><a key={key} className={page===key?"active":""} aria-current={page===key?"page":undefined} href={to}>{label}</a>)}</nav><div className="header-right"><button onClick={()=>setStorageOpen(true)}>数据目录</button>{session&&<span className="current-model" title={session.name}>{session.name}</span>}{page==="workbench"&&session?.modelId&&<button disabled={busy} onClick={()=>void action(async()=>{await saveSettings();})}>{dirty ? "保存配置 ●" : "配置已保存"}</button>}<span className="local"><b/> 本地环境运行</span></div></header>{storageOpen&&<StorageDialog onClose={()=>setStorageOpen(false)}/>}</>;
+  if (page !== "workbench") return <div className="app">{navigation}{page === "packs" ? <PackPage/> : page === "templates" ? <TemplatesPage/> : <LibraryPage key={page} home={page==="home"} onOpen={(s,settings)=>{if(busy)return;if(dirty&&!window.confirm("当前模型的配置尚未保存，仍要打开另一个模型吗？"))return;accept(settings?{...s,settings}:s,!!settings);}}/>}</div>;
 
   return (
     <div className="app">

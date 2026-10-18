@@ -21,7 +21,8 @@
     "binding:preview": "bun run scripts/diagnostics/preview-binding.ts",
     "workflow": "bun run scripts/workflow.ts",
     "dev": "bun server/start.ts",
-    "check:web": "tsc --noEmit -p tsconfig.web.json"
+    "check:web": "tsc --noEmit -p tsconfig.web.json",
+    "test:studio": "bun scripts/check-studio.ts"
   },
   "engines": {
     "bun": ">=1.4.3"

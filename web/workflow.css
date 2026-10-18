@@ -65,3 +65,26 @@ a[aria-disabled="true"] { opacity:.4; cursor:default; }
 
 .empty-pack .button-row { justify-content:center; }
 .empty-pack .button-row button { flex:0 0 auto; width:auto; }
+.template-layout { display:grid; grid-template-columns:320px minmax(0,1fr); gap:20px; min-height:640px; }
+.template-settings,.template-result { border:1px solid var(--line); border-radius:10px; background:#192128; min-width:0; }
+.template-settings { padding:24px; }
+.template-settings h2 { font-size:20px; }
+.template-settings p { color:#97aba4; line-height:1.8; font-size:12px; }
+.template-settings label,.storage-dialog label { display:block; margin-block:18px; }
+.template-settings input,.storage-dialog input { display:block; width:100%; padding:10px; margin-top:8px; background:#141c22; color:#e0e8e4; border:1px solid #41534c; border-radius:6px; }
+.template-settings fieldset { border:0; padding:0; margin:0; }
+.template-settings fieldset .primary { width:100%; }
+.template-icon { font-size:40px; color:var(--accent); }
+.image-source-preview { max-width:100%; height:150px; object-fit:contain; background:repeating-conic-gradient(#ffffff12 0% 25%,transparent 0% 50%) 50%/16px 16px; }
+.template-result { display:flex; flex-direction:column; overflow:hidden; }
+.template-result .packs-preview { flex:1; min-height:360px; }
+.template-result .empty-state { flex:1; display:grid; place-content:center; }
+.template-result-actions { padding:18px 22px; display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+.template-result-actions p { width:100%; color:#e3bb8d; }
+.storage-dialog { width:min(600px,calc(100vw - 32px)); }
+.storage-dialog p { line-height:1.8; color:#9eb3a9; }
+.storage-dialog dl { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:18px; background:#131d22; border-radius:6px; }
+.storage-dialog dd { margin:0; font-family:monospace; }
+@media(max-width:760px) { .template-layout { grid-template-columns:1fr; }.template-result .packs-preview { min-height:330px; }.app-nav nav a { padding:13px 8px; font-size:12px; } }
+
+.template-result-actions .primary { width:auto; flex:0 0 auto; }

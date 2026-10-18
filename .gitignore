@@ -3,3 +3,7 @@ outputs/
 .cache/
 skin-manager.local.json
 .skin-pack-manager/
+
+
+4dgen-data/
+storage.local.json

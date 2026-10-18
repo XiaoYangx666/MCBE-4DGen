@@ -8,6 +8,7 @@ import { isPaddedTriangle } from './geometry-validator.ts';
 import sharp from 'sharp';
 
 export interface ManagerConfig {
+  libraryOnly?: boolean;
   version: 1;
   skinPacksRoot: string;
   stateDir: string;
@@ -33,6 +34,7 @@ export interface PackStats {
 }
 /** Project metadata kept beside the pack; not part of the installable pack files. */
 export interface PackMeta {
+  template?: "image";
   importWarnings?: string[];
   versionName?: string;
   modelId?: string;
@@ -119,7 +121,7 @@ async function statsFor(files: SkinPackFiles): Promise<PackStats> {
         if (!mesh) continue;
         bones++;
         vertices += mesh.positions.length;
-        for (const poly of mesh.polys) triangles += isPaddedTriangle(poly as never) ? 1 : 2;
+        for (const poly of mesh.polys) triangles += poly.length===3 || isPaddedTriangle(poly as never) ? 1 : 2;
       }
     }
   }
@@ -143,6 +145,7 @@ export class PackManager {
     }
     if (!relative(config.skinPacksRoot, config.stateDir) || inside(config.skinPacksRoot, config.stateDir) || inside(config.stateDir, config.skinPacksRoot)) throw new Error('Manager state and skin_packs root must be separate');
   }
+  private requireGame() { if(this.config.libraryOnly)throw new Error("Game directory is not configured"); }
   private target(slot: string) {
     if (!Object.hasOwn(this.config.slots, slot)) throw new Error('Slot is not configured: ' + slot);
     const target = resolve(this.config.skinPacksRoot, validID(slot));
@@ -159,7 +162,7 @@ export class PackManager {
     const path = this.statePath(slot);
     if (!(await exists(path))) return null;
     const state = await json<TargetState>(path);
-    if (state.target !== this.target(slot) || state.slot !== slot) throw new Error('Target state belongs to another directory');
+    if ((!this.config.libraryOnly && state.target !== this.target(slot)) || state.slot !== slot) throw new Error('Target state belongs to another directory');
     state.presetSources ??= state.generation === 0 ? state.active.map(p => p.id) : [];
     return state;
   }
@@ -170,7 +173,7 @@ export class PackManager {
     const lock = join(this.config.stateDir, 'operation.lock');
     try { await mkdir(lock); } catch { throw new Error('Another manager operation is running (or operation.lock remains after a crash); inspect before clearing the lock'); }
     try {
-      if (await exists(owner)) {
+      if (this.config.libraryOnly) { /* Local collection operations do not bind a game directory. */ } else if (await exists(owner)) {
         if ((await json<{ root: string }>(owner)).root !== this.config.skinPacksRoot) throw new Error('State directory belongs to a different root');
       } else await atomicJSON(owner, { root: this.config.skinPacksRoot });
       return await action();
@@ -358,6 +361,7 @@ export class PackManager {
     });
   }
   async updateEnabled(slot: string, id: string) {
+    this.requireGame();
     return this.locked(async () => {
       const pack = await json<LibraryPack>(this.libraryPath(id));
       if (pack.removed || pack.draft || !pack.skins || pack.warnings?.length) throw new Error('皮肤包不可启用，请先添加皮肤并检查兼容提示');
@@ -472,6 +476,7 @@ export class PackManager {
   }
   /** Explicit migration of an already installed slot, with the user's original backup. No target writes. */
   async adopt(slot: string, originalDirectory: string, packID?: string) {
+    this.requireGame();
     return this.locked(async () => {
       if (await this.state(slot)) throw new Error('Slot is already managed');
       let active: Active = [];
@@ -553,6 +558,7 @@ export class PackManager {
     return { slot, active, backup: backup.id, installed: state.installed };
   }
   async enable(slot: string, id: string) {
+    this.requireGame();
     return this.locked(async () => {
       const pack = await json<LibraryPack>(this.libraryPath(id)); if (pack.removed || pack.draft || !pack.skins) throw new Error('皮肤包为空或已归档，请先添加皮肤');
       if (pack.warnings?.length) throw new Error('Pack needs client compatibility adjustment: ' + pack.warnings.join('; '));
@@ -563,6 +569,7 @@ export class PackManager {
     });
   }
   async disable(slot: string, id: string) {
+    this.requireGame();
     return this.locked(async () => {
       const state = await this.state(slot); if (!state || !state.active.some((p) => p.id === id)) throw new Error('Pack is not enabled in this slot');
       const active = state.active.filter((p) => p.id !== id);
@@ -570,6 +577,7 @@ export class PackManager {
     });
   }
   async restore(slot: string, backupID?: string) {
+    this.requireGame();
     return this.locked(async () => {
       const state = await this.state(slot); if (!state) throw new Error('Slot is not managed');
       const backup = await this.loadSnapshot(slot, backupID ?? state.original);
@@ -577,6 +585,7 @@ export class PackManager {
     });
   }
   async recover(slot: string) {
+    this.requireGame();
     return this.locked(async () => {
       const state = await this.state(slot); if (!state?.pending) throw new Error('No interrupted operation');
       const backup = await this.loadSnapshot(slot, state.pending.backup);

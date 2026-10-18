@@ -85,3 +85,22 @@ test('missing sources can be relinked without losing identity, settings or versi
     await rm(folder, {recursive: true, force: true});
   }
 });
+
+test('managed source copies model and nested sidecars independently of original files',async()=>{
+  const {ownModel}=await import('../server/model-library.ts');
+  const folder=await mkdtemp(join(tmpdir(),'4d-owned-'));
+  let copied='';
+  try {
+    const {mkdir}=await import('node:fs/promises');
+    await mkdir(join(folder,'textures'));await writeFile(join(folder,'textures/a.png'),'texture');
+    const source=join(folder,'model.obj');await writeFile(source,'model');
+    copied=await ownModel(source);
+    expect(copied).not.toBe(source);
+    await rm(folder,{recursive:true,force:true});
+    expect(await Bun.file(copied).text()).toBe('model');
+    expect(await Bun.file(join(copied,'../textures/a.png')).text()).toBe('texture');
+  }finally{
+    await rm(folder,{recursive:true,force:true});
+    if(copied)await rm(join(copied,'..'),{recursive:true,force:true});
+  }
+});

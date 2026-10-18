@@ -15,6 +15,10 @@ bun run packs enable persona shino-release
 
 已实现模型导入、静态/VRM 人形绑定、带本地化的 mcpack、预览、配置化工作流和可恢复的包管理。Shino 的显示、穿戴、衣物归属及姿势已由用户在 Windows 客户端迭代验证；其它模型仍需单独验收。
 
+## 统一数据目录与皮肤模板
+
+模型、贴图、模板图片、配置和皮肤包统一保存在 `4dgen-data/`。顶部“数据目录”支持设置存储位置并在重启后复制迁移。新导入的模型与贴图会归档，皮肤包收藏无需先配置游戏。新增图片模板，可直接把任意可解码图片制作成双面平面 4D 皮肤。详见 [数据目录与图片模板](docs/storage-and-templates.md)。
+
 ## 本地网页工作台
 
 运行 `bun run dev`，打开 http://127.0.0.1:4173 。React + Vite 页面和转换接口由一个 Bun 进程提供，支持三维预览、材质筛选、姿势与减面调整，并可把结果保存到本地环境皮肤包库、启停与恢复。详见 [本地网页说明](docs/local-web.md)。
@@ -163,3 +167,4 @@ bun run convert avatar.vrm --out ./avatar-humanoid --binding humanoid
 人形静止姿势先修改源肩关节，再用原始混合权重计算皮肤、袖子和肩部的形变，之后冻结到目标骨骼。profile 的 `materialRules` 可按源材质设置 `body`（整件衣物归躯干）或 `arm-components`（按源索引拓扑连通部分及累计骨骼权重区分袖子，`minArmWeight` 指定阈值）。Shino 的 Bottoms 整体归躯干，Tops 的连通袖子归手臂；规则精确匹配源材质，拼错或未命中会报错。用 `bun run binding:inspect avatar.vrm outputs/avatar-binding.json` 保存源归属检查报告。
 
 可运行 `bun run scripts/samples/fetch-avatar-sample.ts GeneLight` 或 `Shino` 获取固定修订、SHA256 校验的角色样本；二进制只放缓存。具体兼容范围、来源/许可和验证数据见 [角色格式接入](docs/stages/stage-6-avatars.md)。
+

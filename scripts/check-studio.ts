@@ -1,0 +1,32 @@
+/** Isolated HTTP smoke test: storage + template + offline library + archive. */
+import {mkdtemp,rm,writeFile,readFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {resolve,join} from 'node:path';
+import sharp from 'sharp';
+import JSZip from 'jszip';
+import assert from 'node:assert/strict';
+const fixture=await mkdtemp(join(tmpdir(),'4d-studio-'));
+const root=resolve(import.meta.dir,'..'),port=4187,base=`http://127.0.0.1:${port}`;
+const child=Bun.spawn([process.execPath,'server/start.ts'],{cwd:root,env:{...process.env,PORT:String(port),FOURDGEN_DATA_DIR:join(fixture,'data'),SKIN_MANAGER_CONFIG:join(fixture,'missing-config.json')},stdout:'pipe',stderr:'inherit'});
+try {
+  const reader=child.stdout.getReader();let output='';
+  while(!output.includes('本地工作台')) {const next=await reader.read();if(next.done)throw Error('Server stopped: '+output);output+=new TextDecoder().decode(next.value);}
+  const post=async(path:string,body:unknown)=>{const r=await fetch(base+path,{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify(body)});const v:any=await r.json();assert.equal(r.status,200,JSON.stringify(v));return v;};
+  const storage:any=await(await fetch(base+'/api/storage')).json();assert.equal(storage.root,join(fixture,'data'));
+  const image=await sharp({create:{width:60,height:120,channels:4,background:{r:40,g:180,b:100,alpha:0.7}}}).png().toBuffer();
+  const form=new FormData();form.append('image',new File([image],'测试.png'));form.append('name','图片模板验证');form.append('height','32');
+  const response=await fetch(base+'/api/templates/image',{method:'POST',headers:{Origin:base},body:form});const result:any=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.width,16);
+  assert.ok(result.source.startsWith(storage.sources));assert.ok((await readFile(result.source)).length);
+  const scene:any=await(await fetch(base+'/api/job/'+result.id+'/scene')).json();assert.ok(scene.geometry['geometry.skin0']);
+  const saved=await post('/api/packs/install',{job:result.id,label:'图片模板验证'});
+  const packs:any=await(await fetch(base+'/api/packs')).json();assert.equal(packs.configured,true);assert.equal(packs.gameConfigured,false);assert.equal(packs.stateDir,storage.skins);assert.equal(packs.status.length,0);
+  assert.equal(packs.library.find((p:any)=>p.id===saved.pack.id).stats.triangles,4);
+  const download=await fetch(base+'/api/packs/'+saved.pack.id+'/download');assert.equal(download.status,200);
+  const zip=await JSZip.loadAsync(await download.arrayBuffer());assert.ok(zip.file('geometry.json'));assert.ok(zip.file('skin0.png'));
+  const blocked=await fetch(base+'/api/packs/enable',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({slot:'custom',id:saved.pack.id})});assert.equal(blocked.status,400);
+  await writeFile(join(fixture,'model.obj'),'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n');
+  const model=await post('/api/local-import',{path:join(fixture,'model.obj')});
+  const models:any=await(await fetch(base+'/api/models')).json();const entry=models.find((m:any)=>m.id===model.modelId);assert.ok(entry.path.startsWith(storage.sources));
+  if(process.argv.includes('--browser')) {const p=Bun.spawn(['node',process.env.STUDIO_BROWSER_TEST!],{env:{...process.env,STUDIO_BASE:base,STUDIO_FIXTURE:fixture},stdout:'inherit',stderr:'inherit'});assert.equal(await p.exited,0);}
+  console.log('PASS: unified model/image/skin storage, offline template save, 4 triangles, archive and game-write guard');
+} finally {child.kill();await child.exited;await rm(fixture,{recursive:true,force:true});}

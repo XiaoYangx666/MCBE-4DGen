@@ -1,3 +1,4 @@
+import { resolveManagerConfig } from "../src/workspace-storage.ts";
 import { readFile, writeFile, mkdir, lstat } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -24,7 +25,7 @@ async function main() {
   if (config.managerConfig) {
     if (!config.libraryId) throw new Error('managerConfig requires libraryId');
     const path = resolve(base, config.managerConfig), value = JSON.parse(await readFile(path, 'utf8')) as ManagerConfig;
-    manager = new PackManager({ ...value, skinPacksRoot: resolve(dirname(path), value.skinPacksRoot), stateDir: resolve(dirname(path), value.stateDir) });
+    manager = new PackManager(await resolveManagerConfig(value,path));
     if ((await manager.list()).some((p) => p.id === config.libraryId)) throw new Error('Library ID already exists; choose a new version ID');
   }
   if (args.includes('--deploy') && (!manager || !config.slot)) throw new Error('--deploy requires managerConfig, libraryId and slot');
@@ -64,3 +65,4 @@ async function main() {
   console.log(JSON.stringify({ output, previewPath, reportPath, libraryId: imported?.id ?? null, deployed: !!report.deployment }, null, 2));
 }
 try { await main(); } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exitCode = 1; }
+

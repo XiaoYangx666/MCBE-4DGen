@@ -1,9 +1,13 @@
 {
   "version": 1,
   "skinPacksRoot": "D:/Minecraft/Content/data/skin_packs",
-  "stateDir": ".skin-pack-manager",
+  "stateDir": "4dgen-data/skins",
   "slots": {
-    "custom": { "manifestFormat": 2 },
-    "persona": { "manifestFormat": 1 }
+    "custom": {
+      "manifestFormat": 2
+    },
+    "persona": {
+      "manifestFormat": 1
+    }
   }
 }
