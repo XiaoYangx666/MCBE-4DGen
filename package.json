@@ -13,7 +13,8 @@
     "sample:prepare": "bun run scripts/prepare-sample.ts",
     "sample:export": "bun run scripts/export-sample.ts",
     "convert": "bun run src/cli.ts convert",
-    "validate": "bun run src/cli.ts validate"
+    "validate": "bun run src/cli.ts validate",
+    "preview": "bun run src/cli.ts preview"
   },
   "engines": {
     "bun": ">=1.4.3"
@@ -34,3 +35,4 @@
   },
   "packageManager": "bun@1.4.3"
 }
+

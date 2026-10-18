@@ -1,8 +1,10 @@
 import { lstat, mkdir, readdir, writeFile } from 'node:fs/promises';
-import { basename, parse as parsePath, resolve } from 'node:path';
+import { basename, dirname, parse as parsePath, resolve } from 'node:path';
 import { importModel, INPUT_FORMATS } from './importer.ts';
 import { formatInspection, inspectModel } from './inspect.ts';
 import { optimizeModel } from './optimizer.ts';
+import { previewOutput } from './preview.ts';
+import type { PreviewOptions } from './geometry-preview.ts';
 import { bindStatic } from './bone-mapper.ts';
 import { exportBedrockGeometry } from './bedrock-exporter.ts';
 import { buildSkinPack, validateSkinPackFiles, validateSkinPackPath, zipSkinPack } from './skin-pack.ts';
@@ -14,6 +16,8 @@ const help = [
   '  bun run src/cli.ts inspect <model> [--json] [--backend auto|native|wasm]',
   '  bun run src/cli.ts convert <model> [options]',
   '  bun run src/cli.ts validate <directory|file.mcpack>',
+  '  bun run src/cli.ts preview <directory|file.mcpack|geometry.json> [--out file.png]',
+  '    [--texture atlas.png] [--geometry geometry.id] [--size 64..1024] [--no-cull] [--unlit]',
   '',
   'Convert options:',
   '  --out <directory>    Output folder (default: ./<model-name>-skin-pack)',
@@ -62,6 +66,29 @@ async function main() {
     }
     const report = await inspectModel(await importModel(input, { backend: importer }));
     console.log(json ? JSON.stringify(report, null, 2) : formatInspection(report));
+    return;
+  }
+  if (command === 'preview') {
+    let out = resolve(parsePath(basename(input)).name + '-preview.png');
+    const options: PreviewOptions & { texture?: string } = {};
+    while (args.length) {
+      const flag = args.shift()!;
+      if (flag === '--no-cull') options.cullBackfaces = false;
+      else if (flag === '--unlit') options.unlit = true;
+      else if (['--out', '--texture', '--geometry', '--size'].includes(flag)) {
+        const value = args.shift();
+        if (!value || value.startsWith('--')) throw new Error('Missing value for ' + flag);
+        if (flag === '--out') out = resolve(value);
+        else if (flag === '--texture') options.texture = value;
+        else if (flag === '--geometry') options.identifier = value;
+        else options.size = positive(value, flag, true);
+      } else throw new Error('Unknown preview argument: ' + flag);
+    }
+    const result = await previewOutput(input, options);
+    await mkdir(dirname(out), { recursive: true });
+    await writeFile(out, result.png, { flag: 'wx' });
+    const { png, ...report } = result;
+    console.log(JSON.stringify({ output: out, ...report }, null, 2));
     return;
   }
   if (command === 'validate') {

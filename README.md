@@ -27,7 +27,8 @@ CLI、样本脚本与自动化测试均通过 Bun 执行，不再重复运行 No
 | 4A | Static 绑定、旧版 poly_mesh、独立几何校验 | 完成 |
 | 4B | 完整 mcpack、convert/validate CLI | 本地类型检查与测试通过；待实机验证 |
 | 5A | FBX/DAE/STL/PLY、完整转换回归、覆盖保护 | 完成 |
-| 5B | 复杂角色格式与真实客户端演示、完整使用文档 | 待实现 |
+| 5B-1 | 实际导出文件四视图预览 | 完成 |
+| 5B-2 | 复杂角色格式与真实客户端演示、完整使用文档 | 待实现 |
 
 每个阶段完成验证后独立提交。Humanoid、Web UI、其它输入格式留待后续。
 
@@ -106,3 +107,15 @@ FBX、DAE、STL、PLY 可使用同样的命令，例如 `bun run convert model.f
 
 PMX/PMD、VRM、Blend 暂未开放；不能将 Assimp 的底层格式列表视为本项目已验证支持。PLY 顶点色仍会明确拒绝，STL 无 UV 时生成纯色图集。
 
+
+## 检查实际导出外观
+
+```sh
+bun run preview ./my-skin --out ./my-skin-preview.png
+bun run preview ./my-skin.mcpack --out ./archive-preview.png
+bun run preview ./my-skin/geometry.json --texture ./my-skin/skin0.png --out ./geometry-preview.png
+```
+
+读取实际写出的几何和 PNG，生成 +Z、-Z、+X、斜视四视图。默认开启背面剔除和简单光照；`--unlit` 查看原始贴图色，`--no-cull` 排查面朝向，`--size 512` 调整单视图尺寸。已有输出文件拒绝覆盖。多几何可用 `--geometry geometry.skin0` 选择。
+
+这是离线诊断图，不是 Minecraft 渲染器。支持当前 Static 导出和无初始旋转的骨骼；相交透明面使用近似排序，客户端显示与穿戴仍需实测。实现和校准证据见 [导出结果预览](docs/stage-5-preview.md)。
