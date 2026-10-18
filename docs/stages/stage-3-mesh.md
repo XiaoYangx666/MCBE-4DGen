@@ -24,9 +24,9 @@
 设置 ratio=0.5、maxError=0.001。导出优化后的真实 GLB 并重新导入，断言读回面数与报告一致。另用实际三角形生成斜视/侧视几何预览，核对 ToyCar 原始/简化轮廓；预览不含 PBR、纹理或精确光栅化，不能代替最终外观和客户端验证。
 
 ```sh
-bun run scripts/optimize-sample.ts ToyCar 0.5 0.001
-bun run scripts/optimize-sample.ts Avocado 0.5 0.001
-bun run scripts/preview-mesh.ts .cache/samples/ToyCar.glb .cache/samples/ToyCar-optimized.glb
+bun run scripts/samples/optimize-sample.ts ToyCar 0.5 0.001
+bun run scripts/samples/optimize-sample.ts Avocado 0.5 0.001
+bun run scripts/samples/preview-mesh.ts .cache/samples/ToyCar.glb .cache/samples/ToyCar-optimized.glb
 bun test tests/mesh-optimizer.test.ts
 ```
 

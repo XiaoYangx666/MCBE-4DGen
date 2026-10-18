@@ -18,7 +18,7 @@
 - [Microsoft 1.8.0 几何 schema](https://learn.microsoft.com/en-us/minecraft/creator/reference/content/schemasreference/schemas/minecraftschema_geometry_1.8.0?view=minecraft-bedrock-stable)。
 - [MBSM 固定修订](https://github.com/Darktubbie/MBSM/tree/d148bf5698445eb532274b8a64ff99aee29a3c02)：研究 `obj-a-skin-bedrock.js` 和 `renderer5d.js` 的格式行为。GPL-3.0，仅参考，不复制代码。
 
-只读复现：`bun run scripts/inspect-reference.ts <zip路径>`；复杂样本需附加诊断选项 `--allow-final-comma`。
+只读复现：`bun run scripts/diagnostics/inspect-reference.ts <zip路径>`；复杂样本需附加诊断选项 `--allow-final-comma`。
 
 ## 独立实现约定
 

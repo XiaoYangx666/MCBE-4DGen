@@ -30,8 +30,8 @@
 ToyCar 有 3 个材质区域：256² 车身、768² 的 3×3 布料重复区域、4² 纯色玻璃替代区域。原模型的 8 张纹理中包含 PBR 效果纹理，不把它们全部当成基础色拼接。1024² 容量测试明确失败，2048² 成功；没有丢弃布料重复采样。玻璃透射是已报告的未支持效果，替代区域不等价于原来的玻璃材质。
 
 ```sh
-bun run scripts/atlas-sample.ts ToyCar 256 2048
-bun run scripts/atlas-sample.ts Avocado 128 256
+bun run scripts/samples/atlas-sample.ts ToyCar 256 2048
+bun run scripts/samples/atlas-sample.ts Avocado 128 256
 bun test tests/texture-optimizer.test.ts
 ```
 

@@ -1,8 +1,8 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import sharp from 'sharp';
-import { previewOutput } from '../src/preview.ts';
-import type { BedrockGeometryFile } from '../src/bedrock-types.ts';
+import { previewOutput } from '../../src/preview.ts';
+import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 
 if (!process.argv[2]) throw new Error('Usage: bun run binding:preview <generated-pack-directory> [output-prefix]');
 const source = resolve(process.argv[2]);

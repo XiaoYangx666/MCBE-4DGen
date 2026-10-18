@@ -54,8 +54,8 @@
 bun install --frozen-lockfile
 bun run check
 bun test
-bun run scripts/prepare-sample.ts ToyCar 32
-bun run scripts/prepare-sample.ts Avocado 32
+bun run scripts/samples/prepare-sample.ts ToyCar 32
+bun run scripts/samples/prepare-sample.ts Avocado 32
 ```
 
 样本脚本写出 `*-prepared.glb`、`*-prepared-atlas.png` 和 `*-prepared-report.json` 到忽略的缓存目录。CLI convert 尚未接入，此脚本用于当前阶段复现。
