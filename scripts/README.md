@@ -20,6 +20,11 @@ CC0 免费样本的复现链路：`fetch-sample.ts` 下载并校验 SHA256，`ch
 
 一次性调查脚本，不是稳定接口：`inspect-reference.ts`（皮肤包几何对照）、`inspect-pmx-components.ts`（PMX 材质/连通部分统计）、`inspect-avatar-binding.ts` 与 `preview-binding.ts`（绑定归属检查与预览）。
 
+两个与转换耗时有关的脚本可重复使用：
+
+- `bench-convert.ts`：复现工作台冷启动链路（导入 → 人形导出 → 打包），逐阶段计时并输出中位数。`--model sample-b|sample-a`、`--runs N`、`--no-cache`（走真实 PMX/Assimp 导入）。只读取缓存模型，不安装皮肤包。
+- `fingerprint-convert.ts`：对同一输入保存几何 JSON、`skin0.png`、骨骼枢轴、部位面数与包内确定性文件（`manifest.json` 含随机 UUID，不参与比较）的 SHA256，用于证明性能改动没有改变输出。前后对比时把两次结果存到不同 `--out` 再比较字段。
+
 ## experiments/
 
 历史实验（客户端控制、早期元数据试验），保留作证据，不再作为日常入口。

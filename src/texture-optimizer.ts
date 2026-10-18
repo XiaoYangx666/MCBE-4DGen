@@ -460,82 +460,104 @@ export async function optimizeTextures(
       `Texture atlas capacity exceeded (${size}×${size}). Increase atlasSize or reduce maxTextureSize; padded regions: ${regions.map((r) => `${r.width + padding * 2}×${r.height + padding * 2}`).join(", ")}. No textures were discarded.`,
     );
   const atlas = Buffer.alloc(size * size * 4);
-  const reportRegions = [];
-  // Reuse decoded source images across islands; keep at most three in memory.
+  const reportRegions: {id:number; material:string; materials:string[]; surfaceAreas:Record<string,number>; weightedArea:number; x:number; y:number; width:number; height:number; source:Region["source"]; resized:{width:number;height:number}; tiles:Region["tiles"]; crop:Region["crop"]}[] = [];
+  // Reuse decoded source images across islands. The eviction budget must cover
+  // every distinct source texture used by the atlas: a smaller bound thrashed
+  // between textures and re-decoded multi-megapixel PNGs for each island.
   const decodedImages = new Map<Uint8Array, Buffer>();
-  const decodeImage = async (image: Uint8Array) => {
-    if (!decodedImages.has(image)) {
-      const raw = await sharp(image)
-        .toColourspace("srgb")
-        .ensureAlpha()
-        .raw()
-        .toBuffer();
-      if (decodedImages.size >= 3)
-        decodedImages.delete(decodedImages.keys().next().value!);
-      decodedImages.set(image, raw);
-    }
-    return decodedImages.get(image)!;
-  };
-  for (const [id, region] of regions.entries()) {
-    const rect = layout[id]!,
-      w = region.crop
-        ? region.width
-        : Math.round(region.width / region.tiles[0]),
-      h = region.crop
-        ? region.height
-        : Math.round(region.height / region.tiles[1]);
+  const distinctSources = new Set<Uint8Array>();
+  for (const region of regions) {
     const image = region.material?.getBaseColorTexture()?.getImage();
-    const pipeline =
-      image && region.source
-        ? sharp(await decodeImage(image), {
-            raw: {
-              width: region.source.width,
-              height: region.source.height,
-              channels: 4,
-            },
-          })
-        : image
-          ? sharp(image).toColourspace("srgb").ensureAlpha()
-          : null;
-    let cropped = pipeline;
-    if (region.crop) {
-      const c = region.crop,
-        source = region.source!;
-      if (
-        c.x >= 0 &&
-        c.y >= 0 &&
-        c.x + c.width <= source.width &&
-        c.y + c.height <= source.height
-      ) {
-        cropped = pipeline!.extract({
-          left: c.x,
-          top: c.y,
-          width: c.width,
-          height: c.height,
-        });
-      } else {
-        const raw = await decodeImage(image!);
-        const pixels = Buffer.alloc(c.width * c.height * 4);
-        for (let y = 0; y < c.height; y++)
-          for (let x = 0; x < c.width; x++) {
-            const sx = sampleIndex(c.x + x, source.width, region.wrap[0]),
-              sy = sampleIndex(c.y + y, source.height, region.wrap[1]);
-            const i = (sy * source.width + sx) * 4,
-              j = (y * c.width + x) * 4;
-            for (let channel = 0; channel < 4; channel++)
-              pixels[j + channel] = raw[i + channel]!;
-          }
-        cropped = sharp(pixels, {
-          raw: { width: c.width, height: c.height, channels: 4 },
-        });
+    if (image) distinctSources.add(image);
+  }
+  const decodeCacheLimit = Math.max(3, distinctSources.size);
+  const decodeImage = async (image: Uint8Array) => {
+    const cached = decodedImages.get(image);
+    if (cached) return cached;
+    const raw = await sharp(image)
+      .toColourspace("srgb")
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
+    if (decodedImages.size >= decodeCacheLimit)
+      decodedImages.delete(decodedImages.keys().next().value!);
+    decodedImages.set(image, raw);
+    return raw;
+  };
+  // Decode every source the atlas needs up front, concurrently. Each decode is
+  // a libvips round trip over a multi-megapixel image; doing them one island at
+  // a time serialized the startup latency of every call.
+  await Promise.all([...distinctSources].map((image) => decodeImage(image)));
+  // Resample islands concurrently. Each call is an independent libvips pipeline
+  // over an already decoded buffer, so results are identical to running them
+  // one at a time; only the serialized per-call latency is removed. The pixel
+  // post-processing below stays in atlas order because it writes one buffer.
+  const resampled = await Promise.all(
+    regions.map(async (region) => {
+      const w = region.crop
+          ? region.width
+          : Math.round(region.width / region.tiles[0]),
+        h = region.crop
+          ? region.height
+          : Math.round(region.height / region.tiles[1]);
+      const image = region.material?.getBaseColorTexture()?.getImage();
+      const pipeline =
+        image && region.source
+          ? sharp(await decodeImage(image), {
+              raw: {
+                width: region.source.width,
+                height: region.source.height,
+                channels: 4,
+              },
+            })
+          : image
+            ? sharp(image).toColourspace("srgb").ensureAlpha()
+            : null;
+      let cropped = pipeline;
+      if (region.crop) {
+        const c = region.crop,
+          source = region.source!;
+        if (
+          c.x >= 0 &&
+          c.y >= 0 &&
+          c.x + c.width <= source.width &&
+          c.y + c.height <= source.height
+        ) {
+          cropped = pipeline!.extract({
+            left: c.x,
+            top: c.y,
+            width: c.width,
+            height: c.height,
+          });
+        } else {
+          const raw = await decodeImage(image!);
+          const pixels = Buffer.alloc(c.width * c.height * 4);
+          for (let y = 0; y < c.height; y++)
+            for (let x = 0; x < c.width; x++) {
+              const sx = sampleIndex(c.x + x, source.width, region.wrap[0]),
+                sy = sampleIndex(c.y + y, source.height, region.wrap[1]);
+              const i = (sy * source.width + sx) * 4,
+                j = (y * c.width + x) * 4;
+              for (let channel = 0; channel < 4; channel++)
+                pixels[j + channel] = raw[i + channel]!;
+            }
+          cropped = sharp(pixels, {
+            raw: { width: c.width, height: c.height, channels: 4 },
+          });
+        }
       }
-    }
-    const pixels = cropped
-      ? await cropped
-          .resize(w, h, { kernel: filter, fit: "fill" })
-          .raw()
-          .toBuffer()
-      : Buffer.alloc(4 * w * h, 255);
+      const pixels = cropped
+        ? await cropped
+            .resize(w, h, { kernel: filter, fit: "fill" })
+            .raw()
+            .toBuffer()
+        : Buffer.alloc(4 * w * h, 255);
+      return { w, h, pixels };
+    }),
+  );
+  for (const [id, region] of regions.entries()) {
+    const rect = layout[id]!;
+    const { w, h, pixels } = resampled[id]!;
     const factor = region.material?.getBaseColorFactor() ?? [1, 1, 1, 1];
     if (factor.some((v) => !Number.isFinite(v) || v < 0 || v > 1))
       throw new Error("Invalid base-color factor");
@@ -615,10 +637,14 @@ export async function optimizeTextures(
     .png()
     .toBuffer();
   let sampledUtilization: number | undefined;
+  const materialPixels = new Map<string, Uint8Array>();
   if (options.compactSize) {
     const used = new Uint8Array(size * size);
     for (const region of regions)
       for (const p of region.primitives) {
+        const name = p.getMaterial()?.getName() ?? "(default)";
+        if (!materialPixels.has(name)) materialPixels.set(name, new Uint8Array(size * size));
+        const pixels = materialPixels.get(name)!;
         const uv = p.getAttribute("TEXCOORD_0")!,
           indices =
             p.getIndices()?.getArray() ??
@@ -650,7 +676,7 @@ export async function optimizeTextures(
                 (e.every((v) => v >= 0) || e.every((v) => v <= 0)) &&
                 atlas[(y * size + x) * 4 + 3]! > 0
               )
-                used[y * size + x] = 1;
+                { used[y * size + x] = 1; pixels[y * size + x] = 1; }
             }
         }
       }
@@ -731,6 +757,7 @@ export async function optimizeTextures(
         ? (options.allocation ?? "surface-area")
         : "source-area",
       materialWeights: options.materialWeights ?? {},
+      materials: [...materialPixels].map(([name, pixels]) => ({ name, pixels: pixels.reduce((sum, v) => sum + v, 0), regions: reportRegions.filter(r => r.materials.includes(name)).map(r => r.id) })),
       regions: reportRegions,
       warnings: model.warnings,
     },
