@@ -7,6 +7,8 @@ export type MaterialRow = {
 };
 
 export type Session = {
+  modelId?: string;
+  settings?: any;
   id: string;
   name: string;
   profile: any;
@@ -21,5 +23,6 @@ export type Result = {
   excluded: string[];
   conversionMs?: number;
   cached?: boolean;
+  textureOnly?: boolean;
   settings?: any;
 };

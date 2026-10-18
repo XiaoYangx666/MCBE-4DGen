@@ -143,3 +143,16 @@ test('final fitting occurs after reduction and refuses unfrozen or nonidentity m
   invalid.document.getRoot().listNodes()[0]!.setTranslation([1, 0, 0]);
   await assert.rejects(fitStaticModel(invalid), /identity node/);
 });
+
+test('static texture update preserves prepared positions and source UVs across repeated weights', async () => {
+  let state: import('../src/optimizer.ts').PreparedOptimization | undefined;
+  const full = await optimizeModel(await fixture(), {prepare:{height:32,center:'ground'},mesh:{ratio:1},texture:{compactSize:128,padding:1},onPrepared:value => {state=value;}});
+  assert.ok(state);
+  const originalUV = state.model.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!.getAttribute('TEXCOORD_0')!.getArray()!.slice();
+  const next = await optimizeModel(state.model, {prepared:state,texture:{compactSize:128,padding:1,materialWeights:{material:3}}});
+  assert.deepEqual(next.report.mesh,full.report.mesh);
+  assert.deepEqual(next.report.preparation,full.report.preparation);
+  const primitives = (m:IntermediateModel) => m.document.getRoot().listMeshes().flatMap(mesh => mesh.listPrimitives());
+  primitives(full.model).forEach((p,i) => assert.deepEqual(primitives(next.model)[i]!.getAttribute('POSITION')!.getArray(),p.getAttribute('POSITION')!.getArray()));
+  assert.deepEqual(state.model.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!.getAttribute('TEXCOORD_0')!.getArray(),originalUV);
+});

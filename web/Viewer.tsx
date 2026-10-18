@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { decodeGeometryTriangles } from "../src/geometry-validator";
 import type { BedrockGeometryFile } from "../src/bedrock-types";
 import { createPosePreview } from "./pose-preview";
@@ -26,7 +27,9 @@ export function Viewer({
   height,
   binding,
   onSelect,
+  previewUrl,
 }: {
+  previewUrl?: string;
   session: Session | null;
   result: Result | null;
   mode: string;
@@ -51,6 +54,8 @@ export function Viewer({
   const frontRef = useRef<(() => void) | null>(null);
   const cameraState = useRef<CameraState | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     setError("");
@@ -140,14 +145,19 @@ export function Viewer({
       camera.updateProjectionMatrix();
       controls.update();
     }
-    frameRef.current = fit;
+    frameRef.current = (part) => fit(part ?? "all", !!previewUrl);
     frontRef.current = () => fit("all", true);
 
     async function load() {
+      if (!session) return;
+      setLoading(true);
+      setProgress(0);
       try {
-        if (!session) return;
         if (viewKind !== "result" || !result) {
-          const gltf = await new GLTFLoader().loadAsync("/api/session/" + session.id + "/preview");
+          const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+          const gltf = await loader.loadAsync(previewUrl ?? ("/api/session/" + session.id + "/preview"), (event) => {
+            if (!disposed && event.total) setProgress(Math.min(1, event.loaded / event.total));
+          });
           if (disposed) {
             disposeObject(gltf.scene);
             return;
@@ -225,10 +235,15 @@ export function Viewer({
         if (saved?.sessionId === session.id) {
           restoreCameraView(saved, camera, controls);
         } else {
-          fit();
+          fit("all", !!previewUrl);
         }
       } catch (e) {
         if (!disposed) setError(String(e));
+      } finally {
+        if (!disposed) {
+          setProgress(1);
+          setLoading(false);
+        }
       }
     }
     void load();
@@ -282,6 +297,7 @@ export function Viewer({
     animate();
     return () => {
       disposed = true;
+      setLoading(false);
       cameraState.current = {
         sessionId: session?.id ?? "",
         ...captureCameraView(camera.position, controls.target, camera.up, camera.zoom),
@@ -303,11 +319,20 @@ export function Viewer({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [session?.id, viewKind === "result" ? result?.id : undefined, viewKind]);
+  }, [previewUrl, session?.id, viewKind === "result" ? result?.id : undefined, viewKind]);
 
   return (
     <div className="viewport" ref={host}>
       {error && <div className="viewer-error">预览失败：{error}</div>}
+      {loading && (
+        <div className="viewer-loading">
+          {progress >= 1
+            ? "正在解析模型…"
+            : progress > 0
+              ? `正在载入模型 ${Math.round(progress * 100)}%`
+              : "正在载入模型…"}
+        </div>
+      )}
       <div className="view-hint">拖动旋转 · 滚轮缩放 · 右键平移 · 点击选择</div>
       <div className="orientation-hint">{compareOriginal && mode === "pose" ? "原始状态对照 · 松开恢复调整" : "正面检查：脸和胸前应朝向绿色箭头"}</div>
       <div className="view-buttons">

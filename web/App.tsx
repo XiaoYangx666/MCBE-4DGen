@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Viewer } from "./Viewer";
 import { MaterialPanel } from "./MaterialPanel";
 import { OutputPanels } from "./OutputPanels";
 import { SettingsPanel } from "./SettingsPanel";
+import { LibraryPage } from "./LibraryPage";
+import { PackPage } from "./PackPage";
 import { api, post } from "./api";
 import { estimateTriangles } from "./estimate";
 import type { Result, Session } from "./types";
 
 export function App() {
-  const [presets, setPresets] = useState<{ id: string; name: string }[]>([]),
-    [session, setSession] = useState<Session | null>(null),
+  const [session, setSession] = useState<Session | null>(null),
     [result, setResult] = useState<Result | null>(null),
     [mode, setMode] = useState("pose"),
     [excluded, setExcluded] = useState<string[]>([]),
@@ -20,7 +21,7 @@ export function App() {
     [solo, setSolo] = useState<string | null>(null),
     [elapsed, setElapsed] = useState(0),
     [busy, setBusy] = useState(false),
-    [message, setMessage] = useState("选择示例或导入模型，开始调整。"),
+    [message, setMessage] = useState("从模型管理打开模型，开始调整。"),
     [error, setError] = useState(""),
     [wire, setWire] = useState(false),
     [unlit, setUnlit] = useState(true),
@@ -36,13 +37,17 @@ export function App() {
     }),
     [profileText, setProfileText] = useState(""),
     [revision, setRevision] = useState(0),
-    [resultRevision, setResultRevision] = useState(0);
-  const input = useRef<HTMLInputElement>(null);
-  const folderInput = useRef<HTMLInputElement>(null);
+    [resultRevision, setResultRevision] = useState(0),
+    [hash, setHash] = useState(() => location.hash);
   useEffect(() => {
-    api("/api/presets")
-      .then(setPresets)
-      .catch((e) => setError(String(e)));
+    const change = () => {
+      setHash(location.hash);
+      const label = location.hash.startsWith("#/models") ? "模型管理" : location.hash.startsWith("#/packs") ? "皮肤包管理" : location.hash.startsWith("#/workbench") ? "工作台" : "首页";
+      document.title = `4DGen · ${label}`;
+    };
+    change();
+    window.addEventListener("hashchange", change);
+    return () => window.removeEventListener("hashchange", change);
   }, []);
   useEffect(() => {
     if (!busy) return;
@@ -54,26 +59,40 @@ export function App() {
     );
     return () => clearInterval(timer);
   }, [busy]);
+  useEffect(() => {
+    const blockFileDrop = (event: DragEvent) => {
+      if (Array.from(event.dataTransfer?.types ?? []).includes("Files")) event.preventDefault();
+    };
+    window.addEventListener("dragover", blockFileDrop);
+    window.addEventListener("drop", blockFileDrop);
+    return () => { window.removeEventListener("dragover", blockFileDrop); window.removeEventListener("drop", blockFileDrop); };
+  }, []);
+
   function changed() {
     setRevision((v) => v + 1);
   }
   function accept(s: Session) {
-    const loadedProfile = s.profile
+    const saved = s.settings;
+    const loadedProfile = saved?.profile ?? (s.profile
       ? { ...s.profile, shoulderOutset: 0 }
-      : { rotationYDegrees: 0, shoulderOutset: 0, armSpreadDegrees: 0 };
+      : { rotationYDegrees: 0, shoulderOutset: 0, armSpreadDegrees: 0 });
     setSession(s);
     setResult(null);
-    setExcluded([]);
-    setMaterialWeights({});
+    setExcluded(saved?.excluded ?? []);
+    setMaterialWeights(saved?.materialWeights ?? {});
+    setRatio(saved?.ratio ?? 0.2);
+    setMaxError(saved?.maxError ?? 0.03);
+    setHeight(saved?.height ?? 32);
     setMode("pose");
     setFocus("all");
     setSelected("");
     setSolo(null);
     setProfile(loadedProfile);
     setProfileText(JSON.stringify(loadedProfile, null, 2));
-    setBinding(s.profile ? "humanoid" : "static");
+    setBinding(saved?.binding ?? (s.profile ? "humanoid" : "static"));
     setMessage("模型已加载，先检查材质和姿势。");
     setRevision(0);
+    location.hash = "#/workbench";
   }
   async function action(fn: () => Promise<void>) {
     setError("");
@@ -86,24 +105,6 @@ export function App() {
     } finally {
       setBusy(false);
     }
-  }
-  function openPreset(id: string) {
-    void action(async () => {
-      setMessage("正在导入模型并准备预览…");
-      accept(await post("/api/load", { preset: id }));
-    });
-  }
-  function upload(files: FileList | null) {
-    if (!files?.length) return;
-    void action(async () => {
-      setMessage("正在上传并导入…");
-      const form = new FormData();
-      for (const file of Array.from(files)) {
-        form.append("files", file);
-        form.append("paths", file.webkitRelativePath || file.name);
-      }
-      accept(await api("/api/upload", { method: "POST", body: form }));
-    });
   }
   function convert() {
     void action(async () => {
@@ -145,79 +146,19 @@ export function App() {
     binding,
   );
   const stale = !!result && revision !== resultRevision;
+  const page = hash.startsWith("#/models") ? "models" : hash.startsWith("#/packs") ? "packs" : hash.startsWith("#/workbench") ? "workbench" : "home";
+  const navigation = <header className="app-nav"><a className="brand" href="#/">4D<span>Gen</span><i>LOCAL STUDIO</i></a><nav aria-label="主导航">{[["home","首页","#/"],["workbench","工作台","#/workbench"],["models","模型管理","#/models"],["packs","皮肤包管理","#/packs"]].map(([key,label,to])=><a key={key} className={page===key?"active":""} aria-current={page===key?"page":undefined} href={to}>{label}</a>)}</nav><div className="header-right">{session&&<span className="current-model" title={session.name}>{session.name}</span>}{page==="workbench"&&session?.modelId&&<button disabled={busy} onClick={()=>void action(async()=>{await post("/api/models/update",{id:session.modelId,settings:{binding,ratio,maxError,height,excluded,materialWeights,profile}});setMessage("编辑配置已保存到模型");})}>保存配置</button>}<span className="local"><b/> 本地环境运行</span></div></header>;
+  if (page !== "workbench") return <div className="app">{navigation}{page === "packs" ? <PackPage/> : <LibraryPage key={page} home={page==="home"} jobId={result?.id??null} currentModelId={session?.modelId} onOpen={(s,settings)=>accept(settings?{...s,settings}:s)}/>}</div>;
+
   return (
     <div className="app">
-      <header>
-        <a className="brand" href="/">
-          4D<span>Gen</span>
-          <i>LOCAL STUDIO</i>
-        </a>
-        <div className="header-center">
-          模型 → 玩家皮肤<span> / </span>可视化工作台
-        </div>
-        <span className="local">
-          <b /> 本地环境运行
-        </span>
-      </header>
+      {navigation}
       <div className="workspace">
         <aside className="sidebar">
-          <div className="section-label">01 / 导入模型</div>
-          <details className="import-controls" key={session ? "loaded" : "empty"} open={!session}>
-          <summary>{session ? "更换 / 导入模型" : "选择模型文件"}</summary>
-          <div className="import-box">
-            <span className="upload-symbol">↥</span>
-            <strong>导入你的模型</strong>
-            <small>ZIP · PMX · VRM · GLB · OBJ…</small>
-            <div className="button-row">
-              <button disabled={busy} onClick={() => input.current?.click()}>
-                选择文件
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => folderInput.current?.click()}
-              >
-                选择文件夹
-              </button>
-            </div>
-            <p>PMX / OBJ 请连同贴图一起选择，或导入 ZIP。</p>
-          </div>
-          <input
-            hidden
-            multiple
-            type="file"
-            ref={input}
-            onChange={(e) => {
-              upload(e.target.files);
-              e.target.value = "";
-            }}
-          />
-          <input
-            hidden
-            multiple
-            type="file"
-            ref={folderInput}
-            {...{ webkitdirectory: "" }}
-            onChange={(e) => {
-              upload(e.target.files);
-              e.target.value = "";
-            }}
-          />
-          {!!presets.length && (
-            <div className="samples">
-              <span>本地示例</span>
-              {presets.map((p) => (
-                <button
-                  disabled={busy}
-                  key={p.id}
-                  onClick={() => openPreset(p.id)}
-                >
-                  {p.name} ↗
-                </button>
-              ))}
-            </div>
-          )}
-          </details>
           <MaterialPanel
+            result={result}
+            stale={stale}
+            convert={convert}
             session={session}
             busy={busy}
             excluded={excluded}
@@ -279,9 +220,10 @@ export function App() {
                 <div className="cube">◇</div>
                 <h3>让细节，看得见。</h3>
                 <p>
-                  导入模型或选择左侧示例
+                  先从模型管理选择一个模型
                   <br />
                   在三维视图中检查，再生成皮肤包。
+                  <br /><a href="#/models">打开模型管理 →</a>
                 </p>
               </div>
             )}
@@ -332,7 +274,7 @@ export function App() {
                   : "实际导出几何 · 最近邻纹理采样"}
             </span>
           </div>
-          <OutputPanels result={result} stale={stale} />
+          <OutputPanels result={result} stale={stale} session={session} selected={selected} onSelect={setSelected} />
         </main>
         <SettingsPanel
           session={session} busy={busy} binding={binding} setBinding={setBinding}
@@ -342,12 +284,14 @@ export function App() {
           updateProfile={updateProfile} profileText={profileText} setProfileText={setProfileText}
           setProfile={setProfile} setError={setError} convert={convert}
           error={error} message={message} elapsed={elapsed}
+          openPacks={() => (location.hash = "#/models?model=" + (session?.modelId ?? "") + "&tab=skins")}
         />
       </div>
       <footer>
         <span>4DGen / 本地模型工作台</span>
-        <span>文件在本地环境处理 · 导出不会写入游戏目录</span>
+        <span>文件在本地环境处理 · 启用皮肤包时会写入游戏目录</span>
       </footer>
+
     </div>
   );
 }

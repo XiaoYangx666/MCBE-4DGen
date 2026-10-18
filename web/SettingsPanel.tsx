@@ -28,18 +28,19 @@ type SettingsPanelProps = {
   error: string;
   message: string;
   elapsed: number;
+  openPacks: () => void;
 };
 
 export function SettingsPanel(props: SettingsPanelProps) {
   const { session, busy, binding, setBinding, changed, ratio, setRatio, estimate,
     result, stale, maxError, setMaxError, height, setHeight, setMode, profile,
     updateProfile, profileText, setProfileText, setProfile, setError, convert,
-    error, message, elapsed } = props;
+    error, message, elapsed, openPacks } = props;
   const budget = triangleBudget(estimate.target);
   const actual = result && !stale ? result.report.triangles : null;
   return (
     <aside className="inspector">
-      <div className="section-label">03 / 转换设置</div>
+      <div className="section-label">02 / 转换设置</div>
       <h2>调整与生成</h2>
       <fieldset disabled={busy || !session}>
         <label className="field">
@@ -214,7 +215,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
             应用 JSON 配置
           </button>
           <p className="help">
-            非 VRM 模型需要 boneMap，可粘贴已有 profile。
+            VRM / 常见 MMD 骨架自动识别；无法识别时可粘贴 boneMap 配置。
           </p>
         </details>
           </>
@@ -231,18 +232,19 @@ export function SettingsPanel(props: SettingsPanelProps) {
           <span className="spinner" /> 处理中…
         </>
           ) : (
-        "生成皮肤包 ↗"
+        "生成4D皮肤 ↗"
           )}
         </button>
-        <p>姿势调整即时预览；确认后生成最终皮肤包。</p>
+        <p>权重微调后再次生成会复用模型；姿势、减面或材质保留变化时重新处理模型。</p>
         {result && (
-          <a
-        className="download"
-        href={"/api/job/" + result.id + "/pack"}
-        download
+          <button
+            type="button"
+            className="download"
+            onClick={openPacks}
+            disabled={busy}
           >
-        ↓ 下载 .mcpack{stale ? "（上次结果）" : ""}
-          </a>
+            {stale ? "保存上次结果为皮肤版本…" : "保存为皮肤版本…"}
+          </button>
         )}
       </div>
       <div className={"status " + (error ? "error" : "")} role="status">

@@ -17,7 +17,7 @@ bun run packs enable persona shino-release
 
 ## 本地网页工作台
 
-运行 `bun run dev`，打开 http://127.0.0.1:4173 。React + Vite 页面和转换接口由一个 Bun 进程提供，支持三维预览、材质筛选、姿势与减面调整、mcpack 下载。详见 [本地网页说明](docs/local-web.md)。
+运行 `bun run dev`，打开 http://127.0.0.1:4173 。React + Vite 页面和转换接口由一个 Bun 进程提供，支持三维预览、材质筛选、姿势与减面调整，并可把结果保存到本地环境皮肤包库、启停与恢复。详见 [本地网页说明](docs/local-web.md)。
 
 ## 运行验证
 

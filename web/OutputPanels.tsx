@@ -1,12 +1,19 @@
-import type { Result } from "./types";
+import type { Result, Session } from "./types";
 
 export function OutputPanels({
   result,
-  stale,
+  stale, session, selected, onSelect,
 }: {
   result: Result | null;
   stale: boolean;
+  session: Session | null;
+  selected: string | null;
+  onSelect: (name:string) => void;
 }) {
+  const texture = result?.details?.texture;
+  const total = (texture?.atlas?.width ?? 128) * (texture?.atlas?.height ?? 128);
+  const measurements = new Map<string, any>((texture?.materials ?? []).map((m:any) => [m.name, m]));
+  const materials = (session?.materials ?? []).map(m => ({...m, measurement:measurements.get(m.name), excluded:result?.excluded.includes(m.name)})).sort((a,b) => (b.measurement?.pixels ?? 0) - (a.measurement?.pixels ?? 0));
   return (
     <div className="bottom-panels">
       <section className="atlas-panel">
@@ -51,7 +58,7 @@ export function OutputPanels({
               {stale ? "参数已修改，请重新转换" : "结果与本次参数一致"}
             </p>
             <p>
-              {result.cached ? "复用上次结果；原转换用时" : "转换用时"}{" "}
+              {result.cached ? "复用上次结果；原转换用时" : result.textureOnly ? "复用模型，纹理更新用时" : "完整生成用时"}{" "}
               {((result.conversionMs ?? 0) / 1000).toFixed(1)} 秒
             </p>
             {result.details?.texture?.atlas && (
@@ -68,8 +75,18 @@ export function OutputPanels({
                 %
               </p>
             )}
+            <div className="material-allocation">
+              <h3>材质像素覆盖</h3>
+              <p>与材质筛选逐项对应，点击选中材质。占比以整张贴图为基准；共享像素会分别计入相关材质，各项不一定合计为 100%。</p>
+              {stale && <p className="inline-note">以下为上次转换结果，重新转换后更新。</p>}
+              {!texture?.materials?.length && <p className="inline-note">重新转换后可查看按材质统计的像素覆盖。</p>}
+              {materials.map(m => <button key={m.name} className={'allocation-row'+(selected===m.name?' selected':'')} onClick={() => onSelect(m.name)} aria-pressed={selected===m.name}>
+                <span className="allocation-label">{m.name}</span><span className="allocation-track"><span style={{width: `${Math.min(100,(m.measurement?.pixels ?? 0)/total*100)}%`}}/></span>
+                <span className="allocation-value">{m.excluded ? '已移除' : m.measurement ? `${m.measurement.pixels.toLocaleString()} 像素 · ${(m.measurement.pixels/total*100).toFixed(1)}%` : '待统计'}</span>
+              </button>)}
+            </div>
             <details>
-              <summary>各区域实际像素分配</summary>
+              <summary>图集区域与尺寸明细</summary>
               <p>
                 共享区域列出全部材质。面积指图集矩形，不等同于可见像素。
               </p>
@@ -97,7 +114,7 @@ export function OutputPanels({
                         <td>
                           {region.width * region.height} /{" "}
                           {(
-                            ((region.width * region.height) / 16384) *
+                            ((region.width * region.height) / total) *
                             100
                           ).toFixed(1)}
                           %

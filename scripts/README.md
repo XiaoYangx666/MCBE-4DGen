@@ -8,7 +8,7 @@
 | --- | --- |
 | `workflow.ts` | 读取 `workflows/*.json` 执行转换、校验、预览并入库；显式 `--deploy` 才写游戏目录。 |
 | `reduce-avatar.ts` | PMX/GLB 人形减面并生成新版本目录，拒绝覆盖已有产物。 |
-| `check-web.ts` | 对已启动的本地工作台执行真实 HTTP 冒烟检查（页面、跨源拒绝、上传、转换、下载）。 |
+| `check-web.ts` | 对已启动的本地工作台执行真实 HTTP 冒烟检查（页面、跨源拒绝、上传、转换、皮肤包管理）。 |
 | `probe.ts` | 依赖后端探测（Assimp native/WASM 等）。 |
 | `client-test.py` | Windows 客户端 UI 自动化与备份/恢复入口；游戏由测试者操作时不要运行。 |
 
