@@ -1,3 +1,5 @@
+import { safeExternalAsset } from "./import-skin-pack.ts";
+import { validateImportedGeometry } from "./pack-geometry.ts";
 import { randomUUID } from 'node:crypto';
 import { readFile, readdir, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -106,7 +108,9 @@ export async function validateSkinPackFiles(files: Readonly<SkinPackFiles>): Pro
     required(files, entry.texture);
   }
   const builtin = new Set(['geometry.humanoid.custom', 'geometry.humanoid.customSlim']);
-  const parsed = files['geometry.json'] ? parseGeometryJSON(decoder.decode(files['geometry.json']), { atlasUVs: true }) : null;
+  const rawGeometry = files['geometry.json'] ? JSON.parse(decoder.decode(files['geometry.json'])) : null;
+  const external = rawGeometry && (rawGeometry.format_version !== '1.8.0' || Object.values(rawGeometry).some((g:any)=>g?.bones?.some((b:any)=>b.cubes?.length)));
+  const parsed = rawGeometry ? external ? validateImportedGeometry(rawGeometry) : parseGeometryJSON(JSON.stringify(rawGeometry), { atlasUVs: true }) : null;
   const available = new Set<string>([...builtin, ...(parsed?.geometries.map((g) => g.identifier) ?? [])]);
   for (const id of geometries) assert(available.has(id), 'missing referenced geometry ' + id);
   for (const texture of textures) {
@@ -116,11 +120,11 @@ export async function validateSkinPackFiles(files: Readonly<SkinPackFiles>): Pro
       if (entry.texture !== texture) continue;
       const identifier = entry.geometry as string;
       if (builtin.has(identifier) && !parsed?.file[identifier as `geometry.${string}`]) {
-        assert((image.width === 64 && [32, 64].includes(image.height!)) || (image.width === 128 && image.height === 128), 'unsupported standard skin dimensions');
+        assert(image.width! >= 64 && (image.width! & (image.width! - 1)) === 0 && [image.width, image.width! / 2].includes(image.height!), 'unsupported standard skin dimensions');
         continue;
       }
       const item = parsed?.file[identifier as `geometry.${string}`];
-      assert(item?.texturewidth === image.width && item.textureheight === image.height,
+      assert(external || (item?.texturewidth === image.width && item.textureheight === image.height),
         'geometry dimensions do not match ' + texture);
     }
   }
@@ -141,10 +145,10 @@ export async function zipSkinPack(files: Readonly<SkinPackFiles>): Promise<Uint8
 }
 
 /** Read supported root assets and texts/ only; reject unsafe or unexpected ZIP paths. */
-export async function readSkinPack(path: string): Promise<SkinPackFiles> {
+export async function readSkinPack(path: string, options: { external?: boolean } = {}): Promise<SkinPackFiles> {
   const result: SkinPackFiles = {};
   const add = (name: string, bytes: Uint8Array) => {
-    assert(rootFile.test(name), 'unexpected or unsafe filename ' + name);
+    assert(options.external ? safeExternalAsset(name) : rootFile.test(name), 'unexpected or unsafe filename ' + name);
     assert(!Object.hasOwn(result, name), 'duplicate file ' + name);
     result[name] = bytes;
   };

@@ -107,7 +107,12 @@ test('adopt tracks an accepted install without modifying it and restores supplie
     for (const [name, bytes] of Object.entries(f.files)) { await mkdir(dirname(join(target, name)), { recursive: true }); await writeFile(join(target, name), bytes); }
     const before = await readFile(join(target, 'manifest.json'));
     await f.manager.adopt('custom', baseline, 'accepted');
+    assert.deepEqual((await f.manager.status()).find(s => s.slot === 'custom')!.presetSources, ['accepted']);
     assert.deepEqual(await readFile(join(target, 'manifest.json')), before);
+    await f.manager.importFiles('user-pack', f.files);
+    await f.manager.enable('custom', 'user-pack');
+    assert.deepEqual((await f.manager.status()).find(s => s.slot === 'custom')!.presetSources, ['accepted'], 'later user packs must remain visible as local packs');
+    await f.manager.disable('custom', 'user-pack');
     await f.manager.disable('custom', 'accepted');
     assert.deepEqual(await readdir(target), ['skins.json']);
     assert.equal(await readFile(join(target, 'skins.json'), 'utf8'), '{"skins":[]}');
@@ -131,5 +136,80 @@ test('interrupted operation recovery verifies backup and rejects unknown externa
     await f.manager.recover('custom');
     assert.equal(await readFile(join(f.root, 'custom/manifest.json'), 'utf8'), '{"original":true}');
     assert.equal((await f.manager.status()).find((s) => s.slot === 'custom')!.pending, null);
+  } finally { await cleanup(f.dir); }
+});
+
+test('multi-skin contents, independent names and installed revision updates preserve existing game state', async () => {
+  const f = await fixture();
+  try {
+    const files = { ...f.files };
+    const skinData = JSON.parse(new TextDecoder().decode(files['skins.json']));
+    skinData.skins.push({ ...skinData.skins[0], localization_name: 'skin1', texture: 'skin1.png' });
+    files['skins.json'] = new TextEncoder().encode(JSON.stringify(skinData));
+    files['skin1.png'] = new Uint8Array(await sharp({ create: { width: 64, height: 64, channels: 4, background: '#0080ff' } }).png().toBuffer());
+    await f.manager.importFiles('multi', files);
+    await f.manager.importFiles('other', f.files);
+    await f.manager.enable('custom', 'multi');
+    const before = await readFile(join(f.root, 'custom/skins.json'));
+    const firstRevision = (await f.manager.list()).find(p => p.id === 'multi')!.revision;
+    const renamed = await f.manager.renameNames('multi', { name: '中文皮肤包', skinIndex: 1, skinName: '蓝色皮肤' });
+    assert.notEqual(renamed.revision, firstRevision);
+    assert.deepEqual(await readFile(join(f.root, 'custom/skins.json')), before, 'renaming must not deploy implicitly');
+    const contents = await f.manager.contents('multi');
+    assert.equal(contents.skins.length, 2);
+    assert.equal(contents.name, '中文皮肤包');
+    assert.equal(contents.skins[1]!.name, '蓝色皮肤');
+    assert.deepEqual(Buffer.from((await f.manager.scene('multi', 1)).texture), Buffer.from(files['skin1.png']!));
+    await assert.rejects(f.manager.scene('multi', -1));
+    await assert.rejects(f.manager.scene('multi', 2));
+    await assert.rejects(f.manager.renameNames('multi', { skinIndex: 9, skinName: 'bad' }));
+    await f.manager.enable('custom', 'other'); // compose must still find the installed older revision.
+    await f.manager.updateEnabled('custom', 'multi');
+    const lang = await readFile(join(f.root, 'custom/texts/en_US.lang'), 'utf8');
+    assert.ok(lang.includes('蓝色皮肤'));
+    assert.ok(lang.includes('中文皮肤包'));
+    await f.manager.renameNames('multi', { name: '再次修改' });
+    await f.manager.disable('custom', 'other'); // unrelated operation must retain the installed name.
+    assert.equal(JSON.parse(await readFile(join(f.root, 'custom/manifest.json'), 'utf8')).header.name, '中文皮肤包');
+    await f.manager.updateEnabled('custom', 'multi');
+    assert.equal(JSON.parse(await readFile(join(f.root, 'custom/manifest.json'), 'utf8')).header.name, '再次修改');
+    await f.manager.disable('custom', 'multi');
+    await f.manager.remove('multi');
+    assert.ok(!(await readdir(join(f.state, 'library'))).includes('multi'));
+  } finally { await cleanup(f.dir); }
+});
+
+test('empty user packs accept selected skin copies while preset views reflect actual slot contents', async () => {
+  const f = await fixture();
+  try {
+    const files = { ...f.files };
+    const data = JSON.parse(new TextDecoder().decode(files['skins.json']));
+    data.skins.push({ ...data.skins[0], localization_name: 'second' });
+    files['skins.json'] = new TextEncoder().encode(JSON.stringify(data));
+    await f.manager.importFiles('source-multi', files);
+    const before = await readFile(join(f.root, 'custom/skins.json'));
+    const draft = await f.manager.createPack('我的组合包');
+    assert.equal((await f.manager.contents(draft.id)).skins.length, 0);
+    await assert.rejects(f.manager.enable('custom', draft.id), /为空/);
+    await f.manager.renameNames(draft.id, { name: '组合皮肤' });
+    await f.manager.addSkins(draft.id, 'source-multi', [1]);
+    const copied = await f.manager.contents(draft.id);
+    assert.equal(copied.name, '组合皮肤');
+    assert.equal(copied.skins.length, 1);
+    assert.equal((await f.manager.contents('source-multi')).skins.length, 2);
+    assert.deepEqual(await readFile(join(f.root, 'custom/skins.json')), before);
+    await f.manager.addSkins(draft.id, 'source-multi', [0]);
+    assert.equal((await f.manager.contents(draft.id)).skins.length, 2);
+    await f.manager.enable('custom', draft.id);
+    const preset = await f.manager.presetContents('custom');
+    assert.equal(preset.skins.length, 2);
+    assert.ok((await f.manager.presetScene('custom', 1)).texture.byteLength > 0);
+    await assert.rejects(f.manager.presetContents('../outside'));
+    await assert.rejects(f.manager.addSkins(draft.id, 'source-multi', [9]));
+    await f.manager.disable('custom', draft.id);
+    await f.manager.remove(draft.id);
+    const empty = await f.manager.createPack('空包');
+    await f.manager.remove(empty.id);
+    assert.ok(!(await f.manager.list()).some(p => p.id === empty.id));
   } finally { await cleanup(f.dir); }
 });
