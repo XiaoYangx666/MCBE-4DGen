@@ -2,7 +2,7 @@
 
 通用模型 → 优化 → 静态/人形绑定 → Bedrock 1.8.0 poly_mesh → mcpack → 可恢复的皮肤包管理。
 
-日常使用从 **[完整工作流程](docs/workflow.md)** 开始，覆盖可配置目标路径、目录/mcpack 导入、多包启停、备份恢复、原始权重与衣物归属、模型独立姿势调校，以及客户端验收。
+日常使用从 **[完整工作流程](docs/workflow.md)** 开始，覆盖可配置目标路径、目录/mcpack 导入、多包启停、备份恢复、原始权重与衣物归属、模型独立姿势调校，以及客户端验收。PMX 实际转换与明确骨骼映射见 [样本 A与样本 B记录](docs/pmx-model-tests.md)。
 
 ```powershell
 bun run packs status
@@ -14,6 +14,10 @@ bun run packs enable persona shino-release
 本地环境已将最终测试版本登记为 `<sample-id>` 和 `<sample-id>`，原始空包备份已接入新管理器。默认 workflow 不部署；添加 `--deploy` 才写游戏目录。配置与管理状态不提交到 Git。
 
 已实现模型导入、静态/VRM 人形绑定、带本地化的 mcpack、预览、配置化工作流和可恢复的包管理。Shino 的显示、穿戴、衣物归属及姿势已由用户在 Windows 客户端迭代验证；其它模型仍需单独验收。
+
+## 本地网页工作台
+
+运行 `bun run dev`，打开 http://127.0.0.1:4173 。React + Vite 页面和转换接口由一个 Bun 进程提供，支持三维预览、材质筛选、姿势与减面调整、mcpack 下载。详见 [本地网页说明](docs/local-web.md)。
 
 ## 运行验证
 

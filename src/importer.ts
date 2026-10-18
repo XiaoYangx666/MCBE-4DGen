@@ -34,7 +34,10 @@ export async function importModel(input: string, options: ImportOptions = {}): P
   let backend: 'native' | 'wasm' | undefined;
   if (!direct) {
     // Direct glTF/VRM inputs must not load the optional native Assimp addon.
-    const { createAssimp } = await import('libassimp');
+    const windowsBun = process.platform === 'win32' && !!process.versions.bun;
+    if (windowsBun && options.backend === 'native') throw new Error('Native Assimp is unstable on Windows Bun; use --backend wasm');
+    const assimpEntry = windowsBun ? new URL('./dist/index.mjs', import.meta.resolve('libassimp/package.json')).href : 'libassimp';
+    const { createAssimp } = await import(assimpEntry) as typeof import('libassimp');
     const assimp = await createAssimp({ backend: options.backend ?? 'auto', onLog: (log) => {
       if (log.level !== 'info') warn(log.message);
     } });
@@ -64,6 +67,17 @@ export async function importModel(input: string, options: ImportOptions = {}): P
   const json = await io.readAsJSON(entry);
   const avatar = format === 'vrm' || json.json.extensions?.VRM || json.json.extensions?.VRMC_vrm ? prepareVRM(json, warn) : undefined;
   if (pmx) {
+    // PMX extra UVs are four-component auxiliary data. Assimp emits them as
+    // TEXCOORD_n, which is illegal glTF and unused by this base-color pipeline.
+    for (const mesh of json.json.meshes ?? []) for (const primitive of mesh.primitives) {
+      for (const semantic of Object.keys(primitive.attributes)) if (/^TEXCOORD_[1-9]\d*$/.test(semantic) &&
+        json.json.accessors?.[primitive.attributes[semantic]!]!.type !== 'VEC2') {
+        const material = json.json.materials?.[primitive.material ?? -1];
+        if (material?.pbrMetallicRoughness?.baseColorTexture?.texCoord === Number(semantic.slice(9))) throw new Error('PMX base color references unsupported auxiliary UV');
+        delete primitive.attributes[semantic];
+        warn('PMX four-component auxiliary UV channels are omitted; only renderable base-color UVs are retained.');
+      }
+    }
     if (json.json.materials?.length !== pmx.materials.length) throw new Error('PMX material mapping changed during Assimp conversion');
     pmx.materials.forEach((material, index) => {
       const target = json.json.materials![index]!;

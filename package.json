@@ -6,7 +6,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "bun test",
-    "test:workflow": "bun test tests/pack-manager.test.ts tests/humanoid.test.ts tests/bedrock-export.test.ts tests/geometry-validator.test.ts tests/prepare-model.test.ts tests/skin-pack.test.ts tests/preview.test.ts --timeout 30000",
+    "test:workflow": "bun test tests/pack-manager.test.ts tests/humanoid.test.ts tests/texture-optimizer.test.ts tests/rigid-mesh-reducer.test.ts tests/pmx-wasm.test.ts tests/bedrock-export.test.ts tests/geometry-validator.test.ts tests/prepare-model.test.ts tests/skin-pack.test.ts tests/preview.test.ts tests/web-preview.test.ts --timeout 30000",
     "probe": "bun run scripts/probe.ts",
     "inspect": "bun run src/cli.ts inspect",
     "sample:fetch": "bun run scripts/fetch-sample.ts",
@@ -19,7 +19,9 @@
     "packs": "bun run src/pack-cli.ts",
     "binding:inspect": "bun run scripts/inspect-avatar-binding.ts",
     "binding:preview": "bun run scripts/preview-binding.ts",
-    "workflow": "bun run scripts/workflow.ts"
+    "workflow": "bun run scripts/workflow.ts",
+    "dev": "bun server/start.ts",
+    "check:web": "tsc --noEmit -p tsconfig.web.json"
   },
   "engines": {
     "bun": ">=1.4.3"
@@ -32,12 +34,18 @@
     "jszip": "3.10.2",
     "libassimp": "0.3.0",
     "meshoptimizer": "1.3.0",
-    "sharp": "0.35.5"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "sharp": "0.35.5",
+    "three": "^0.186.1",
+    "vite": "^8.3.4"
   },
   "devDependencies": {
     "@types/bun": "1.4.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.186.0",
     "typescript": "7.0.2"
   },
   "packageManager": "bun@1.4.3"
 }
-

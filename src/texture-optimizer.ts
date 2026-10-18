@@ -1,171 +1,738 @@
-import type { Material, Primitive } from '@gltf-transform/core';
-import type { Transform } from '@gltf-transform/extensions';
-import { cloneDocument } from '@gltf-transform/functions';
-import sharp from 'sharp';
-import type { IntermediateModel } from './model.ts';
-import { inspectModel } from './inspect.ts';
-import { validateModel } from './validate-model.ts';
+import type { Material, Primitive } from "@gltf-transform/core";
+import type { Transform } from "@gltf-transform/extensions";
+import { cloneDocument } from "@gltf-transform/functions";
+import sharp from "sharp";
+import type { IntermediateModel } from "./model.ts";
+import { inspectModel } from "./inspect.ts";
+import { validateModel } from "./validate-model.ts";
+import { textureCharts } from "./texture-charts.ts";
 
 export interface TextureOptions {
   /** Maximum dimension of each source image, preserving aspect ratio. Omit for Original. */
   maxTextureSize?: number;
   /** Explicit square atlas size. Omit for automatic power-of-two size up to 8192. */
   atlasSize?: number;
-  filter?: 'nearest' | 'lanczos3';
+  filter?: "nearest" | "lanczos3";
   padding?: number;
+  /** Crop used UV islands, share equivalent samplers, and fit directly at this final resolution. */
+  compactSize?: number;
+  /** Compact atlas demand follows world-space surface area; source-area is a diagnostic comparison. */
+  allocation?: "surface-area" | "source-area";
+  materialWeights?: Record<string, number>;
 }
-interface Rect { x: number; y: number; width: number; height: number }
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 interface Region {
-  material: Material | null; primitives: Primitive[]; uv: Map<Primitive, Float32Array>;
-  min: [number, number]; tiles: [number, number]; width: number; height: number;
-  source: { width: number; height: number } | null; wrap: [number, number];
+  material: Material | null;
+  primitives: Primitive[];
+  uv: Map<Primitive, Float32Array>;
+  min: [number, number];
+  tiles: [number, number];
+  width: number;
+  height: number;
+  source: { width: number; height: number } | null;
+  wrap: [number, number];
+  crop?: Rect;
+  areas: Record<string, number>;
+  weightedArea: number;
 }
 
 /** Best-short-side free rectangle packing. No rotation, so UV orientation stays unchanged. */
-function pack(regions: Region[], size: number, padding: number): Rect[] | null {
+function pack(
+  regions: Region[],
+  size: number,
+  padding: number,
+  flexible = false,
+): Rect[] | null {
   let free: Rect[] = [{ x: 0, y: 0, width: size, height: size }];
   const result: Rect[] = Array(regions.length);
-  const order = regions.map((r, id) => ({ id, width: r.width + padding * 2, height: r.height + padding * 2 }))
+  const order = regions
+    .map((r, id) => ({
+      id,
+      width: r.width + padding * 2,
+      height: r.height + padding * 2,
+    }))
     .sort((a, b) => b.width * b.height - a.width * a.height || a.id - b.id);
   for (const item of order) {
-    const fit = free.filter((r) => item.width <= r.width && item.height <= r.height)
-      .sort((a, b) => Math.min(a.width - item.width, a.height - item.height) - Math.min(b.width - item.width, b.height - item.height))[0];
+    const originalW = item.width - 2 * padding,
+      originalH = item.height - 2 * padding;
+    const candidates =
+      flexible && regions[item.id]!.crop
+        ? [1, 1.2, 1 / 1.2, 1.44, 1 / 1.44]
+            .map((factor) => {
+              const width = Math.max(3, Math.round(originalW * factor));
+              const height = Math.max(
+                3,
+                Math.round((originalW * originalH) / width),
+              );
+              return {
+                width: width + 2 * padding,
+                height: height + 2 * padding,
+                penalty: Math.abs(Math.log(factor)),
+              };
+            })
+            .filter(
+              (c) =>
+                (c.width - 2 * padding) * (c.height - 2 * padding) <=
+                originalW * originalH * 1.08,
+            )
+        : [{ width: item.width, height: item.height, penalty: 0 }];
+    const choices = free.flatMap((rect) =>
+      candidates
+        .filter((c) => c.width <= rect.width && c.height <= rect.height)
+        .map((c) => ({ rect, ...c })),
+    );
+    choices.sort(
+      (a, b) =>
+        Math.min(a.rect.width - a.width, a.rect.height - a.height) -
+          Math.min(b.rect.width - b.width, b.rect.height - b.height) ||
+        a.penalty - b.penalty,
+    );
+    const fit = choices[0];
     if (!fit) return null;
-    const used = { x: fit.x, y: fit.y, width: item.width, height: item.height };
+    const used = {
+      x: fit.rect.x,
+      y: fit.rect.y,
+      width: fit.width,
+      height: fit.height,
+    };
+    regions[item.id]!.width = fit.width - 2 * padding;
+    regions[item.id]!.height = fit.height - 2 * padding;
     result[item.id] = used;
     const next: Rect[] = [];
     for (const r of free) {
-      if (used.x >= r.x + r.width || used.x + used.width <= r.x || used.y >= r.y + r.height || used.y + used.height <= r.y) { next.push(r); continue; }
+      if (
+        used.x >= r.x + r.width ||
+        used.x + used.width <= r.x ||
+        used.y >= r.y + r.height ||
+        used.y + used.height <= r.y
+      ) {
+        next.push(r);
+        continue;
+      }
       if (used.x > r.x) next.push({ ...r, width: used.x - r.x });
-      if (used.x + used.width < r.x + r.width) next.push({ ...r, x: used.x + used.width, width: r.x + r.width - used.x - used.width });
+      if (used.x + used.width < r.x + r.width)
+        next.push({
+          ...r,
+          x: used.x + used.width,
+          width: r.x + r.width - used.x - used.width,
+        });
       if (used.y > r.y) next.push({ ...r, height: used.y - r.y });
-      if (used.y + used.height < r.y + r.height) next.push({ ...r, y: used.y + used.height, height: r.y + r.height - used.y - used.height });
+      if (used.y + used.height < r.y + r.height)
+        next.push({
+          ...r,
+          y: used.y + used.height,
+          height: r.y + r.height - used.y - used.height,
+        });
     }
-    free = next.filter((r, i) => !next.some((s, j) => i !== j && s.x <= r.x && s.y <= r.y && s.x + s.width >= r.x + r.width && s.y + s.height >= r.y + r.height &&
-      (s.x !== r.x || s.y !== r.y || s.width !== r.width || s.height !== r.height || j < i)));
+    free = next.filter(
+      (r, i) =>
+        !next.some(
+          (s, j) =>
+            i !== j &&
+            s.x <= r.x &&
+            s.y <= r.y &&
+            s.x + s.width >= r.x + r.width &&
+            s.y + s.height >= r.y + r.height &&
+            (s.x !== r.x ||
+              s.y !== r.y ||
+              s.width !== r.width ||
+              s.height !== r.height ||
+              j < i),
+        ),
+    );
   }
   return result;
 }
 
-const linear = (v: number) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-const srgb = (v: number) => v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
+const linear = (v: number) =>
+  v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+const srgb = (v: number) =>
+  v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
 function sampleIndex(i: number, size: number, mode: number): number {
   if (mode === 33071) return Math.min(size - 1, Math.max(0, i));
-  if (mode === 33648) { const v = ((i % (size * 2)) + size * 2) % (size * 2); return v < size ? v : size * 2 - 1 - v; }
+  if (mode === 33648) {
+    const v = ((i % (size * 2)) + size * 2) % (size * 2);
+    return v < size ? v : size * 2 - 1 - v;
+  }
   return ((i % size) + size) % size;
 }
 
-export async function optimizeTextures(input: IntermediateModel, options: TextureOptions = {}) {
-  const filter = options.filter ?? 'lanczos3', padding = options.padding ?? 2;
-  if (filter !== 'nearest' && filter !== 'lanczos3') throw new Error('filter must be nearest or lanczos3');
-  if (!Number.isSafeInteger(padding) || padding < 1 || padding > 64) throw new Error('padding must be an integer in [1, 64]');
-  for (const size of [options.maxTextureSize, options.atlasSize]) {
-    if (size !== undefined && (!Number.isSafeInteger(size) || size < 1 || size > 8192)) throw new Error('Texture dimensions must be integers in [1, 8192]');
+export async function optimizeTextures(
+  input: IntermediateModel,
+  options: TextureOptions = {},
+) {
+  const filter = options.filter ?? "lanczos3",
+    padding = options.padding ?? 2;
+  if (filter !== "nearest" && filter !== "lanczos3")
+    throw new Error("filter must be nearest or lanczos3");
+  if (!Number.isSafeInteger(padding) || padding < 1 || padding > 64)
+    throw new Error("padding must be an integer in [1, 64]");
+  for (const size of [
+    options.maxTextureSize,
+    options.atlasSize,
+    options.compactSize,
+  ]) {
+    if (
+      size !== undefined &&
+      (!Number.isSafeInteger(size) || size < 1 || size > 8192)
+    )
+      throw new Error("Texture dimensions must be integers in [1, 8192]");
   }
+  if (
+    options.compactSize &&
+    options.atlasSize &&
+    options.compactSize !== options.atlasSize
+  )
+    throw new Error("compactSize and atlasSize must agree");
+  if (
+    options.allocation &&
+    !["surface-area", "source-area"].includes(options.allocation)
+  )
+    throw new Error("Invalid texture allocation");
+  if (
+    options.materialWeights &&
+    (typeof options.materialWeights !== "object" ||
+      Array.isArray(options.materialWeights) ||
+      Object.values(options.materialWeights).some(
+        (w) => !Number.isFinite(w) || w < 0 || w > 20,
+      ))
+  )
+    throw new Error("Material weights must be in [0, 20]");
   validateModel(input);
   const inspection = await inspectModel(input);
-  const model: IntermediateModel = { ...input, document: cloneDocument(input.document), source: { ...input.source }, warnings: [...inspection.warnings] };
-  const doc = model.document, root = doc.getRoot();
+  const model: IntermediateModel = {
+    ...input,
+    document: cloneDocument(input.document),
+    source: { ...input.source },
+    warnings: [...inspection.warnings],
+  };
+  const doc = model.document,
+    root = doc.getRoot();
   const grouped = new Map<Material | null, Primitive[]>();
-  for (const mesh of root.listMeshes()) for (const p of mesh.listPrimitives()) {
-    if (p.getAttribute('COLOR_0')) throw new Error('Vertex-color baking is not implemented; refusing to silently lose COLOR_0.');
-    const material = p.getMaterial();
-    if (!grouped.has(material)) grouped.set(material, []);
-    grouped.get(material)!.push(p);
-  }
+  for (const mesh of root.listMeshes())
+    for (const p of mesh.listPrimitives()) {
+      if (p.getAttribute("COLOR_0"))
+        throw new Error(
+          "Vertex-color baking is not implemented; refusing to silently lose COLOR_0.",
+        );
+      const material = p.getMaterial();
+      if (!grouped.has(material)) grouped.set(material, []);
+      grouped.get(material)!.push(p);
+    }
   const regions: Region[] = [];
-  for (const [material, primitives] of grouped) {
+  for (const [material, primitives] of options.compactSize
+    ? textureCharts(doc)
+    : grouped) {
     const texture = material?.getBaseColorTexture();
     const image = texture?.getImage();
     const metadata = image ? await sharp(image).metadata() : null;
-    const source = metadata ? { width: metadata.width!, height: metadata.height! } : null;
-    const scale = source && options.maxTextureSize ? Math.min(1, options.maxTextureSize / Math.max(source.width, source.height)) : 1;
+    const source = metadata
+      ? { width: metadata.width!, height: metadata.height! }
+      : null;
+    const scale =
+      source && options.maxTextureSize
+        ? Math.min(
+            1,
+            options.maxTextureSize / Math.max(source.width, source.height),
+          )
+        : 1;
     const w = source ? Math.max(1, Math.round(source.width * scale)) : 4;
     const h = source ? Math.max(1, Math.round(source.height * scale)) : 4;
     const info = material?.getBaseColorTextureInfo();
-    const transform = info?.getExtension<Transform>('KHR_texture_transform');
+    const transform = info?.getExtension<Transform>("KHR_texture_transform");
     const coordinate = transform?.getTexCoord() ?? info?.getTexCoord() ?? 0;
     const uv = new Map<Primitive, Float32Array>();
-    const low = [Infinity, Infinity], high = [-Infinity, -Infinity];
+    const low = [Infinity, Infinity],
+      high = [-Infinity, -Infinity];
     for (const p of primitives) {
-      const count = p.getAttribute('POSITION')!.getCount(), values = new Float32Array(count * 2);
+      const count = p.getAttribute("POSITION")!.getCount(),
+        values = new Float32Array(count * 2);
       const accessor = p.getAttribute(`TEXCOORD_${coordinate}`);
-      if (image && !accessor) throw new Error(`Textured primitive is missing TEXCOORD_${coordinate}`);
-      const offset = transform?.getOffset() ?? [0, 0], scaling = transform?.getScale() ?? [1, 1], angle = transform?.getRotation() ?? 0;
+      if (image && !accessor)
+        throw new Error(`Textured primitive is missing TEXCOORD_${coordinate}`);
+      const offset = transform?.getOffset() ?? [0, 0],
+        scaling = transform?.getScale() ?? [1, 1],
+        angle = transform?.getRotation() ?? 0;
       for (let i = 0; i < count; i++) {
-        const value: number[] = []; accessor?.getElement(i, value);
-        const x = (value[0] ?? 0.5) * scaling[0]!, y = (value[1] ?? 0.5) * scaling[1]!;
-        const u = image ? offset[0]! + Math.cos(angle) * x - Math.sin(angle) * y : 0.5;
-        const v = image ? offset[1]! + Math.sin(angle) * x + Math.cos(angle) * y : 0.5;
-        if (!Number.isFinite(u) || !Number.isFinite(v)) throw new Error('Texture transform produced invalid UV');
-        values[i * 2] = u; values[i * 2 + 1] = v;
-        low[0] = Math.min(low[0]!, u); low[1] = Math.min(low[1]!, v);
-        high[0] = Math.max(high[0]!, u); high[1] = Math.max(high[1]!, v);
+        const value: number[] = [];
+        accessor?.getElement(i, value);
+        const x = (value[0] ?? 0.5) * scaling[0]!,
+          y = (value[1] ?? 0.5) * scaling[1]!;
+        const u = image
+          ? offset[0]! + Math.cos(angle) * x - Math.sin(angle) * y
+          : 0.5;
+        const v = image
+          ? offset[1]! + Math.sin(angle) * x + Math.cos(angle) * y
+          : 0.5;
+        if (!Number.isFinite(u) || !Number.isFinite(v))
+          throw new Error("Texture transform produced invalid UV");
+        values[i * 2] = u;
+        values[i * 2 + 1] = v;
+        low[0] = Math.min(low[0]!, u);
+        low[1] = Math.min(low[1]!, v);
+        high[0] = Math.max(high[0]!, u);
+        high[1] = Math.max(high[1]!, v);
       }
       uv.set(p, values);
     }
     // sin/cos at 90° can put an exact tile edge a few ulps outside its integer.
     // Stabilize the allocation bounds only; keep actual UVs unchanged for sampling.
-    const tileEdge = (v: number) => Math.abs(v - Math.round(v)) < 1e-7 ? Math.round(v) : v;
-    const min: [number, number] = [Math.floor(tileEdge(low[0]!)), Math.floor(tileEdge(low[1]!))];
-    const tiles: [number, number] = [Math.max(1, Math.ceil(tileEdge(high[0]!)) - min[0]), Math.max(1, Math.ceil(tileEdge(high[1]!)) - min[1])];
-    if (tiles.some((v) => v > 16)) throw new Error('UV span exceeds 16 tiles; reduce tiling before atlas baking.');
-    regions.push({ material, primitives, uv, min, tiles, width: w * tiles[0], height: h * tiles[1], source,
-      wrap: [info?.getWrapS() ?? 10497, info?.getWrapT() ?? 10497] });
+    const tileEdge = (v: number) =>
+      Math.abs(v - Math.round(v)) < 1e-7 ? Math.round(v) : v;
+    const min: [number, number] = [
+      Math.floor(tileEdge(low[0]!)),
+      Math.floor(tileEdge(low[1]!)),
+    ];
+    const tiles: [number, number] = [
+      Math.max(1, Math.ceil(tileEdge(high[0]!)) - min[0]),
+      Math.max(1, Math.ceil(tileEdge(high[1]!)) - min[1]),
+    ];
+    if (tiles.some((v) => v > 16))
+      throw new Error(
+        "UV span exceeds 16 tiles; reduce tiling before atlas baking.",
+      );
+    const wrap: [number, number] = [
+      info?.getWrapS() ?? 10497,
+      info?.getWrapT() ?? 10497,
+    ];
+    let crop: Rect | undefined;
+    // Crop the continuous, unwrapped UV interval. Negative and seam-crossing UVs
+    // sample a virtual periodic image, rather than reserving entire integer tiles.
+    if (options.compactSize && source) {
+      const boundedX = tileEdge(low[0]!) >= 0 && tileEdge(high[0]!) <= 1;
+      const boundedY = tileEdge(low[1]!) >= 0 && tileEdge(high[1]!) <= 1;
+      const x = Math.max(
+        boundedX ? 0 : -Infinity,
+        Math.floor(tileEdge(low[0]!) * source.width) - 1,
+      );
+      const y = Math.max(
+        boundedY ? 0 : -Infinity,
+        Math.floor(tileEdge(low[1]!) * source.height) - 1,
+      );
+      const width = Math.max(
+        1,
+        Math.min(
+          boundedX ? source.width : Infinity,
+          Math.ceil(tileEdge(high[0]!) * source.width) + 1,
+        ) - x,
+      );
+      const height = Math.max(
+        1,
+        Math.min(
+          boundedY ? source.height : Infinity,
+          Math.ceil(tileEdge(high[1]!) * source.height) + 1,
+        ) - y,
+      );
+      if (width * height <= 64 * 1024 * 1024) {
+        crop = { x, y, width, height };
+        min[0] = x / source.width;
+        min[1] = y / source.height;
+        tiles[0] = width / source.width;
+        tiles[1] = height / source.height;
+      }
+    }
+    const areas: Record<string, number> = Object.create(null);
+    for (const p of primitives) {
+      const name = p.getMaterial()?.getName() ?? "(default)";
+      const pos = p.getAttribute("POSITION")!;
+      const ids =
+        p.getIndices()?.getArray() ??
+        Uint32Array.from({ length: pos.getCount() }, (_, i) => i);
+      const instances = root
+        .listNodes()
+        .filter((n) => n.getMesh()?.listPrimitives().includes(p));
+      for (const node of instances) {
+        const m = node.getWorldMatrix();
+        const world = (i: number) => {
+          const v = pos.getElement(i, []);
+          return [0, 1, 2].map(
+            (k) =>
+              m[k]! * v[0]! +
+              m[4 + k]! * v[1]! +
+              m[8 + k]! * v[2]! +
+              m[12 + k]!,
+          );
+        };
+        for (let i = 0; i < ids.length; i += 3) {
+          const a = world(ids[i]!),
+            b = world(ids[i + 1]!),
+            c = world(ids[i + 2]!);
+          const u = b.map((v, k) => v - a[k]!),
+            v = c.map((v, k) => v - a[k]!);
+          const area =
+            Math.hypot(
+              u[1]! * v[2]! - u[2]! * v[1]!,
+              u[2]! * v[0]! - u[0]! * v[2]!,
+              u[0]! * v[1]! - u[1]! * v[0]!,
+            ) / 2;
+          areas[name] = (areas[name] ?? 0) + area;
+        }
+      }
+    }
+    const weightedArea = Object.entries(areas).reduce(
+      (sum, [name, area]) =>
+        sum +
+        area *
+          (options.materialWeights &&
+          Object.hasOwn(options.materialWeights, name)
+            ? options.materialWeights[name]!
+            : 1),
+      0,
+    );
+    regions.push({
+      material,
+      primitives,
+      uv,
+      min,
+      tiles,
+      width: Math.max(1, Math.round(w * tiles[0])),
+      height: Math.max(1, Math.round(h * tiles[1])),
+      source,
+      ...(crop ? { crop } : {}),
+      wrap,
+      areas,
+      weightedArea,
+    });
   }
-  let size = options.atlasSize ?? 8;
+  let size = options.compactSize ?? options.atlasSize ?? 8;
   let layout = pack(regions, size, padding);
-  while (!layout && options.atlasSize === undefined && size < 8192) { size *= 2; layout = pack(regions, size, padding); }
-  if (!layout) throw new Error(`Texture atlas capacity exceeded (${size}×${size}). Increase atlasSize or reduce maxTextureSize; padded regions: ${regions.map((r) => `${r.width + padding * 2}×${r.height + padding * 2}`).join(', ')}. No textures were discarded.`);
+  if (options.compactSize) {
+    const totalArea = regions.reduce((sum, r) => sum + r.weightedArea, 0);
+    const dimensions = regions.map((r) => {
+      if (options.allocation === "source-area") return [r.width, r.height];
+      const demand =
+        Math.max(1e-8, r.weightedArea / Math.max(totalArea, 1e-8)) *
+        size *
+        size;
+      const aspect = Math.max(1 / 32, Math.min(32, r.width / r.height));
+      return [Math.sqrt(demand * aspect), Math.sqrt(demand / aspect)];
+    });
+    // A 3×3 minimum keeps small eye/trim charts sampleable at the final atlas size.
+    const attempt = (scale: number) => {
+      regions.forEach((r, i) => {
+        r.width = Math.max(
+          r.crop ? 3 : r.tiles[0],
+          Math.round(dimensions[i]![0]! * scale),
+        );
+        r.height = Math.max(
+          r.crop ? 3 : r.tiles[1],
+          Math.round(dimensions[i]![1]! * scale),
+        );
+      });
+      return pack(regions, size, padding, true);
+    };
+    let low = 0,
+      high = size;
+    if (!attempt(0))
+      throw new Error(
+        "Too many UV charts for final atlas with safe gutters; increase compactSize",
+      );
+    for (let i = 0; i < 24; i++) {
+      const mid = (low + high) / 2;
+      if (attempt(mid)) low = mid;
+      else high = mid;
+    }
+    layout = attempt(low);
+    // Keep the proportional allocation intact; neighboring free space is not
+    // arbitrarily awarded to whichever chart happens to be visited first.
+    for (const r of regions)
+      if (!r.crop) {
+        r.width = Math.floor(r.width / r.tiles[0]) * r.tiles[0];
+        r.height = Math.floor(r.height / r.tiles[1]) * r.tiles[1];
+      }
+  }
+  while (
+    !layout &&
+    options.atlasSize === undefined &&
+    !options.compactSize &&
+    size < 8192
+  ) {
+    size *= 2;
+    layout = pack(regions, size, padding);
+  }
+  if (!layout)
+    throw new Error(
+      `Texture atlas capacity exceeded (${size}×${size}). Increase atlasSize or reduce maxTextureSize; padded regions: ${regions.map((r) => `${r.width + padding * 2}×${r.height + padding * 2}`).join(", ")}. No textures were discarded.`,
+    );
   const atlas = Buffer.alloc(size * size * 4);
   const reportRegions = [];
+  // Reuse decoded source images across islands; keep at most three in memory.
+  const decodedImages = new Map<Uint8Array, Buffer>();
+  const decodeImage = async (image: Uint8Array) => {
+    if (!decodedImages.has(image)) {
+      const raw = await sharp(image)
+        .toColourspace("srgb")
+        .ensureAlpha()
+        .raw()
+        .toBuffer();
+      if (decodedImages.size >= 3)
+        decodedImages.delete(decodedImages.keys().next().value!);
+      decodedImages.set(image, raw);
+    }
+    return decodedImages.get(image)!;
+  };
   for (const [id, region] of regions.entries()) {
-    const rect = layout[id]!, w = region.width / region.tiles[0], h = region.height / region.tiles[1];
+    const rect = layout[id]!,
+      w = region.crop
+        ? region.width
+        : Math.round(region.width / region.tiles[0]),
+      h = region.crop
+        ? region.height
+        : Math.round(region.height / region.tiles[1]);
     const image = region.material?.getBaseColorTexture()?.getImage();
-    const pixels = image ? await sharp(image).toColourspace('srgb').ensureAlpha().resize(w, h, { kernel: filter }).raw().toBuffer() : Buffer.alloc(4 * w * h, 255);
+    const pipeline =
+      image && region.source
+        ? sharp(await decodeImage(image), {
+            raw: {
+              width: region.source.width,
+              height: region.source.height,
+              channels: 4,
+            },
+          })
+        : image
+          ? sharp(image).toColourspace("srgb").ensureAlpha()
+          : null;
+    let cropped = pipeline;
+    if (region.crop) {
+      const c = region.crop,
+        source = region.source!;
+      if (
+        c.x >= 0 &&
+        c.y >= 0 &&
+        c.x + c.width <= source.width &&
+        c.y + c.height <= source.height
+      ) {
+        cropped = pipeline!.extract({
+          left: c.x,
+          top: c.y,
+          width: c.width,
+          height: c.height,
+        });
+      } else {
+        const raw = await decodeImage(image!);
+        const pixels = Buffer.alloc(c.width * c.height * 4);
+        for (let y = 0; y < c.height; y++)
+          for (let x = 0; x < c.width; x++) {
+            const sx = sampleIndex(c.x + x, source.width, region.wrap[0]),
+              sy = sampleIndex(c.y + y, source.height, region.wrap[1]);
+            const i = (sy * source.width + sx) * 4,
+              j = (y * c.width + x) * 4;
+            for (let channel = 0; channel < 4; channel++)
+              pixels[j + channel] = raw[i + channel]!;
+          }
+        cropped = sharp(pixels, {
+          raw: { width: c.width, height: c.height, channels: 4 },
+        });
+      }
+    }
+    const pixels = cropped
+      ? await cropped
+          .resize(w, h, { kernel: filter, fit: "fill" })
+          .raw()
+          .toBuffer()
+      : Buffer.alloc(4 * w * h, 255);
     const factor = region.material?.getBaseColorFactor() ?? [1, 1, 1, 1];
-    if (factor.some((v) => !Number.isFinite(v) || v < 0 || v > 1)) throw new Error('Invalid base-color factor');
-    const mode = region.material?.getAlphaMode() ?? 'OPAQUE', cutoff = region.material?.getAlphaCutoff() ?? 0.5;
+    if (factor.some((v) => !Number.isFinite(v) || v < 0 || v > 1))
+      throw new Error("Invalid base-color factor");
+    const mode = region.material?.getAlphaMode() ?? "OPAQUE",
+      cutoff = region.material?.getAlphaCutoff() ?? 0.5;
     for (let i = 0; i < pixels.length; i += 4) {
-      for (let c = 0; c < 3; c++) pixels[i + c] = Math.round(srgb(linear(pixels[i + c]! / 255) * factor[c]!) * 255);
-      const alpha = pixels[i + 3]! / 255 * factor[3]!;
-      pixels[i + 3] = mode === 'OPAQUE' ? 255 : mode === 'MASK' ? (alpha >= cutoff ? 255 : 0) : Math.round(alpha * 255);
+      for (let c = 0; c < 3; c++)
+        pixels[i + c] = Math.round(
+          srgb(linear(pixels[i + c]! / 255) * factor[c]!) * 255,
+        );
+      const alpha = (pixels[i + 3]! / 255) * factor[3]!;
+      pixels[i + 3] =
+        mode === "OPAQUE"
+          ? 255
+          : mode === "MASK"
+            ? alpha >= cutoff
+              ? 255
+              : 0
+            : Math.round(alpha * 255);
     }
     // Fill both repeated/clamped/mirrored UV span and gutters with the source sampler's behavior.
-    for (let y = -padding; y < region.height + padding; y++) for (let x = -padding; x < region.width + padding; x++) {
-      const sx = sampleIndex(x + region.min[0] * w, w, region.wrap[0]), sy = sampleIndex(y + region.min[1] * h, h, region.wrap[1]);
-      const src = (sy * w + sx) * 4, dst = ((rect.y + y + padding) * size + rect.x + x + padding) * 4;
-      for (let c = 0; c < 4; c++) atlas[dst + c] = pixels[src + c]!;
-    }
+    for (let y = -padding; y < region.height + padding; y++)
+      for (let x = -padding; x < region.width + padding; x++) {
+        const sx = region.crop
+          ? sampleIndex(x, w, 33071)
+          : sampleIndex(x + region.min[0] * w, w, region.wrap[0]);
+        const sy = region.crop
+          ? sampleIndex(y, h, 33071)
+          : sampleIndex(y + region.min[1] * h, h, region.wrap[1]);
+        const src = (sy * w + sx) * 4,
+          dst = ((rect.y + y + padding) * size + rect.x + x + padding) * 4;
+        for (let c = 0; c < 4; c++) atlas[dst + c] = pixels[src + c]!;
+      }
     for (const p of region.primitives) {
       const values = region.uv.get(p)!;
       for (let i = 0; i < values.length; i += 2) {
-        values[i] = (rect.x + padding + (values[i]! - region.min[0]) / region.tiles[0] * region.width) / size;
-        values[i + 1] = (rect.y + padding + (values[i + 1]! - region.min[1]) / region.tiles[1] * region.height) / size;
+        values[i] =
+          (rect.x +
+            padding +
+            ((values[i]! - region.min[0]) / region.tiles[0]) * region.width) /
+          size;
+        values[i + 1] =
+          (rect.y +
+            padding +
+            ((values[i + 1]! - region.min[1]) / region.tiles[1]) *
+              region.height) /
+          size;
       }
-      p.setAttribute('TEXCOORD_0', doc.createAccessor().setType('VEC2').setArray(Float32Array.from(values)).setBuffer(root.listBuffers()[0] ?? doc.createBuffer()));
+      p.setAttribute(
+        "TEXCOORD_0",
+        doc
+          .createAccessor()
+          .setType("VEC2")
+          .setArray(Float32Array.from(values))
+          .setBuffer(root.listBuffers()[0] ?? doc.createBuffer()),
+      );
     }
-    reportRegions.push({ id, material: region.material?.getName() ?? '(default)', x: rect.x + padding, y: rect.y + padding,
-      width: region.width, height: region.height, source: region.source, resized: { width: w, height: h }, tiles: region.tiles });
+    reportRegions.push({
+      id,
+      material: Object.keys(region.areas).join(" / ") || "(default)",
+      materials: Object.keys(region.areas),
+      surfaceAreas: region.areas,
+      weightedArea: region.weightedArea,
+      x: rect.x + padding,
+      y: rect.y + padding,
+      width: region.width,
+      height: region.height,
+      source: region.source,
+      resized: { width: w, height: h },
+      tiles: region.tiles,
+      crop: region.crop,
+    });
   }
-  const png = await sharp(atlas, { raw: { width: size, height: size, channels: 4 } }).png().toBuffer();
-  const texture = doc.createTexture('atlas').setImage(Uint8Array.from(png)).setMimeType('image/png').setURI('atlas.png');
+  const png = await sharp(atlas, {
+    raw: { width: size, height: size, channels: 4 },
+  })
+    .png()
+    .toBuffer();
+  let sampledUtilization: number | undefined;
+  if (options.compactSize) {
+    const used = new Uint8Array(size * size);
+    for (const region of regions)
+      for (const p of region.primitives) {
+        const uv = p.getAttribute("TEXCOORD_0")!,
+          indices =
+            p.getIndices()?.getArray() ??
+            Uint32Array.from({ length: uv.getCount() }, (_, i) => i);
+        for (let i = 0; i < indices.length; i += 3) {
+          const points = [indices[i]!, indices[i + 1]!, indices[i + 2]!].map(
+            (id) => {
+              const t: number[] = [];
+              uv.getElement(id, t);
+              return t.map((v) => v * size);
+            },
+          );
+          const [a, b, c] = points as [number[], number[], number[]];
+          const edge = (p: number[], q: number[], x: number, y: number) =>
+            (q[0]! - p[0]!) * (y - p[1]!) - (q[1]! - p[1]!) * (x - p[0]!);
+          if (Math.abs(edge(a, b, c[0]!, c[1]!)) < 1e-12) continue;
+          const x0 = Math.max(0, Math.floor(Math.min(a[0]!, b[0]!, c[0]!))),
+            x1 = Math.min(size - 1, Math.ceil(Math.max(a[0]!, b[0]!, c[0]!)));
+          const y0 = Math.max(0, Math.floor(Math.min(a[1]!, b[1]!, c[1]!))),
+            y1 = Math.min(size - 1, Math.ceil(Math.max(a[1]!, b[1]!, c[1]!)));
+          for (let y = y0; y <= y1; y++)
+            for (let x = x0; x <= x1; x++) {
+              const e = [
+                edge(a, b, x + 0.5, y + 0.5),
+                edge(b, c, x + 0.5, y + 0.5),
+                edge(c, a, x + 0.5, y + 0.5),
+              ];
+              if (
+                (e.every((v) => v >= 0) || e.every((v) => v <= 0)) &&
+                atlas[(y * size + x) * 4 + 3]! > 0
+              )
+                used[y * size + x] = 1;
+            }
+        }
+      }
+    sampledUtilization = used.reduce((sum, v) => sum + v, 0) / used.length;
+  }
+  const texture = doc
+    .createTexture("atlas")
+    .setImage(new Uint8Array(png))
+    .setMimeType("image/png")
+    .setURI("atlas.png");
   for (const region of regions) {
-    const material = region.material ?? doc.createMaterial('default');
+    const material = region.material ?? doc.createMaterial("default");
     for (const p of region.primitives) p.setMaterial(material);
     for (const ext of material.listExtensions()) ext.dispose();
-    material.setNormalTexture(null).setMetallicRoughnessTexture(null).setOcclusionTexture(null).setEmissiveTexture(null)
-      .setEmissiveFactor([0, 0, 0]).setMetallicFactor(0).setRoughnessFactor(1).setBaseColorFactor([1, 1, 1, 1]).setBaseColorTexture(texture);
+    material
+      .setNormalTexture(null)
+      .setMetallicRoughnessTexture(null)
+      .setOcclusionTexture(null)
+      .setEmissiveTexture(null)
+      .setEmissiveFactor([0, 0, 0])
+      .setMetallicFactor(0)
+      .setRoughnessFactor(1)
+      .setBaseColorFactor([1, 1, 1, 1])
+      .setBaseColorTexture(texture);
     const info = material.getBaseColorTextureInfo()!;
     for (const ext of info.listExtensions()) ext.dispose();
-    info.setTexCoord(0).setWrapS(33071).setWrapT(33071).setMinFilter(filter === 'nearest' ? 9728 : 9729).setMagFilter(filter === 'nearest' ? 9728 : 9729);
+    info
+      .setTexCoord(0)
+      .setWrapS(33071)
+      .setWrapT(33071)
+      .setMinFilter(filter === "nearest" ? 9728 : 9729)
+      .setMagFilter(filter === "nearest" ? 9728 : 9729);
   }
   // Dispose unused materials/textures, after all material extension references have been removed.
-  for (const material of root.listMaterials()) if (!root.listMeshes().some((m) => m.listPrimitives().some((p) => p.getMaterial() === material))) material.dispose();
-  for (const old of root.listTextures()) if (old !== texture && old.listParents().length === 1) old.dispose();
-  for (const accessor of root.listAccessors()) if (accessor.listParents().length === 1) accessor.dispose();
-  model.warnings.push('Atlas preserves base color and alpha only; PBR lighting/shader effects are not reproduced.');
+  for (const material of root.listMaterials())
+    if (
+      !root
+        .listMeshes()
+        .some((m) =>
+          m.listPrimitives().some((p) => p.getMaterial() === material),
+        )
+    )
+      material.dispose();
+  for (const old of root.listTextures())
+    if (old !== texture && old.listParents().length === 1) old.dispose();
+  for (const accessor of root.listAccessors())
+    if (accessor.listParents().length === 1) accessor.dispose();
+  model.warnings.push(
+    "Atlas preserves base color and alpha only; PBR lighting/shader effects are not reproduced.",
+  );
   validateModel(model);
-  return { model, png, report: { originalTextures: inspection.textures.map((t) => ({ width: t.width, height: t.height, bytes: t.bytes })),
-    atlas: { width: size, height: size, bytes: png.length }, filter, padding, regions: reportRegions, warnings: model.warnings } };
+  return {
+    model,
+    png,
+    report: {
+      originalTextures: inspection.textures.map((t) => ({
+        width: t.width,
+        height: t.height,
+        bytes: t.bytes,
+      })),
+      atlas: {
+        width: size,
+        height: size,
+        bytes: png.length,
+        sampledUtilization,
+        contentUtilization:
+          regions.reduce((n, r) => n + r.width * r.height, 0) / (size * size),
+        allocatedUtilization:
+          regions.reduce(
+            (n, r) => n + (r.width + 2 * padding) * (r.height + 2 * padding),
+            0,
+          ) /
+          (size * size),
+      },
+      filter,
+      padding,
+      allocation: options.compactSize
+        ? (options.allocation ?? "surface-area")
+        : "source-area",
+      materialWeights: options.materialWeights ?? {},
+      regions: reportRegions,
+      warnings: model.warnings,
+    },
+  };
 }

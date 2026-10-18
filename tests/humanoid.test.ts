@@ -66,6 +66,20 @@ test('humanoid conversion rejects missing explicit source roles instead of guess
   await assert.rejects(exportHumanoid(model, { height: 32, textureSize: 8 }), /leftHand/);
 });
 
+test('explicit source bone map binds a non-VRM rig and aligns its forward orientation', async () => {
+  const model = await fixture();
+  const boneMap: Record<string, string> = {};
+  for (const node of model.document.getRoot().listNodes()) {
+    const role = node.getExtras()._vrmHumanBone;
+    if (typeof role === 'string') { boneMap[role] = node.getName(); node.setExtras({}); }
+  }
+  const result = await exportHumanoid(model, { height: 32, textureSize: 8, profile: { boneMap, rotationYDegrees: 180 } });
+  assert.equal(result.binding.parts.leftArm, 1); assert.equal(result.binding.parts.leftLeg, 1);
+  assert.ok(result.binding.pivots.leftArm[0] > 0);
+  assert.ok(result.file['geometry.skin0']!.bones.find((b) => b.name === 'head')!.poly_mesh!.normals[0]![2] < -0.99);
+  await assert.rejects(exportHumanoid(model, { height: 32, textureSize: 8, profile: { boneMap: { ...boneMap, head: 'missing' } } }), /exactly one source node/);
+});
+
 test('avatar shoulder profile moves both arm pivots outward and preserves torso and face', async () => {
   const model = await fixture();
   const plain = await exportHumanoid(model, { height: 32, textureSize: 8 });

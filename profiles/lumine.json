@@ -1,0 +1,37 @@
+{
+  "rotationYDegrees": 180,
+  "boneMap": {
+    "hips": "腰",
+    "head": "頭",
+    "neck": "首",
+    "leftUpperArm": "左腕",
+    "rightUpperArm": "右腕",
+    "leftHand": "左手首",
+    "rightHand": "右手首",
+    "leftShoulder": "左肩",
+    "rightShoulder": "右肩",
+    "leftUpperLeg": "左足D",
+    "rightUpperLeg": "右足D"
+  },
+  "shoulderOutset": 0.3,
+  "armSpreadDegrees": 6,
+  "materialRules": [
+    {
+      "material": "裙",
+      "mode": "body"
+    },
+    {
+      "material": "飘带",
+      "mode": "body"
+    },
+    {
+      "material": "南瓜裤",
+      "mode": "body"
+    },
+    {
+      "material": "衣",
+      "mode": "weighted-components",
+      "weldSeams": true
+    }
+  ]
+}

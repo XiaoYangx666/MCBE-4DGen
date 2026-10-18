@@ -73,7 +73,7 @@ function snapshotPrimitive(doc: Document, source: Primitive, node: Node, warn: (
     if (values) setData(out, doc, semantic, values);
   }
   const indices = source.getIndices();
-  if (indices) out.setIndices(indices.clone().setArray(Uint32Array.from(indices.getArray()!)));
+  if (indices) out.setIndices(indices.clone().setArray(new Uint32Array(indices.getArray()!)));
   compactPrimitive(out);
   const skin = node.getSkin();
   if (!skin) {
