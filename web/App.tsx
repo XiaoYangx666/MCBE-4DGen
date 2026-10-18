@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SaveSkinDialog } from "./SaveSkinDialog";
 import { Viewer } from "./Viewer";
 import { MaterialPanel } from "./MaterialPanel";
 import { OutputPanels } from "./OutputPanels";
@@ -10,7 +11,9 @@ import { estimateTriangles } from "./estimate";
 import type { Result, Session } from "./types";
 
 export function App() {
-  const [session, setSession] = useState<Session | null>(null),
+  const [saveOpen, setSaveOpen] = useState(false),
+    [savedRevision, setSavedRevision] = useState(0),
+    [session, setSession] = useState<Session | null>(null),
     [result, setResult] = useState<Result | null>(null),
     [mode, setMode] = useState("pose"),
     [excluded, setExcluded] = useState<string[]>([]),
@@ -42,7 +45,7 @@ export function App() {
   useEffect(() => {
     const change = () => {
       setHash(location.hash);
-      const label = location.hash.startsWith("#/models") ? "模型管理" : location.hash.startsWith("#/packs") ? "皮肤包管理" : location.hash.startsWith("#/workbench") ? "工作台" : "首页";
+      const label = location.hash.startsWith("#/models") ? "源模型" : location.hash.startsWith("#/game") ? "游戏中的皮肤" : location.hash.startsWith("#/packs") ? "皮肤包" : location.hash.startsWith("#/workbench") ? "工作台" : "首页";
       document.title = `4DGen · ${label}`;
     };
     change();
@@ -71,7 +74,7 @@ export function App() {
   function changed() {
     setRevision((v) => v + 1);
   }
-  function accept(s: Session) {
+  function accept(s: Session, fromVersion = false) {
     const saved = s.settings;
     const loadedProfile = saved?.profile ?? (s.profile
       ? { ...s.profile, shoulderOutset: 0 }
@@ -92,6 +95,8 @@ export function App() {
     setBinding(saved?.binding ?? (s.profile ? "humanoid" : "static"));
     setMessage("模型已加载，先检查材质和姿势。");
     setRevision(0);
+    setSavedRevision(fromVersion ? -1 : 0);
+    setSaveOpen(false);
     location.hash = "#/workbench";
   }
   async function action(fn: () => Promise<void>) {
@@ -126,6 +131,7 @@ export function App() {
         if (state.status === "done") {
           setResult({ id: j.id, ...state.result, cached: !!j.cached });
           setResultRevision(revision);
+          setSavedRevision(revision);
           setMode("result");
           setFocus("all");
           break;
@@ -145,14 +151,28 @@ export function App() {
     ratio,
     binding,
   );
+  const settings = {binding, ratio, maxError, height, excluded, materialWeights, profile};
+  const dirty = !!session && revision !== savedRevision;
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  async function saveSettings() {
+    if (!session?.modelId) return;
+    await post("/api/models/update", {id: session.modelId, settings});
+    setSavedRevision(revision); setMessage("编辑配置已保存");
+  }
   const stale = !!result && revision !== resultRevision;
-  const page = hash.startsWith("#/models") ? "models" : hash.startsWith("#/packs") ? "packs" : hash.startsWith("#/workbench") ? "workbench" : "home";
-  const navigation = <header className="app-nav"><a className="brand" href="#/">4D<span>Gen</span><i>LOCAL STUDIO</i></a><nav aria-label="主导航">{[["home","首页","#/"],["workbench","工作台","#/workbench"],["models","模型管理","#/models"],["packs","皮肤包管理","#/packs"]].map(([key,label,to])=><a key={key} className={page===key?"active":""} aria-current={page===key?"page":undefined} href={to}>{label}</a>)}</nav><div className="header-right">{session&&<span className="current-model" title={session.name}>{session.name}</span>}{page==="workbench"&&session?.modelId&&<button disabled={busy} onClick={()=>void action(async()=>{await post("/api/models/update",{id:session.modelId,settings:{binding,ratio,maxError,height,excluded,materialWeights,profile}});setMessage("编辑配置已保存到模型");})}>保存配置</button>}<span className="local"><b/> 本地环境运行</span></div></header>;
-  if (page !== "workbench") return <div className="app">{navigation}{page === "packs" ? <PackPage/> : <LibraryPage key={page} home={page==="home"} jobId={result?.id??null} currentModelId={session?.modelId} onOpen={(s,settings)=>accept(settings?{...s,settings}:s)}/>}</div>;
+  const page = hash.startsWith("#/models") ? "models" : (hash.startsWith("#/packs") || hash.startsWith("#/game")) ? "packs" : hash.startsWith("#/workbench") ? "workbench" : "home";
+  const navigation = <header className="app-nav"><a className="brand" href="#/">4D<span>Gen</span><i>LOCAL STUDIO</i></a><nav aria-label="主导航">{[["home","概览","#/"],["models","源模型","#/models"],["workbench","工作台","#/workbench"],["packs","皮肤包","#/packs"]].map(([key,label,to])=><a key={key} className={page===key?"active":""} aria-current={page===key?"page":undefined} href={to}>{label}</a>)}</nav><div className="header-right">{session&&<span className="current-model" title={session.name}>{session.name}</span>}{page==="workbench"&&session?.modelId&&<button disabled={busy} onClick={()=>void action(async()=>{await saveSettings();})}>{dirty ? "保存配置 ●" : "配置已保存"}</button>}<span className="local"><b/> 本地环境运行</span></div></header>;
+  if (page !== "workbench") return <div className="app">{navigation}{page === "packs" ? <PackPage/> : <LibraryPage key={page} home={page==="home"} onOpen={(s,settings)=>{if(busy)return;if(dirty&&!window.confirm("当前模型的配置尚未保存，仍要打开另一个模型吗？"))return;accept(settings?{...s,settings}:s,!!settings);}}/>}</div>;
 
   return (
     <div className="app">
       {navigation}
+      <div className="workflow-strip"><a href="#/models">01 源模型</a><span>→</span><b>02 调整与生成</b><span>→</span><button disabled={!result || stale || busy} onClick={() => setSaveOpen(true)}>03 保存皮肤</button><span>→</span><a href="#/packs">04 整理与使用</a><small>{busy ? "正在生成，请稍候" : dirty ? "编辑配置未保存" : session ? "配置已保存" : "先选择一个源模型"}</small></div>
       <div className="workspace">
         <aside className="sidebar">
           <MaterialPanel
@@ -284,9 +304,10 @@ export function App() {
           updateProfile={updateProfile} profileText={profileText} setProfileText={setProfileText}
           setProfile={setProfile} setError={setError} convert={convert}
           error={error} message={message} elapsed={elapsed}
-          openPacks={() => (location.hash = "#/models?model=" + (session?.modelId ?? "") + "&tab=skins")}
+          openPacks={() => setSaveOpen(true)}
         />
       </div>
+      {saveOpen && result && !stale && <SaveSkinDialog jobId={result.id} modelName={session?.name ?? "新皮肤"} onClose={() => setSaveOpen(false)} onSaved={id => { setSaveOpen(false); location.hash = "#/packs?pack=" + encodeURIComponent(id); }} />}
       <footer>
         <span>4DGen / 本地模型工作台</span>
         <span>文件在本地环境处理 · 启用皮肤包时会写入游戏目录</span>
@@ -295,3 +316,4 @@ export function App() {
     </div>
   );
 }
+

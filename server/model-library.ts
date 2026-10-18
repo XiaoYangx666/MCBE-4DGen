@@ -49,7 +49,7 @@ export interface EditSettings {
 export interface ModelEntry {
   id: string; path: string; name: string; created: string; updated: string;
   settings?: EditSettings; packIds?: string[]; profile?: unknown;
-  stats?: { triangles: number; materials: number; bytes: number }; previewKey?: string;
+  stats?: { triangles: number; materials: number; bytes: number }; previewKey?: string; sourceAvailable?: boolean;
 }
 function entryPath(id: string) {
   if (!/^[a-f0-9]{64}$/.test(id)) throw Error('模型 ID 无效');
@@ -63,13 +63,14 @@ async function store(entry: ModelEntry) {
   await rename(temp, path);
   return entry;
 }
-export async function rememberModel(path: string, name: string, details: Partial<ModelEntry> = {}) {
-  const id = createHash('sha256').update(path).digest('hex');
+export async function rememberModel(path: string, name: string, details: Partial<ModelEntry> = {}, existingId?: string) {
+  const id = existingId ?? createHash('sha256').update(path).digest('hex');
   const old = await readFile(entryPath(id), 'utf8').then(v => JSON.parse(v) as ModelEntry).catch(() => null);
   return store({ id, path, name, created: old?.created ?? new Date().toISOString(), ...old, ...details, updated: new Date().toISOString() });
 }
-export async function updateModel(id: string, patch: { name?: string; settings?: EditSettings; packIds?: string[] }) {
+export async function updateModel(id: string, patch: { name?: string; settings?: EditSettings; packIds?: string[]; path?: string }) {
   const entry = JSON.parse(await readFile(entryPath(id), 'utf8')) as ModelEntry;
+  if (patch.path !== undefined && (!isAbsolute(patch.path) || !modelPattern.test(patch.path) || !(await stat(patch.path)).isFile())) throw Error("请选择有效的模型文件绝对路径");
   if (patch.name !== undefined && (!patch.name.trim() || patch.name.length > 120)) throw Error('名称需为 1–120 个字符');
   if (patch.settings) {
     const s = patch.settings;
@@ -85,7 +86,8 @@ export async function listModels(): Promise<ModelEntry[]> {
     if (!/^[a-f0-9]{64}\.json$/.test(file)) continue;
     const entry = JSON.parse(await readFile(resolve(folder, file), 'utf8')) as ModelEntry;
     const info = await stat(resolve(folder, file));
-    result.push({ ...entry, created: entry.created ?? info.birthtime.toISOString(), updated: entry.updated ?? info.mtime.toISOString() });
+    result.push({ ...entry, sourceAvailable: await stat(entry.path).then(i => i.isFile()).catch(() => false), created: entry.created ?? info.birthtime.toISOString(), updated: entry.updated ?? info.mtime.toISOString() });
   }
   return result.sort((a,b) => b.updated.localeCompare(a.updated));
 }
+

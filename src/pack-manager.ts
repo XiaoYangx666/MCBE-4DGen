@@ -431,7 +431,7 @@ export class PackManager {
   async status() {
     return Promise.all(Object.keys(this.config.slots).map(async (slot) => {
       const target = this.target(slot), state = await this.state(slot);
-      if (!(await exists(target))) return { slot, target, exists: false, managed: false };
+      if (!(await exists(target))) return { slot, target, exists: false, managed: !!state, active: state?.active ?? [], presetSources: state?.presetSources ?? [], pending: state?.pending ?? null, changedOutsideManager: null, skins: null, originalBackup: state?.original ?? null };
       const current = await tree(target);
       let skins: number | null = null;
       try { skins = decode<{ skins: unknown[] }>(current.files['skins.json']!).skins.length; } catch { /* report unreadable metadata */ }
@@ -595,3 +595,4 @@ export class PackManager {
     });
   }
 }
+
