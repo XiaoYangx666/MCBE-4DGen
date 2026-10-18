@@ -120,20 +120,39 @@ async function main() {
     const triangles = Object.values(exported.binding.parts as Record<string, number>).reduce((a, b) => a + b, 0);
     results.push({ importMs, exportMs, packMs, totalMs, timings: exported.binding.timings as Record<string, number>, triangles });
     console.log(
-      `run ${run}: import=${importMs}ms export=${exportMs}ms pack=${packMs}ms total=${totalMs}ms triangles=${triangles}`,
+      `run ${run}: import=${importMs}ms export=${exportMs}ms pack=${packMs}ms total=${totalMs}ms triangles=${triangles} rss=${Math.round(process.memoryUsage().rss / 1048576)}MB`,
     );
     console.log("  humanoid phases: " + JSON.stringify(exported.binding.timings));
     console.log("  internal phases: " + JSON.stringify(phases));
+
+    // Each iteration leaves a cloned document behind. Without releasing it the
+    // heap (and therefore GC cost) grows with every run, which made later runs
+    // progressively slower and the medians unreliable.
+    model.document.getRoot().listBuffers().forEach((buffer) => buffer.dispose());
+    (exported as unknown as { model?: { document?: { getRoot(): any } } }).model?.document
+      ?.getRoot()
+      .listBuffers()
+      .forEach((buffer: any) => buffer.dispose());
+    Bun.gc(true);
   }
 
-  const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
-  console.log("\nsummary (median of " + runs + " runs):");
-  console.log(`  import  ${median(results.map((r) => r.importMs))}ms`);
-  console.log(`  export  ${median(results.map((r) => r.exportMs))}ms`);
-  console.log(`  pack    ${median(results.map((r) => r.packMs))}ms`);
-  console.log(`  total   ${median(results.map((r) => r.totalMs))}ms`);
-  for (const phase of Object.keys(results[0]!.timings))
-    console.log(`    ${phase.padEnd(10)} ${median(results.map((r) => r.timings[phase] ?? 0))}ms`);
+  const stats = (values: number[]) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    return {
+      min: sorted[0]!,
+      median: sorted[Math.floor(sorted.length / 2)]!,
+      max: sorted[sorted.length - 1]!,
+    };
+  };
+  console.log("\nsummary (" + runs + " runs; report min and median, the machine is noisy):");
+  for (const key of ["importMs", "exportMs", "packMs", "totalMs"] as const) {
+    const s = stats(results.map((r) => r[key]));
+    console.log(`  ${key.replace("Ms", "").padEnd(8)} min ${s.min}ms  median ${s.median}ms  max ${s.max}ms`);
+  }
+  for (const phase of Object.keys(results[0]!.timings)) {
+    const s = stats(results.map((r) => r.timings[phase] ?? 0));
+    console.log(`    ${phase.padEnd(10)} min ${s.min}ms  median ${s.median}ms  max ${s.max}ms`);
+  }
   if (!keepGeometry) console.log("\n(set --keep-geometry to force full geometry serialization before measuring)");
 }
 

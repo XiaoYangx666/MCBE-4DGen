@@ -22,7 +22,7 @@ CC0 免费样本的复现链路：`fetch-sample.ts` 下载并校验 SHA256，`ch
 
 两个与转换耗时有关的脚本可重复使用：
 
-- `bench-convert.ts`：复现工作台冷启动链路（导入 → 人形导出 → 打包），逐阶段计时并输出中位数。`--model sample-b|sample-a`、`--runs N`、`--no-cache`（走真实 PMX/Assimp 导入）。只读取缓存模型，不安装皮肤包。
+- `bench-convert.ts`：复现工作台冷启动链路（导入 → 人形导出 → 打包），逐阶段计时。`--model sample-b|sample-a`、`--runs N`、`--no-cache`（走真实 PMX/Assimp 导入）。只读取缓存模型，不安装皮肤包。每轮结束会释放克隆文档并 GC，报告最小值和最大值；本地环境噪声较大，判断改动用最小值，不要跨批次比较中位数。
 - `fingerprint-convert.ts`：对同一输入保存几何 JSON、`skin0.png`、骨骼枢轴、部位面数与包内确定性文件（`manifest.json` 含随机 UUID，不参与比较）的 SHA256，用于证明性能改动没有改变输出。前后对比时把两次结果存到不同 `--out` 再比较字段。
 
 ## experiments/
