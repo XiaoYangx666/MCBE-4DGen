@@ -96,18 +96,41 @@ function snapshotPrimitive(doc: Document, source: Primitive, node: Node, warn: (
   const pos = data(out, 'POSITION')!, normal = data(out, 'NORMAL'), tangent = data(out, 'TANGENT');
   const regionIds = new Map<string, number>(), regions = new Float32Array(pos.length / 3);
   let renormalized = false;
+  // Hoisted out of the per-vertex loop. This runs once per vertex of every
+  // primitive (hundreds of thousands for a full character); allocating a mat4,
+  // two arrays and joined strings per vertex dominated the freeze cost.
+  const blend = mat4.create();
+  const v = vec3.create();
+  const normalMatrix = mat3.create();
+  const tangentMatrix = mat3.create();
+  const signature: string[] = [];
+  // Accessor.getElement re-resolves size/type/array on every call, so read the
+  // flat arrays directly. Values are identical: JOINTS_n are integer scalars and
+  // WEIGHTS_n floats, the only component types the exporter emits.
+  const sets = compactSets.map((set) => {
+    const jointSize = set.joints.getElementSize();
+    return { joints: new Int32Array(set.joints.getArray()!), weights: new Float32Array(set.weights.getArray()!), jointSize };
+  });
+  const jointBuffer: number[] = [];
+  const weightBuffer: number[] = [];
   for (let i = 0; i < pos.length / 3; i++) {
-    const blend = mat4.create(); for (let k = 0; k < 16; k++) blend[k] = 0;
+    for (let k = 0; k < 16; k++) blend[k] = 0;
     let sum = 0;
-    const signature: string[] = [];
-    for (const set of compactSets) {
-      const j: number[] = [], w: number[] = []; set.joints.getElement(i, j); set.weights.getElement(i, w);
-      signature.push(j.join(','), w.join(','));
-      for (let c = 0; c < j.length; c++) {
-        const weight = w[c]!;
-        if (!Number.isFinite(weight) || weight < 0 || !Number.isInteger(j[c]) || !jointMatrices[j[c]!]) throw new Error('Invalid skin influence');
+    signature.length = 0;
+    for (const set of sets) {
+      const base = i * set.jointSize;
+      for (let c = 0; c < set.jointSize; c++) {
+        jointBuffer[c] = set.joints[base + c]!;
+        weightBuffer[c] = set.weights[base + c]!;
+      }
+      signature.push(jointBuffer.join(','), weightBuffer.join(','));
+      for (let c = 0; c < set.jointSize; c++) {
+        const weight = weightBuffer[c]!;
+        const joint = jointBuffer[c]!;
+        if (!Number.isFinite(weight) || weight < 0 || !Number.isInteger(joint) || !jointMatrices[joint]) throw new Error('Invalid skin influence');
         sum += weight;
-        for (let k = 0; k < 16; k++) blend[k] = blend[k]! + weight * jointMatrices[j[c]!]![k]!;
+        const m = jointMatrices[joint]!;
+        for (let k = 0; k < 16; k++) blend[k] = blend[k]! + weight * m[k]!;
       }
     }
     const key = signature.join('|');
@@ -118,17 +141,16 @@ function snapshotPrimitive(doc: Document, source: Primitive, node: Node, warn: (
     for (let k = 0; k < 16; k++) blend[k] = blend[k]! / sum;
     const determinant = mat4.determinant(blend);
     if (!Number.isFinite(determinant) || !(determinant > 0)) throw new Error('Reflected or singular blended skin transform is not supported');
-    const v = vec3.fromValues(pos[i * 3]!, pos[i * 3 + 1]!, pos[i * 3 + 2]!);
+    vec3.set(v, pos[i * 3]!, pos[i * 3 + 1]!, pos[i * 3 + 2]!);
     vec3.transformMat4(v, v, blend); pos.set(v, i * 3);
     if (normal) {
-      const nm = mat3.normalFromMat4(mat3.create(), blend);
-      if (!nm) throw new Error('Singular skin normal matrix');
+      if (!mat3.normalFromMat4(normalMatrix, blend)) throw new Error('Singular skin normal matrix');
       vec3.set(v, normal[i * 3]!, normal[i * 3 + 1]!, normal[i * 3 + 2]!);
-      vec3.transformMat3(v, v, nm); vec3.normalize(v, v); normal.set(v, i * 3);
+      vec3.transformMat3(v, v, normalMatrix); vec3.normalize(v, v); normal.set(v, i * 3);
     }
     if (tangent) {
       vec3.set(v, tangent[i * 4]!, tangent[i * 4 + 1]!, tangent[i * 4 + 2]!);
-      vec3.transformMat3(v, v, mat3.fromMat4(mat3.create(), blend)); vec3.normalize(v, v);
+      vec3.transformMat3(v, v, mat3.fromMat4(tangentMatrix, blend)); vec3.normalize(v, v);
       tangent.set(v, i * 4);
     }
   }
