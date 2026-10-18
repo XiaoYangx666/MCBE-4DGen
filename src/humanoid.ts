@@ -3,7 +3,7 @@ import { cloneDocument } from "@gltf-transform/functions";
 import { mat4, quat, vec3 } from "gl-matrix";
 import type { IntermediateModel } from "./model.ts";
 import type { V3 } from "./bedrock-types.ts";
-import { prepareStaticModel } from "./prepare-model.ts";
+import { measureFrozenBounds, prepareStaticModel } from "./prepare-model.ts";
 import { optimizeTextures } from "./texture-optimizer.ts";
 import { bindStatic } from "./bone-mapper.ts";
 import { exportBedrockGeometry } from "./bedrock-exporter.ts";
@@ -357,10 +357,12 @@ export async function exportHumanoid(
   phase("pose");
   // Pose the SOURCE rig first. Mixed chest/shoulder/arm weights are evaluated by
   // prepareStaticModel, rather than moving already cut rigid pieces apart.
-  const initial = await prepareStaticModel(model, {
-    height: options.height,
-    center: "ground",
-  });
+  // Only the fitted height scale is needed here, so measure the frozen bounds
+  // instead of building (and immediately discarding) a whole snapshot document.
+  const frozen = measureFrozenBounds(model);
+  const sourceHeight = frozen.max[1] - frozen.min[1];
+  if (!(sourceHeight > 0)) throw new Error("Cannot set height on a zero-height model");
+  const initial = { report: { heightScale: options.height / sourceHeight } };
   for (const [armRole, handRole] of [
     ["leftUpperArm", "leftHand"],
     ["rightUpperArm", "rightHand"],

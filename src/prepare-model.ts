@@ -62,6 +62,48 @@ function morph(source: Primitive, node: Node, semantic: string): Float32Array<Ar
   return result;
 }
 
+/** Blended skin matrix per vertex, accumulated in a fixed order. Shared so the
+ * bounds-only measurement below cannot drift from the real freeze. */
+function skinSetup(jointMatrices: mat4[], sets: { joints: Int32Array; weights: Float32Array; jointSize: number }[]) {
+  const blend = mat4.create();
+  const jointBuffer: number[] = [];
+  const weightBuffer: number[] = [];
+  const signature: string[] = [];
+  return function blendAt(i: number): { blend: mat4; sum: number; signatureKey: string } {
+    for (let k = 0; k < 16; k++) blend[k] = 0;
+    let sum = 0;
+    signature.length = 0;
+    for (const set of sets) {
+      const base = i * set.jointSize;
+      for (let c = 0; c < set.jointSize; c++) {
+        jointBuffer[c] = set.joints[base + c]!;
+        weightBuffer[c] = set.weights[base + c]!;
+      }
+      signature.push(jointBuffer.join(','), weightBuffer.join(','));
+      for (let c = 0; c < set.jointSize; c++) {
+        const weight = weightBuffer[c]!;
+        const joint = jointBuffer[c]!;
+        if (!Number.isFinite(weight) || weight < 0 || !Number.isInteger(joint) || !jointMatrices[joint]) throw new Error('Invalid skin influence');
+        sum += weight;
+        const m = jointMatrices[joint]!;
+        for (let k = 0; k < 16; k++) blend[k] = blend[k]! + weight * m[k]!;
+      }
+    }
+    return { blend, sum, signatureKey: signature.join('|') };
+  };
+}
+
+function jointMatricesFor(node: Node) {
+  const skin = node.getSkin()!;
+  const joints = skin.listJoints(), inverse = skin.getInverseBindMatrices();
+  return joints.map((joint, i) => {
+    const bind = mat4.create();
+    if (inverse) { const values: number[] = []; inverse.getElement(i, values); mat4.copy(bind, values); }
+    return mat4.multiply(mat4.create(), joint.getWorldMatrix(), bind);
+  });
+}
+
+
 function snapshotPrimitive(doc: Document, source: Primitive, node: Node, warn: (s: string) => void): Primitive {
   const out = doc.createPrimitive().setMode(4).setMaterial(source.getMaterial()).setExtras({ ...source.getExtras() });
   for (const semantic of source.listSemantics()) {
@@ -84,12 +126,7 @@ function snapshotPrimitive(doc: Document, source: Primitive, node: Node, warn: (
     return out;
   }
   // glTF skin transform in world space is jointWorld * inverseBind, not meshWorld * jointWorld.
-  const joints = skin.listJoints(), inverse = skin.getInverseBindMatrices();
-  const jointMatrices = joints.map((joint, i) => {
-    const bind = mat4.create();
-    if (inverse) { const values: number[] = []; inverse.getElement(i, values); mat4.copy(bind, values); }
-    return mat4.multiply(mat4.create(), joint.getWorldMatrix(), bind);
-  });
+  const jointMatrices = jointMatricesFor(node);
   const compactSets = out.listSemantics().filter((s) => /^JOINTS_\d+$/.test(s)).sort().map((s) => ({
     joints: out.getAttribute(s)!, weights: out.getAttribute(s.replace('JOINTS_', 'WEIGHTS_'))!,
   }));
@@ -99,11 +136,9 @@ function snapshotPrimitive(doc: Document, source: Primitive, node: Node, warn: (
   // Hoisted out of the per-vertex loop. This runs once per vertex of every
   // primitive (hundreds of thousands for a full character); allocating a mat4,
   // two arrays and joined strings per vertex dominated the freeze cost.
-  const blend = mat4.create();
   const v = vec3.create();
   const normalMatrix = mat3.create();
   const tangentMatrix = mat3.create();
-  const signature: string[] = [];
   // Accessor.getElement re-resolves size/type/array on every call, so read the
   // flat arrays directly. Values are identical: JOINTS_n are integer scalars and
   // WEIGHTS_n floats, the only component types the exporter emits.
@@ -111,31 +146,11 @@ function snapshotPrimitive(doc: Document, source: Primitive, node: Node, warn: (
     const jointSize = set.joints.getElementSize();
     return { joints: new Int32Array(set.joints.getArray()!), weights: new Float32Array(set.weights.getArray()!), jointSize };
   });
-  const jointBuffer: number[] = [];
-  const weightBuffer: number[] = [];
+  const blendAt = skinSetup(jointMatrices, sets);
   for (let i = 0; i < pos.length / 3; i++) {
-    for (let k = 0; k < 16; k++) blend[k] = 0;
-    let sum = 0;
-    signature.length = 0;
-    for (const set of sets) {
-      const base = i * set.jointSize;
-      for (let c = 0; c < set.jointSize; c++) {
-        jointBuffer[c] = set.joints[base + c]!;
-        weightBuffer[c] = set.weights[base + c]!;
-      }
-      signature.push(jointBuffer.join(','), weightBuffer.join(','));
-      for (let c = 0; c < set.jointSize; c++) {
-        const weight = weightBuffer[c]!;
-        const joint = jointBuffer[c]!;
-        if (!Number.isFinite(weight) || weight < 0 || !Number.isInteger(joint) || !jointMatrices[joint]) throw new Error('Invalid skin influence');
-        sum += weight;
-        const m = jointMatrices[joint]!;
-        for (let k = 0; k < 16; k++) blend[k] = blend[k]! + weight * m[k]!;
-      }
-    }
-    const key = signature.join('|');
-    if (!regionIds.has(key)) regionIds.set(key, regionIds.size);
-    regions[i] = regionIds.get(key)!;
+    const { blend, sum, signatureKey } = blendAt(i);
+    if (!regionIds.has(signatureKey)) regionIds.set(signatureKey, regionIds.size);
+    regions[i] = regionIds.get(signatureKey)!;
     if (!(sum > 0) || !Number.isFinite(sum)) throw new Error('Vertex has no valid skin influence');
     if (Math.abs(sum - 1) > 1e-5) renormalized = true;
     for (let k = 0; k < 16; k++) blend[k] = blend[k]! / sum;
@@ -164,6 +179,73 @@ function snapshotPrimitive(doc: Document, source: Primitive, node: Node, warn: (
     .setBuffer(doc.getRoot().listBuffers()[0] ?? doc.createBuffer()));
   if (renormalized) warn('Skin weights were normalized while freezing the initial pose.');
   return out;
+}
+
+/**
+ * Bounds of the frozen initial pose, without building a snapshot document.
+ * humanoid.ts needs only the height scale to convert a source-space shoulder
+ * outset into fitted units; a full prepareStaticModel there built and discarded
+ * an entire copy of the rig. The freeze math is shared with snapshotPrimitive,
+ * so the returned bounds are identical to getBounds() on a real snapshot.
+ */
+export function measureFrozenBounds(input: IntermediateModel, options: { scene?: number } = {}) {
+  const root = input.document.getRoot();
+  const scenes = root.listScenes();
+  const selected = options.scene ?? Math.max(0, scenes.indexOf(root.getDefaultScene()!));
+  if (!Number.isSafeInteger(selected) || !scenes[selected]) throw new Error('Selected scene does not exist');
+  const instances: Node[] = [];
+  scenes[selected]!.traverse((node) => { if (node.getMesh()) instances.push(node); });
+  if (!instances.length) throw new Error('Selected scene contains no mesh instances');
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  const v = vec3.create();
+  for (const node of instances) {
+    if (node.getExtension('EXT_mesh_gpu_instancing')) throw new Error('GPU instancing must be expanded before Static preparation');
+    const mesh = node.getMesh()!;
+    const skin = node.getSkin();
+    if (!skin) {
+      // Unskinned instances are baked by transformPrimitive on a world-space copy;
+      // mirror that here by transforming each vertex with the same matrix.
+      const matrix = node.getWorldMatrix();
+      if (!Number.isFinite(mat4.determinant(matrix)) || mat4.determinant(matrix) === 0) throw new Error('Cannot bake singular node transform');
+      for (const source of mesh.listPrimitives()) {
+        const pos = data(source, 'POSITION')!;
+        for (let i = 0; i < pos.length / 3; i++) {
+          vec3.set(v, pos[i * 3]!, pos[i * 3 + 1]!, pos[i * 3 + 2]!);
+          vec3.transformMat4(v, v, matrix);
+          for (let c = 0; c < 3; c++) { if (v[c]! < min[c]!) min[c] = v[c]!; if (v[c]! > max[c]!) max[c] = v[c]!; }
+        }
+      }
+      continue;
+    }
+    const jointMatrices = jointMatricesFor(node);
+    for (const source of mesh.listPrimitives()) {
+      const pos = data(source, 'POSITION')!;
+      const sets = source.listSemantics().filter((s) => /^JOINTS_\d+$/.test(s)).sort().map((s) => {
+        const joints = source.getAttribute(s)!;
+        return {
+          joints: new Int32Array(joints.getArray()!),
+          weights: new Float32Array(source.getAttribute(s.replace('JOINTS_', 'WEIGHTS_'))!.getArray()!),
+          jointSize: joints.getElementSize(),
+        };
+      });
+      if (!sets.length) throw new Error('Skinned primitive requires JOINTS_0 and WEIGHTS_0 VEC4');
+      const blendAt = skinSetup(jointMatrices, sets);
+      for (let i = 0; i < pos.length / 3; i++) {
+        const { blend, sum } = blendAt(i);
+        if (!(sum > 0) || !Number.isFinite(sum)) throw new Error('Vertex has no valid skin influence');
+        for (let k = 0; k < 16; k++) blend[k] = blend[k]! / sum;
+        // Keep the same rejection as the real freeze so a reflected or singular
+        // blend fails here with the same message, not later with a wrong scale.
+        const determinant = mat4.determinant(blend);
+        if (!Number.isFinite(determinant) || !(determinant > 0)) throw new Error('Reflected or singular blended skin transform is not supported');
+        vec3.set(v, pos[i * 3]!, pos[i * 3 + 1]!, pos[i * 3 + 2]!);
+        vec3.transformMat4(v, v, blend);
+        for (let c = 0; c < 3; c++) { if (v[c]! < min[c]!) min[c] = v[c]!; if (v[c]! > max[c]!) max[c] = v[c]!; }
+      }
+    }
+  }
+  return { min: min as [number, number, number], max: max as [number, number, number] };
 }
 
 /** Explicit initial-pose snapshot for the Static conversion path. Original rig remains in input. */
