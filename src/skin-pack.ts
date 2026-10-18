@@ -59,7 +59,7 @@ export function buildSkinPack(input: SkinPackInput): SkinPackFiles {
       texture: 'skin0.png', hide_armor: true, type: 'free',
     }] }),
     'geometry.json': text(input.geometry),
-    'skin0.png': Uint8Array.from(input.png),
+    'skin0.png': new Uint8Array(input.png),
     'texts/languages.json': text(['en_US', 'zh_CN']),
     'texts/en_US.lang': encoder.encode(`skinpack.${key}=${label}\nskin.${key}.skin0=${label}\n`),
     'texts/zh_CN.lang': encoder.encode(`skinpack.${key}=${label}\nskin.${key}.skin0=${label}\n`),

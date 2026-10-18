@@ -152,7 +152,7 @@ async function main() {
   const options = {
     prepare: { height, center: 'ground' as const },
     mesh: ratio === undefined ? { preset: 'original' as const } : { ratio, maxError: 0.001 },
-    texture: { maxTextureSize: textureSize, ...(atlas !== undefined ? { atlasSize: atlas } : {}) },
+    texture: { maxTextureSize: textureSize, ...(atlas !== undefined ? { atlasSize: atlas } : { compactSize: 128, padding: 1 }) },
   };
   const model = await importModel(input, { backend: importer });
   if (binding === 'humanoid' && ratio !== undefined) throw new Error('Humanoid binding currently preserves original triangles; omit --ratio');
@@ -161,7 +161,7 @@ async function main() {
     if (binding !== 'humanoid') throw new Error('--humanoid-profile requires --binding humanoid');
     const value: unknown = JSON.parse(await readFile(profilePath, 'utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value) ||
-      Object.keys(value).some((key) => !['shoulderOutset', 'armSpreadDegrees', 'materialRules'].includes(key))) throw new Error('Invalid humanoid profile fields');
+      Object.keys(value).some((key) => !['shoulderOutset', 'armSpreadDegrees', 'materialRules', 'boneMap', 'rotationYDegrees'].includes(key))) throw new Error('Invalid humanoid profile fields');
     profile = value as HumanoidProfile;
   }
   const humanoid = binding === 'humanoid' ? await exportHumanoid(model, { height, textureSize, ...(profile ? { profile } : {}), ...(atlas ? { atlas } : {}) }) : null;

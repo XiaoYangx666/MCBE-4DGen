@@ -17,7 +17,7 @@ const count = (p: Primitive) => (p.getIndices()?.getCount() ?? p.getAttribute('P
 
 function index(p: Primitive, doc: Document, values: Uint32Array): void {
   const previous = p.getIndices();
-  p.setIndices(doc.createAccessor().setType('SCALAR').setArray(Uint32Array.from(values))
+  p.setIndices(doc.createAccessor().setType('SCALAR').setArray(new Uint32Array(values))
     .setBuffer(doc.getRoot().listBuffers()[0] ?? doc.createBuffer()));
   if (previous?.listParents().length === 1) previous.dispose();
 }
@@ -89,7 +89,7 @@ function locks(p: Primitive, indices: Uint32Array, vertices: number): Uint8Array
   if (skin.length) {
     const signatures = Array.from({ length: vertices }, (_, i) => skin.map((s) => {
       const a = p.getAttribute(s)!, array = a.getArray()!, size = a.getElementSize();
-      return Array.from(array.subarray(i * size, (i + 1) * size)).join(',');
+      return array.subarray(i * size, (i + 1) * size).join(',');
     }).join('|'));
     for (let i = 0; i < indices.length; i += 3) {
       const a = indices[i]!, b = indices[i + 1]!, c = indices[i + 2]!;
@@ -158,7 +158,7 @@ export async function optimizeMesh(input: IntermediateModel, options: MeshOption
     let achievedError = 0;
     if (desired < original && p.listTargets().length) warnings.push(`Primitive ${id}: morph targets retained without simplification; deformation error is not modeled.`);
     else if (desired < original) {
-      const pos = positions(p), indices = Uint32Array.from(p.getIndices()!.getArray()!);
+      const pos = positions(p), indices = new Uint32Array(p.getIndices()!.getArray()!);
       const attr = attributes(p);
       const [result, error] = MeshoptSimplifier.simplifyWithAttributes(indices, pos, 3, attr.values, attr.weights.length,
         attr.weights, locks(p, indices, pos.length / 3), desired * 3, maxError, ['LockBorder']);
