@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { validateSkinPackFiles } from "../src/skin-pack.ts";
-import JSZip from "jszip";
 const base = "http://127.0.0.1:4173";
 const post = async (path: string, body: unknown) => {
   const r = await fetch(base + path, {
@@ -82,14 +80,16 @@ const repeated = await post("/api/convert", {
 });
 assert.equal(repeated.id, job.id);
 assert.equal(repeated.cached, true);
-const pack = await (
-  await fetch(base + "/api/job/" + job.id + "/pack")
-).arrayBuffer();
-const zip = await JSZip.loadAsync(pack);
-const files: Record<string, Uint8Array> = {};
-for (const [name, entry] of Object.entries(zip.files))
-  if (!entry.dir) files[name] = await entry.async("uint8array");
-await validateSkinPackFiles(files);
+const packs = (await (await fetch(base + "/api/packs")).json()) as any;
+assert.equal(typeof packs.configured, "boolean");
+if (packs.configured) {
+  assert.ok(Array.isArray(packs.status) && packs.status.length > 0);
+  assert.ok(Array.isArray(packs.library));
+  for (const slot of packs.status) {
+    assert.equal(typeof slot.slot, "string");
+    assert.ok(Array.isArray(slot.active));
+  }
+}
 const invalid = new FormData();
 invalid.append("files", new File(["invalid"], "bad.obj"));
 invalid.append("paths", "../bad.obj");
@@ -100,5 +100,5 @@ const denied = await fetch(base + "/api/upload", {
 });
 assert.equal(denied.status, 400);
 console.log(
-  "PASS: page, origin protection, upload, source preview, static conversion, downloadable mcpack validation, traversal rejection",
+  "PASS: page, origin protection, upload, source preview, static conversion, pack manager status, traversal rejection",
 );

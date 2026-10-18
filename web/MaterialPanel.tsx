@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { MaterialRow, Session } from "./types";
+import type { MaterialRow, Session, Result } from "./types";
 
 function MaterialWeightInput({
   name,
@@ -34,7 +34,10 @@ function MaterialWeightInput({
   return (
     <input
       className="material-weight"
-      type="text"
+      type="number"
+      min={0}
+      max={20}
+      step={0.05}
       inputMode="decimal"
       aria-label={name + " 像素权重"}
       title="相对像素权重，默认 1；0 表示最低像素预算，材质仍会保留"
@@ -67,9 +70,12 @@ export function MaterialPanel({
   setMode,
   materialWeights,
   setMaterialWeights,
-  changed,
+  changed, result, stale, convert,
 }: {
   session: Session | null;
+  result: Result | null;
+  stale: boolean;
+  convert: () => void;
   busy: boolean;
   excluded: string[];
   setExcluded: (update: (items: string[]) => string[]) => void;
@@ -83,18 +89,37 @@ export function MaterialPanel({
   setMaterialWeights: (update: (weights: Record<string, number>) => Record<string, number>) => void;
   changed: () => void;
 }) {
+  const [hideUnchecked, setHideUnchecked] = useState(false);
+  const [step, setStep] = useState(0.05);
   const materials: MaterialRow[] = session?.materials ?? [];
+  const activeMaterials = materials.filter(m => !excluded.includes(m.name));
+  const weight = (name:string) => materialWeights[name] ?? 1;
+  const selectedMaterial = materials.find(m => m.name === selected);
+  function adjust(name:string, value:number) {
+    setMaterialWeights(weights => ({...weights, [name]:Math.max(0,Math.min(20,Math.round(value*10000)/10000))})); changed();
+  }
+  const coverage = result?.details?.texture?.materials?.find((m:any) => m.name === selected);
+  const weightSum = activeMaterials.reduce((sum,m) => sum + weight(m.name),0);
+
   return (
     <>
-      <div className="section-label separated">
-        02 / 材质筛选 <span>{materials.length}</span>
+      <div className="section-label">
+        01 / 材质筛选 <span>{materials.length}</span>
       </div>
       <div className="material-caption">
-        取消勾选可移除材质。权重影响成品贴图像素分配，调整后需重新转换；1 为默认，0 使用最低采样且材质仍保留。
+        权重是像素分配的优先级，不是百分比。1 为默认，0 保留最低采样；只调整权重时复用模型，仅更新纹理与 UV。
       </div>
+      <div className="material-tools"><label><input type="checkbox" checked={hideUnchecked} onChange={e => setHideUnchecked(e.target.checked)}/>隐藏未勾选项（{excluded.length}）</label><button disabled={busy || !Object.keys(materialWeights).length} onClick={() => {setMaterialWeights(() => ({})); changed();}}>重置权重</button></div>
+      {selectedMaterial && <div className="weight-tuner"><div><b>{selectedMaterial.name}</b><span>相对权重 {weight(selectedMaterial.name).toFixed(2)}</span></div>
+        <input aria-label={selectedMaterial.name+' 权重滑块'} type="range" min="0" max="20" step="0.01" value={weight(selectedMaterial.name)} disabled={busy || excluded.includes(selectedMaterial.name)} onChange={e => adjust(selectedMaterial.name,Number(e.target.value))}/>
+        <div className="weight-step"><button disabled={busy || excluded.includes(selectedMaterial.name)} onClick={() => adjust(selectedMaterial.name,weight(selectedMaterial.name)-step)}>−</button><select aria-label="权重微调步长" value={step} onChange={e => setStep(Number(e.target.value))}>{[0.01,0.05,0.1,0.5,1].map(v => <option key={v} value={v}>步长 {v}</option>)}</select><button disabled={busy || excluded.includes(selectedMaterial.name)} onClick={() => adjust(selectedMaterial.name,weight(selectedMaterial.name)+step)}>＋</button><button disabled={busy || excluded.includes(selectedMaterial.name)} onClick={() => adjust(selectedMaterial.name,1)}>默认</button></div>
+        {coverage && <small>上次实际覆盖：{coverage.pixels.toLocaleString()} 像素 · {(coverage.pixels / ((result?.details?.texture?.atlas?.width ?? 128) * (result?.details?.texture?.atlas?.height ?? 128)) * 100).toFixed(1)}%{stale ? '（待更新）' : ''}</small>}
+        <button className="tuner-apply" disabled={busy || !stale} onClick={convert}>{busy ? '更新中…' : '生成4D皮肤 · 查看调整'}</button>
+        <small>权重占比 {weightSum ? (weight(selectedMaterial.name)/weightSum*100).toFixed(1) : '0.0'}% · 不等于最终像素占比，实际分配还受表面积和共享 UV 影响。</small>
+      </div>}
       <div className="materials">
         {session ? (
-          materials.map((material, index) => (
+          materials.filter(m => !hideUnchecked || !excluded.includes(m.name)).map((material, index) => (
             <label
               key={index}
               className={"material " + (selected === material.name ? "selected" : "")}
@@ -148,7 +173,7 @@ export function MaterialPanel({
             </label>
           ))
         ) : (
-          <div className="empty-list">导入后可逐项检查材质</div>
+          <div className="empty-list">从模型管理打开模型后检查材质</div>
         )}
       </div>
       {session?.materials.some((material) => material.name === "表情") && (

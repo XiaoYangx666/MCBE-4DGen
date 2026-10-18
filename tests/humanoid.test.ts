@@ -126,3 +126,24 @@ test('source garment rules retain a connected mixed-weight sleeve and prevent sk
     materialRules: [{ material: 'MissingGarment', mode: 'body' }],
   } }), /material not found/);
 });
+
+test('texture-only humanoid rebuild reuses prepared geometry without pose or reduction', async () => {
+  let prepared: import('../src/humanoid.ts').PreparedHumanoid | undefined;
+  const input = await fixture();
+  const full = await exportHumanoid(input, {height:32,textureSize:64,reduction:{ratio:1,maxError:0.03},onPrepared:value => {prepared=value;}});
+  assert.ok(prepared);
+  const sourceUV = prepared.model.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!.getAttribute('TEXCOORD_0')!.getArray()!.slice();
+  const phases:string[]=[];
+  const next = await exportHumanoid(input, {height:32,textureSize:64,materialWeights:{'':2},prepared,onStage:phase => phases.push(phase)});
+  assert.deepEqual(phases,['atlas','export','done']);
+  assert.deepEqual(next.binding.pivots,full.binding.pivots);
+  assert.deepEqual(next.binding.parts,full.binding.parts);
+  assert.deepEqual(next.binding.reduction,full.binding.reduction);
+  for (const bone of full.file['geometry.skin0']!.bones) {
+    const reused=next.file['geometry.skin0']!.bones.find(b => b.name===bone.name)!;
+    assert.deepEqual(reused.pivot,bone.pivot);
+    assert.deepEqual(reused.poly_mesh?.positions,bone.poly_mesh?.positions);
+    assert.deepEqual(reused.poly_mesh?.normals,bone.poly_mesh?.normals);
+  }
+  assert.deepEqual(prepared.model.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!.getAttribute('TEXCOORD_0')!.getArray(),sourceUV);
+});

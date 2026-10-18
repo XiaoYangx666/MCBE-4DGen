@@ -4,7 +4,7 @@ import { mat4, quat, vec3 } from "gl-matrix";
 import type { IntermediateModel } from "./model.ts";
 import type { V3 } from "./bedrock-types.ts";
 import { prepareStaticModel } from "./prepare-model.ts";
-import { optimizeModel } from "./optimizer.ts";
+import { optimizeTextures } from "./texture-optimizer.ts";
 import { bindStatic } from "./bone-mapper.ts";
 import { exportBedrockGeometry } from "./bedrock-exporter.ts";
 import { validateGeometry } from "./geometry-validator.ts";
@@ -51,6 +51,14 @@ function partForJoint(node: Node): Part {
   return "body";
 }
 
+export interface PreparedHumanoid {
+  model: IntermediateModel;
+  pivots: Record<Part, V3>;
+  classification: {material:string; mode:string; components:number; triangles:Record<string,number>}[];
+  reduction: Awaited<ReturnType<typeof reduceRigidModel>>['report'] | null;
+  profile: { shoulderOutset:number; armSpreadDegrees:number };
+}
+
 /** Rigid six-part player binding, using source rig weights, topology and explicit garment rules.
  * Bedrock poly_mesh cannot retain smooth skin weights, elbow/knee bends or VRM physics.
  */
@@ -64,8 +72,11 @@ export async function exportHumanoid(
     profile?: HumanoidProfile;
     reduction?: { ratio: number; maxError: number };
     onStage?: (phase: string) => void;
+    prepared?: PreparedHumanoid;
+    onPrepared?: (prepared: PreparedHumanoid) => void;
   },
 ) {
+  if (options.prepared) return textureHumanoid(options.prepared, options);
   const timings: Record<string, number> = {};
   let phaseName = "rig",
     phaseStart = performance.now();
@@ -418,18 +429,22 @@ export async function exportHumanoid(
     ? await reduceRigidModel(prepared.model, options.reduction)
     : null;
   phase("atlas");
-  const optimized = await optimizeModel(reduced?.model ?? prepared.model, {
-    mesh: { preset: "original" },
-    texture: {
-      maxTextureSize: options.textureSize,
-      ...(options.materialWeights
-        ? { materialWeights: options.materialWeights }
-        : {}),
-      ...(options.atlas
-        ? { atlasSize: options.atlas }
-        : { compactSize: 128, padding: 1 }),
-    },
+  const state: PreparedHumanoid = {model:reduced?.model ?? prepared.model, pivots, classification, reduction:reduced?.report ?? null, profile:{shoulderOutset, armSpreadDegrees:spread}};
+  options.onPrepared?.(state);
+  return textureHumanoid(state, options, timings);
+}
+
+async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:number; atlas?:number; materialWeights?:Record<string,number>; onStage?:(phase:string)=>void}, timings:Record<string,number> = {}) {
+  const {pivots, classification} = state;
+  let phaseName = 'atlas', phaseStart = performance.now();
+  const phase = (name:string) => {timings[phaseName] = Math.round(performance.now()-phaseStart); phaseName=name; phaseStart=performance.now(); options.onStage?.(name);};
+  options.onStage?.('atlas');
+  const texture = await optimizeTextures(state.model, {
+    maxTextureSize:options.textureSize,
+    ...(options.materialWeights ? {materialWeights:options.materialWeights} : {}),
+    ...(options.atlas ? {atlasSize:options.atlas} : {compactSize:128,padding:1}),
   });
+  const optimized = {model:texture.model, report:{texture:texture.report}};
   phase("export");
   const full = await exportBedrockGeometry(bindStatic(optimized.model), {
     identifier: "geometry.skin0",
@@ -469,8 +484,8 @@ export async function exportHumanoid(
       pivots,
       classification,
       texture: optimized.report.texture,
-      reduction: reduced?.report ?? null,
-      profile: { shoulderOutset, armSpreadDegrees: spread },
+      reduction: state.reduction,
+      profile: state.profile,
     },
   };
 }

@@ -88,6 +88,13 @@ test("compact atlas crops disconnected used UV islands, shares equivalent materi
     filter: "nearest",
   });
   assert.equal(result.report.regions.length, 2); // shared material copy adds no duplicate crop
+  assert.equal(result.report.materials.length, 1); // same source name across disconnected charts
+  const coverage = result.report.materials[0]!;
+  assert.equal(coverage.name, p.getMaterial()!.getName());
+  assert.equal(coverage.regions.length, 2);
+  assert.equal(coverage.pixels, Math.round(result.report.atlas.sampledUtilization! * 128 * 128));
+  assert.ok(coverage.pixels > 0);
+
   assert.ok(
     result.report.regions.every(
       (r) => r.crop!.width < 16 && r.crop!.height < 16,
