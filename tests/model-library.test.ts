@@ -56,3 +56,32 @@ test('local import rejects ZIP paths escaping the package', async () => {
     await expect(importLocal(path)).rejects.toThrow('路径无效');
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
+
+
+test('missing sources can be relinked without losing identity, settings or versions', async () => {
+  const folder = await mkdtemp(join(tmpdir(), '4dgen-relink-'));
+  let id = '';
+  try {
+    const original = join(folder, 'original.glb'), moved = join(folder, 'moved.glb');
+    await writeFile(original, 'model');
+    const entry = await rememberModel(original, 'My model'); id = entry.id;
+    const settings = { binding: 'static', ratio: 0.5, maxError: 0.03, height: 32, excluded: [], materialWeights: {}, profile: {} };
+    await updateModel(id, { settings, packIds: ['saved-skin'] });
+    await rm(original);
+    expect((await listModels()).find(m => m.id === id)?.sourceAvailable).toBe(false);
+    await writeFile(moved, 'model');
+    await updateModel(id, {path: moved});
+    const reopened = await rememberModel(moved, 'moved', {}, id);
+    expect(reopened.id).toBe(id);
+    expect(reopened.path).toBe(moved);
+    expect(reopened.name).toBe('My model');
+    expect(reopened.settings).toEqual(settings);
+    expect(reopened.packIds).toEqual(['saved-skin']);
+    expect((await listModels()).find(m => m.id === id)?.sourceAvailable).toBe(true);
+    await expect(updateModel(id, {path: folder})).rejects.toThrow();
+    await expect(updateModel(id, {path: 'relative.glb'})).rejects.toThrow();
+  } finally {
+    if (id) await removeModel(id);
+    await rm(folder, {recursive: true, force: true});
+  }
+});

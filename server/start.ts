@@ -14,7 +14,7 @@ import type { HumanoidProfile } from "../src/humanoid.ts";
 import { optimizeModel } from "../src/optimizer.ts";
 import { bindStatic } from "../src/bone-mapper.ts";
 import { exportBedrockGeometry } from "../src/bedrock-exporter.ts";
-import { buildSkinPack } from "../src/skin-pack.ts";
+import { buildSkinPack, zipSkinPack } from "../src/skin-pack.ts";
 import type { SkinPackFiles } from "../src/skin-pack.ts";
 import { PackManager } from "../src/pack-manager.ts";
 import type { ManagerConfig, PackMeta } from "../src/pack-manager.ts";
@@ -183,6 +183,7 @@ async function load(
   profile: HumanoidProfile | null,
   cache?: string,
   cachePreview = true,
+  existingId?: string,
 ) {
   if (sessions.size >= 4) sessions.delete(sessions.keys().next().value!);
   const source =
@@ -240,7 +241,7 @@ async function load(
     }));
   const id = crypto.randomUUID();
   const defaultProfile = profile ? { ...profile, shoulderOutset: 0 } : null;
-  const entry = await rememberModel(path, name, { profile: defaultProfile, previewKey: modelKey, stats: { triangles: materials.reduce((sum, m) => sum + m.triangles, 0), materials: materials.length, bytes: (await stat(path)).size } });
+  const entry = await rememberModel(path, name, { profile: defaultProfile, previewKey: modelKey, stats: { triangles: materials.reduce((sum, m) => sum + m.triangles, 0), materials: materials.length, bytes: (await stat(path)).size } }, existingId);
   sessions.set(id, {
     modelId: entry.id,
     model,
@@ -329,6 +330,10 @@ const server = Bun.serve({
         }
         return json(await updateModel(body.id, { ...(body.name !== undefined ? { name: body.name } : {}), ...(body.settings ? { settings: body.settings } : {}), ...(packIds ? { packIds } : {}) }));
       }
+      if (url.pathname === "/api/models/relink" && req.method === "POST") {
+        const body = await req.json() as { id: string; path: string };
+        return json(await updateModel(body.id, {path: body.path}));
+      }
       if (url.pathname === "/api/models/delete" && req.method === "POST") {
         const body = await req.json() as { id: string };
         await removeModel(body.id);
@@ -351,7 +356,7 @@ const server = Bun.serve({
           if (candidates.length > 1 && !body.main) return json({ local: body.path, candidates });
           const main = body.main ?? candidates[0]!;
           if (!candidates.includes(main)) throw Error("请选择包内模型");
-          return json(await load(main, entry?.name ?? basename(main), null));
+          return json(await load(main, entry?.name ?? basename(main), null, undefined, true, entry?.id));
         } finally { busy = false; }
       }
       if (url.pathname === "/api/presets") {
@@ -664,6 +669,9 @@ const server = Bun.serve({
             result: j.result,
           });
         if (j.status !== "done") throw Error("任务尚未完成");
+        if (asset === "download") return new Response(await zipSkinPack(j.files!) as BodyInit, {
+          headers: { "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="skin.mcpack"' },
+        });
         if (asset === "geometry") return json(j.geometry);
         if (asset === "texture")
           return new Response(j.texture as BodyInit, {
@@ -727,6 +735,17 @@ const server = Bun.serve({
         if (parts[3] === "texture") return new Response(scene.texture as BodyInit, { headers: { "Content-Type": "image/png" } });
         if (parts[3] === "scene") return json({ ...scene, texture: `data:image/png;base64,${Buffer.from(scene.texture).toString("base64")}` });
       }
+      if (parts[0] === "api" && parts[1] === "packs" && parts[3] === "download" && req.method === "GET") {
+        const folder = resolve(root, ".cache/pack-exports", crypto.randomUUID());
+        await mkdir(folder, { recursive: true });
+        const output = resolve(folder, "skin.mcpack");
+        try {
+          await requireManager().exportPack(parts[2]!, output);
+          return new Response(new Uint8Array(await readFile(output)), { headers: {
+            "Content-Type": "application/zip", "Content-Disposition": 'attachment; filename="skin.mcpack"',
+          } });
+        } finally { await rm(folder, { recursive: true, force: true }); }
+      }
       if (url.pathname === "/api/packs/create" && req.method === "POST") {
         const body = await req.json() as { name: string };
         return json(await requireManager().createPack(String(body.name ?? "")));
@@ -777,6 +796,7 @@ const server = Bun.serve({
           ["texts"],
           { ...job.meta, versionName: String(body.label ?? "").trim().slice(0, 120) || new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) },
         );
+        if (body.label?.trim()) await m.renameNames(pack.id, {name: body.label.trim().slice(0, 120), skinIndex: 0, skinName: body.label.trim().slice(0, 120)});
         if (!body.slot) return json({ pack, enabled: false });
         try {
           await m.enable(body.slot, pack.id);
@@ -840,3 +860,4 @@ const server = Bun.serve({
 });
 console.log(`4DGen 本地工作台：http://127.0.0.1:${server.port}`);
 setTimeout(() => void warmPresetPreviews(), 3000);
+
