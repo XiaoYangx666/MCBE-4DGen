@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { importModel } from '../src/importer.ts';
-import { inspectModel } from '../src/inspect.ts';
+import { importModel } from '../../src/importer.ts';
+import { inspectModel } from '../../src/inspect.ts';
 import { selectSample } from './sample.ts';
 
 const sample = selectSample(process.argv[2]);

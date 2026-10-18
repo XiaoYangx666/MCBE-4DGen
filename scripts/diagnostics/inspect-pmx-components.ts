@@ -1,4 +1,4 @@
-import { importModel } from '../src/importer.ts';
+import { importModel } from '../../src/importer.ts';
 import { writeFile } from 'node:fs/promises';
 
 const model = await importModel(process.argv[2]!, { backend: 'wasm' });

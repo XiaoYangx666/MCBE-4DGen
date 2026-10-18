@@ -33,10 +33,10 @@ libassimp 已同时满足原生和 WASM 基础测试，当前无理由切换 ass
 
 根包许可证不是全部依赖的许可证。libassimp 自带 NOTICE 明确列出 Assimp BSD-3-Clause、tinyusdz MIT、web-ifc MPL-2.0、CDT MPL-2.0，以及其它原生内嵌组件。发布二进制或 WASM 前必须携带适用许可证/NOTICE，并核对 MPL 源码提供等义务；本阶段只锁定上游包，不重新分发其二进制。Sharp 原生分发也需保留其随附第三方许可。完整发布许可清单留作交付门槛，不能声称已完成全部传递依赖合规审计。
 
-参考 MBSM 的 GPL-3.0 代码仅研究格式行为，不复制实现。第 4A 阶段已只读研究其转换与渲染脚本，并检查两份用户皮肤压缩包；具体修订、格式差异和独立实现约定见 [stage-4-geometry.md](stage-4-geometry.md)。
+参考 MBSM 的 GPL-3.0 代码仅研究格式行为，不复制实现。第 4A 阶段已只读研究其转换与渲染脚本，并检查两份用户皮肤压缩包；具体修订、格式差异和独立实现约定见 [stage-4-geometry.md](stages/stage-4-geometry.md)。
 
 ## 后续样本计划
 
-第 2 阶段已选择并实际验证 Khronos glTF-Sample-Assets 的 CC0 Avocado 与 ToyCar；逐个读取模型自己的许可说明，并记录 URL、修订号、哈希与贡献者。详见 [stage-2.md](stage-2.md)。尚未实现最终端到端转换，不把导入检查当作 mcpack 演示。
+第 2 阶段已选择并实际验证 Khronos glTF-Sample-Assets 的 CC0 Avocado 与 ToyCar；逐个读取模型自己的许可说明，并记录 URL、修订号、哈希与贡献者。详见 [stage-2.md](stages/stage-2.md)。尚未实现最终端到端转换，不把导入检查当作 mcpack 演示。
 
 第 3C 阶段起统一使用 Bun，不继续重复 Node 验证。gl-matrix 版本由 bun add --exact 解析并锁定，其安装包 package.json 及许可证文件已核对；未自行实现通用矩阵运算库。

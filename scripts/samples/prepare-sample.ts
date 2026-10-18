@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { importModel } from '../src/importer.ts';
-import { optimizeModel } from '../src/optimizer.ts';
-import { inspectModel } from '../src/inspect.ts';
+import { importModel } from '../../src/importer.ts';
+import { optimizeModel } from '../../src/optimizer.ts';
+import { inspectModel } from '../../src/inspect.ts';
 import { selectSample } from './sample.ts';
 
 const sample = selectSample(process.argv[2] ?? 'ToyCar');

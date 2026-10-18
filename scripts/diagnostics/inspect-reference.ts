@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import JSZip from 'jszip';
 
 const path = process.argv[2];
-if (!path) throw new Error('Usage: bun run scripts/inspect-reference.ts archive.zip [--allow-final-comma]');
+if (!path) throw new Error('Usage: bun run scripts/diagnostics/inspect-reference.ts archive.zip [--allow-final-comma]');
 const bytes = await readFile(path), zip = await JSZip.loadAsync(bytes);
 const entry = Object.values(zip.files).find((entry) => /(^|\/)geometry\.json$/i.test(entry.name));
 if (!entry) throw new Error('No geometry.json in archive');

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import sharp from 'sharp';
-import { importModel } from '../src/importer.ts';
-import { optimizeModel } from '../src/optimizer.ts';
-import { bindStatic } from '../src/bone-mapper.ts';
-import { exportBedrockGeometry } from '../src/bedrock-exporter.ts';
-import { decodeGeometryTriangles, parseGeometryJSON } from '../src/geometry-validator.ts';
+import { importModel } from '../../src/importer.ts';
+import { optimizeModel } from '../../src/optimizer.ts';
+import { bindStatic } from '../../src/bone-mapper.ts';
+import { exportBedrockGeometry } from '../../src/bedrock-exporter.ts';
+import { decodeGeometryTriangles, parseGeometryJSON } from '../../src/geometry-validator.ts';
 import { selectSample } from './sample.ts';
 
 const sample = selectSample(process.argv[2] ?? 'ToyCar');

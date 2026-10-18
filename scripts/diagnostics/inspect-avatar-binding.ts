@@ -1,6 +1,6 @@
 import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { importModel } from '../src/importer.ts';
+import { importModel } from '../../src/importer.ts';
 
 const model = await importModel(process.argv[2] ?? '.cache/anime/sample.vrm');
 const output = resolve(process.argv[3] ?? 'outputs/source-binding.json');

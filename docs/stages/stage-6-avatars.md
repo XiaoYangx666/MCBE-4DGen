@@ -35,11 +35,11 @@ VRM 的几何、基础蒙皮与初始 Morph 仍使用 glTF 原始数据。VRM 0 
 bun run convert ./角色/模型.pmx --out ./pmx-pack
 bun run convert ./avatar.vrm --out ./vrm-pack
 bun run preview ./pmx-pack.mcpack --out ./pmx-preview.png --unlit
-bun run scripts/fetch-avatar-sample.ts GeneLight
-bun run scripts/fetch-avatar-sample.ts Shino
+bun run scripts/samples/fetch-avatar-sample.ts GeneLight
+bun run scripts/samples/fetch-avatar-sample.ts Shino
 ```
 
-下载清单 scripts/avatar-samples.json 固定上游修订、每个文件大小及 SHA256，缓存存在时也复核，拒绝被改动的文件。样本和导出二进制不进入代码仓库。
+下载清单 scripts/samples/avatar-samples.json 固定上游修订、每个文件大小及 SHA256，缓存存在时也复核，拒绝被改动的文件。样本和导出二进制不进入代码仓库。
 
 ## 真实样本、许可与结果
 

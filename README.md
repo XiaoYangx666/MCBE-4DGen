@@ -2,7 +2,7 @@
 
 通用模型 → 优化 → 静态/人形绑定 → Bedrock 1.8.0 poly_mesh → mcpack → 可恢复的皮肤包管理。
 
-日常使用从 **[完整工作流程](docs/workflow.md)** 开始，覆盖可配置目标路径、目录/mcpack 导入、多包启停、备份恢复、原始权重与衣物归属、模型独立姿势调校，以及客户端验收。PMX 实际转换与明确骨骼映射见 [样本 A与样本 B记录](docs/pmx-model-tests.md)。
+日常使用从 **[完整工作流程](docs/workflow.md)** 开始，覆盖可配置目标路径、目录/mcpack 导入、多包启停、备份恢复、原始权重与衣物归属、模型独立姿势调校，以及客户端验收。PMX 实际转换与明确骨骼映射见 [样本 A与样本 B记录](docs/pmx-model-tests.md)。全部文档见 **[docs/README.md](docs/README.md)**，脚本清单见 **[scripts/README.md](scripts/README.md)**。
 
 ```powershell
 bun run packs status
@@ -47,13 +47,13 @@ CLI、样本脚本与自动化测试均通过 Bun 执行，不再重复运行 No
 | 人形与管理 | VRM 六部分绑定、源衣物规则、Shino 客户端调校、可恢复包管理 | 已实现；见工作流程 |
 | 后续 | 平滑关节、布料物理、更多角色与动作验收 | 待实现 |
 
-每个阶段完成验证后独立提交。Humanoid、Web UI、其它输入格式留待后续。
+每个阶段完成验证后独立提交。
 
 ## 架构决定
 
 保留 Importer → IntermediateModel → ModelOptimizer → BoneMapper → BedrockExporter → SkinPackBuilder 单向流水线。统一中间数据优先采用 glTF Transform Document，另存来源、单位/坐标元数据与警告；不复制整个 glTF 标准。Minecraft 逻辑仅进入绑定和导出阶段。
 
-GLB/glTF 直接由 glTF Transform 读取以保留节点、材质和蒙皮。OBJ/FBX/DAE/STL/PLY 由 libassimp 转为 glTF，再统一进入 Document。Importer 维护外部资源映射，不假设 Assimp 的 GLB 已嵌入纹理。已验证嵌套变换、共享 Mesh、多材质 OBJ 与原始蒙皮权重；新增格式的验证范围见 [第 5A 阶段](docs/stage-5-formats.md)。
+GLB/glTF 直接由 glTF Transform 读取以保留节点、材质和蒙皮。OBJ/FBX/DAE/STL/PLY 由 libassimp 转为 glTF，再统一进入 Document。Importer 维护外部资源映射，不假设 Assimp 的 GLB 已嵌入纹理。已验证嵌套变换、共享 Mesh、多材质 OBJ 与原始蒙皮权重；新增格式的验证范围见 [第 5A 阶段](docs/stages/stage-5-formats.md)。
 
 依赖证据和已知限制见 [docs/dependencies.md](docs/dependencies.md)。
 
@@ -73,14 +73,14 @@ bun run src/cli.ts inspect model.obj --backend wasm
 ## 免费模型复现
 
 ```sh
-bun run scripts/fetch-sample.ts Avocado
-bun run scripts/check-sample.ts Avocado
-bun run scripts/fetch-sample.ts ToyCar
-bun run scripts/check-sample.ts ToyCar
+bun run scripts/samples/fetch-sample.ts Avocado
+bun run scripts/samples/check-sample.ts Avocado
+bun run scripts/samples/fetch-sample.ts ToyCar
+bun run scripts/samples/check-sample.ts ToyCar
 bun run src/cli.ts inspect .cache/samples/ToyCar.glb
 ```
 
-下载脚本固定上游修订并检查 SHA256。模型只下载到忽略的缓存目录，不作为默认发行内容。[样本来源、许可证及实测数据](docs/stage-2.md)。
+下载脚本固定上游修订并检查 SHA256。模型只下载到忽略的缓存目录，不作为默认发行内容。[样本来源、许可证及实测数据](docs/stages/stage-2.md)。
 
 ## 当前限制
 
@@ -90,17 +90,17 @@ bun run src/cli.ts inspect .cache/samples/ToyCar.glb
 - 未识别的可选 glTF 扩展记录警告，必需但无法读取的扩展报错。复杂材质当前保存在中间模型，报告列出将来导出时需要降级的效果。
 - Windows 示例客户端结果见工作流程；第三方加载器及其它模型、设备仍需独立验证。
 
-网格优化 API 与真实模型证据见 [docs/stage-3-mesh.md](docs/stage-3-mesh.md)。
+网格优化 API 与真实模型证据见 [docs/stages/stage-3-mesh.md](docs/stages/stage-3-mesh.md)。
 
-贴图优化、显式图集、复现命令与限制见 [docs/stage-3-textures.md](docs/stage-3-textures.md)。
+贴图优化、显式图集、复现命令与限制见 [docs/stages/stage-3-textures.md](docs/stages/stage-3-textures.md)。
 
-模型变换、初始蒙皮/Morph 冻结及指定高度见 [docs/stage-3-preparation.md](docs/stage-3-preparation.md)。
+模型变换、初始蒙皮/Morph 冻结及指定高度见 [docs/stages/stage-3-preparation.md](docs/stages/stage-3-preparation.md)。
 
 ```sh
-bun run scripts/prepare-sample.ts ToyCar 32
+bun run scripts/samples/prepare-sample.ts ToyCar 32
 ```
 
-Static 绑定、旧版几何格式、真实皮肤参考及导出证据见 [docs/stage-4-geometry.md](docs/stage-4-geometry.md)。
+Static 绑定、旧版几何格式、真实皮肤参考及导出证据见 [docs/stages/stage-4-geometry.md](docs/stages/stage-4-geometry.md)。
 
 ```sh
 bun run sample:export ToyCar
@@ -120,7 +120,7 @@ bun run src/cli.ts validate ./my-skin.mcpack
 
 Windows 客户端实测：同一生成几何使用 128×128 贴图可显示，512/1024 贴图版本未正常显示。CLI 最终图集固定为 128×128，并同步几何贴图尺寸；上述参数控制中间图集，最终缩小会损失贴图细节。Shino 后续穿戴和动作调校结果见工作流程。
 
-默认 Static 绑定到 body；VRM 可选 humanoid 人形模式。输出路径已经包含文件时拒绝覆盖，防止覆盖已有资源。初始导出实现记录见 [第 4B 阶段](docs/stage-4-pack.md)。
+默认 Static 绑定到 body；VRM 可选 humanoid 人形模式。输出路径已经包含文件时拒绝覆盖，防止覆盖已有资源。初始导出实现记录见 [第 4B 阶段](docs/stages/stage-4-pack.md)。
 
 FBX、DAE、STL、PLY 可使用同样的命令，例如 `bun run convert model.fbx --out ./my-fbx-skin`。`--backend native|wasm` 适用于所有 Assimp 输入。已有同名 `.mcpack` 时也拒绝覆盖；`--no-mcpack` 仅写目录并保留该归档。转换报告区分原始面数、优化后正面数、补充反面数、最终面数，以及几何、贴图和归档字节数。
 
@@ -137,7 +137,7 @@ bun run preview ./my-skin/geometry.json --texture ./my-skin/skin0.png --out ./ge
 
 读取实际写出的几何和 PNG，生成 +Z、-Z、+X、斜视四视图。默认开启背面剔除和简单光照；`--unlit` 查看原始贴图色，`--no-cull` 排查面朝向，`--size 512` 调整单视图尺寸。已有输出文件拒绝覆盖。多几何可用 `--geometry geometry.skin0` 选择。
 
-这是离线诊断图，不是 Minecraft 渲染器。支持当前 Static 导出和无初始旋转的骨骼；相交透明面使用近似排序，客户端显示与穿戴仍需实测。实现和校准证据见 [导出结果预览](docs/stage-5-preview.md)。
+这是离线诊断图，不是 Minecraft 渲染器。支持当前 Static 导出和无初始旋转的骨骼；相交透明面使用近似排序，客户端显示与穿戴仍需实测。实现和校准证据见 [导出结果预览](docs/stages/stage-5-preview.md)。
 
 ## 动漫角色 / Unity 来源模型
 
@@ -162,4 +162,4 @@ bun run convert avatar.vrm --out ./avatar-humanoid --binding humanoid
 
 人形静止姿势先修改源肩关节，再用原始混合权重计算皮肤、袖子和肩部的形变，之后冻结到目标骨骼。profile 的 `materialRules` 可按源材质设置 `body`（整件衣物归躯干）或 `arm-components`（按源索引拓扑连通部分及累计骨骼权重区分袖子，`minArmWeight` 指定阈值）。Shino 的 Bottoms 整体归躯干，Tops 的连通袖子归手臂；规则精确匹配源材质，拼错或未命中会报错。用 `bun run binding:inspect avatar.vrm outputs/avatar-binding.json` 保存源归属检查报告。
 
-可运行 `bun run scripts/fetch-avatar-sample.ts GeneLight` 或 `Shino` 获取固定修订、SHA256 校验的角色样本；二进制只放缓存。具体兼容范围、来源/许可和验证数据见 [角色格式接入](docs/stage-6-avatars.md)。
+可运行 `bun run scripts/samples/fetch-avatar-sample.ts GeneLight` 或 `Shino` 获取固定修订、SHA256 校验的角色样本；二进制只放缓存。具体兼容范围、来源/许可和验证数据见 [角色格式接入](docs/stages/stage-6-avatars.md)。
