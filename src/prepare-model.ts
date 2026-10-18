@@ -66,20 +66,26 @@ function morph(source: Primitive, node: Node, semantic: string): Float32Array<Ar
  * bounds-only measurement below cannot drift from the real freeze. */
 function skinSetup(jointMatrices: mat4[], sets: { joints: Int32Array; weights: Float32Array; jointSize: number }[]) {
   const blend = mat4.create();
+  // Influence signatures label _SOURCE_SKIN_REGION. Hashing the indices and the
+  // weight bit patterns avoids building per-vertex strings, which measured 31x
+  // slower than the hash on a full character.
+  const weightBits = new DataView(new ArrayBuffer(4));
   const jointBuffer: number[] = [];
   const weightBuffer: number[] = [];
-  const signature: string[] = [];
   return function blendAt(i: number): { blend: mat4; sum: number; signatureKey: string } {
     for (let k = 0; k < 16; k++) blend[k] = 0;
     let sum = 0;
-    signature.length = 0;
+    let hashA = 0, hashB = 0;
     for (const set of sets) {
       const base = i * set.jointSize;
       for (let c = 0; c < set.jointSize; c++) {
         jointBuffer[c] = set.joints[base + c]!;
         weightBuffer[c] = set.weights[base + c]!;
+        hashA = (Math.imul(hashA, 31) + jointBuffer[c]!) | 0;
+        weightBits.setFloat32(0, weightBuffer[c]!);
+        hashA = (Math.imul(hashA, 31) + weightBits.getInt32(0)) | 0;
+        hashB = (Math.imul(hashB, 0x01000193) + jointBuffer[c]! + weightBits.getInt32(0)) | 0;
       }
-      signature.push(jointBuffer.join(','), weightBuffer.join(','));
       for (let c = 0; c < set.jointSize; c++) {
         const weight = weightBuffer[c]!;
         const joint = jointBuffer[c]!;
@@ -89,7 +95,7 @@ function skinSetup(jointMatrices: mat4[], sets: { joints: Int32Array; weights: F
         for (let k = 0; k < 16; k++) blend[k] = blend[k]! + weight * m[k]!;
       }
     }
-    return { blend, sum, signatureKey: signature.join('|') };
+    return { blend, sum, signatureKey: hashA + ':' + hashB };
   };
 }
 
