@@ -1,0 +1,104 @@
+{
+  "GeneLight": {
+    "description": "Gene light-texture PMX avatar",
+    "entry": "Gene/Gene_light.pmx",
+    "license": "CC-BY-4.0; author also reserves trademark/design rights, see source README",
+    "credit": "CG-CA Gene (c) 2023 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society",
+    "source": "https://github.com/mmdagent-ex/gene",
+    "files": [
+      {
+        "path": "Gene/Gene_light.pmx",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/Gene_light.pmx",
+        "bytes": 2814276,
+        "sha256": "7ce1902e0c834a79db7070c50dcb6444d73d734f6725cad35ea25aa2dbeca4b3"
+      },
+      {
+        "path": "Gene/light/arm.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/arm.png",
+        "bytes": 407020,
+        "sha256": "f0e877599fc6a95c0acfbce15298a55698651306643b66540fdb5fe03b6f10f0"
+      },
+      {
+        "path": "Gene/light/bottoms.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/bottoms.png",
+        "bytes": 557989,
+        "sha256": "02d6ac23a8be586b008aba314b9f8c1d32d013f467ce1038301b78f78a5a19bc"
+      },
+      {
+        "path": "Gene/light/extra.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/extra.png",
+        "bytes": 186248,
+        "sha256": "e225077191671f9a92539f4548d90d56ebf609e7f1673879eb8f877042d61a5e"
+      },
+      {
+        "path": "Gene/light/eye.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/eye.png",
+        "bytes": 362902,
+        "sha256": "905d0c73fb5863559947af8166324f1371b57b2bedb07fa50f7640aada9321d8"
+      },
+      {
+        "path": "Gene/light/eye2.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/eye2.png",
+        "bytes": 474362,
+        "sha256": "e6e50b6fc355e5d8f4b4db4fb7d067957adb8923c9710095150121e7720528a0"
+      },
+      {
+        "path": "Gene/light/eye_msk.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/eye_msk.png",
+        "bytes": 43672,
+        "sha256": "294a82febd2347e71a653252a36a54f2022f00225d14f9c05314d08ca377610f"
+      },
+      {
+        "path": "Gene/light/eye_red.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/eye_red.png",
+        "bytes": 393307,
+        "sha256": "640f482c8ba1db646e818538782dd9168c311ebef00b2f3dcdc078d22c4e0230"
+      },
+      {
+        "path": "Gene/light/face.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/face.png",
+        "bytes": 375790,
+        "sha256": "d30fa6fef9d261bbc09564b374f0fb8f2220e02bace4cae09b74950afc623406"
+      },
+      {
+        "path": "Gene/light/hair2.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/hair2.png",
+        "bytes": 745049,
+        "sha256": "525530c116b784b43c96c2941841739bd90024f2581ad529ca59203b63993ca3"
+      },
+      {
+        "path": "Gene/light/iraira.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/iraira.png",
+        "bytes": 48406,
+        "sha256": "b286c96debf7b1e482cd5ebab9a740560be490c284f38759c0edc291d9009390"
+      },
+      {
+        "path": "Gene/light/pale.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/pale.png",
+        "bytes": 15878,
+        "sha256": "fe28decbd5cac41f99e9789796f166a6c0e60060c07082e20721cf43718429a7"
+      },
+      {
+        "path": "Gene/light/top.png",
+        "url": "https://raw.githubusercontent.com/mmdagent-ex/gene/c7eace43dffaccff6ad0597433ef85fa57c91e03/light/top.png",
+        "bytes": 382693,
+        "sha256": "60fc47dbd91667b7e9b82bfab8ff2bdc583a2fe5ba7fa4a33351afa77324ef7f"
+      }
+    ]
+  },
+  "Shino": {
+    "description": "Sendagaya Shino VRoid VRM 0.x avatar",
+    "entry": "sample.vrm",
+    "license": "CC0 (embedded VRM meta.licenseName)",
+    "credit": "VRoid Studio sample model Sendagaya Shino / pixiv",
+    "source": "https://github.com/madjin/vrm-samples",
+    "files": [
+      {
+        "path": "sample.vrm",
+        "url": "https://raw.githubusercontent.com/madjin/vrm-samples/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/beta/sample.vrm",
+        "bytes": 15074328,
+        "sha256": "1e177c1a7b14f783a9c48395831db8616260d3bddd4154cb2784b779adca49b5"
+      }
+    ]
+  }
+}

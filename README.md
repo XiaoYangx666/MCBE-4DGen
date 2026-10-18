@@ -2,7 +2,7 @@
 
 通用模型 → 优化 → Static 刚性绑定 → Bedrock 1.8.0 poly_mesh → mcpack。
 
-当前已实现 **皮肤包生成 CLI 与第 5A 阶段的格式扩展**：OBJ/GLB/glTF/FBX/DAE/STL/PLY → Static poly_mesh → manifest.json、skins.json、geometry.json、skin0.png，并可生成 .mcpack。格式与交叉引用可独立校验；客户端穿戴能力仍需实机验证。
+当前已实现 **皮肤包生成 CLI 与第 5A 阶段的格式扩展**：OBJ/GLB/glTF/FBX/DAE/STL/PLY/PMX/VRM → Static poly_mesh → manifest.json、skins.json、geometry.json、skin0.png，并可生成 .mcpack。格式与交叉引用可独立校验；客户端穿戴能力仍需实机验证。
 
 ## 运行验证
 
@@ -28,7 +28,8 @@ CLI、样本脚本与自动化测试均通过 Bun 执行，不再重复运行 No
 | 4B | 完整 mcpack、convert/validate CLI | 本地类型检查与测试通过；待实机验证 |
 | 5A | FBX/DAE/STL/PLY、完整转换回归、覆盖保护 | 完成 |
 | 5B-1 | 实际导出文件四视图预览 | 完成 |
-| 5B-2 | 复杂角色格式与真实客户端演示、完整使用文档 | 待实现 |
+| 6A | PMX、VRM 静态角色导入与真实样本验证 | 完成 |
+| 后续 | 人形肢体绑定、真实客户端验证、完整使用文档 | 待实现 |
 
 每个阶段完成验证后独立提交。Humanoid、Web UI、其它输入格式留待后续。
 
@@ -105,7 +106,7 @@ bun run src/cli.ts validate ./my-skin.mcpack
 
 FBX、DAE、STL、PLY 可使用同样的命令，例如 `bun run convert model.fbx --out ./my-fbx-skin`。`--backend native|wasm` 适用于所有 Assimp 输入。已有同名 `.mcpack` 时也拒绝覆盖；`--no-mcpack` 仅写目录并保留该归档。转换报告区分原始面数、优化后正面数、补充反面数、最终面数，以及几何、贴图和归档字节数。
 
-PMX/PMD、VRM、Blend 暂未开放；不能将 Assimp 的底层格式列表视为本项目已验证支持。PLY 顶点色仍会明确拒绝，STL 无 UV 时生成纯色图集。
+PMD、Blend 暂未开放；不能将 Assimp 的底层格式列表视为本项目已验证支持。PLY 顶点色仍会明确拒绝，STL 无 UV 时生成纯色图集。
 
 
 ## 检查实际导出外观
@@ -119,3 +120,18 @@ bun run preview ./my-skin/geometry.json --texture ./my-skin/skin0.png --out ./ge
 读取实际写出的几何和 PNG，生成 +Z、-Z、+X、斜视四视图。默认开启背面剔除和简单光照；`--unlit` 查看原始贴图色，`--no-cull` 排查面朝向，`--size 512` 调整单视图尺寸。已有输出文件拒绝覆盖。多几何可用 `--geometry geometry.skin0` 选择。
 
 这是离线诊断图，不是 Minecraft 渲染器。支持当前 Static 导出和无初始旋转的骨骼；相交透明面使用近似排序，客户端显示与穿戴仍需实测。实现和校准证据见 [导出结果预览](docs/stage-5-preview.md)。
+
+## 动漫角色 / Unity 来源模型
+
+```sh
+bun run convert ./角色/模型.pmx --out ./mmd-pack
+bun run convert ./avatar.vrm --out ./vrm-pack
+bun run convert ./avatar.fbx --out ./fbx-pack
+bun run preview ./mmd-pack.mcpack --out ./mmd-preview.png --unlit
+```
+
+PMX 2.0/2.1 经 Assimp 导入，补回材质双面标记、原名和 diffuse alpha，保留 PNG 透明；中文目录和 Windows 风格贴图路径已测试。VRM 0.x/1.0 直接读取 glTF 数据，提供明确的 MToon 基础色/主贴图/透明降级，并在 inspect.source.avatar 中列出可读的作者与许可元数据。FBX 已有导入路径，本轮补测了带骨骼的 FBX。
+
+当前转换仍冻结初始姿态并整体挂在 body：不会随 MC 四肢独立运动，不运行 MMD/Unity 动画、IK、物理或 VRM 表情。MToon 描边和复杂着色不能原样搬入皮肤包。PMD 请先转 PMX；.unitypackage、.prefab、.asset、AssetBundle 请先在来源工具导出 FBX/VRM 与贴图。
+
+可运行 `bun run scripts/fetch-avatar-sample.ts GeneLight` 或 `Shino` 获取固定修订、SHA256 校验的角色样本；二进制只放缓存。具体兼容范围、来源/许可和验证数据见 [角色格式接入](docs/stage-6-avatars.md)。

@@ -6,19 +6,23 @@ import { createAssimp } from 'libassimp';
 import { MeshoptDecoder } from 'meshoptimizer';
 import type { IntermediateModel } from './model.ts';
 import { ModelIO, ModelResources } from './resources.ts';
+import { readPMXMaterials } from './pmx-metadata.ts';
+import { prepareVRM } from './avatar-import.ts';
 import { validateModel } from './validate-model.ts';
 
 export interface ImportOptions { backend?: 'auto' | 'native' | 'wasm' }
 
 /** Only formats covered by import and full conversion tests are advertised. */
-export const INPUT_FORMATS = ['obj', 'glb', 'gltf', 'fbx', 'dae', 'stl', 'ply'] as const;
+export const INPUT_FORMATS = ['obj', 'glb', 'gltf', 'fbx', 'dae', 'stl', 'ply', 'pmx', 'vrm'] as const;
 
 export async function importModel(input: string, options: ImportOptions = {}): Promise<IntermediateModel> {
   const extension = extname(input).toLowerCase();
+  if (['.unitypackage', '.asset', '.prefab', '.bundle'].includes(extension)) throw new Error('Unity project/package assets are not standalone models. Export FBX or VRM with textures first.');
+  if (extension === '.pmd') throw new Error('Unsupported input format: PMD. Export as PMX 2.0/2.1 first.');
   if (!INPUT_FORMATS.some((format) => extension === '.' + format)) throw new Error(`Unsupported input format: ${extension || '(none)'}. Supported: ${INPUT_FORMATS.join(', ')}`);
   const path = await realpath(input);
   const format = extension.slice(1) as IntermediateModel['source']['format'];
-  const direct = format === 'glb' || format === 'gltf';
+  const direct = format === 'glb' || format === 'gltf' || format === 'vrm';
   const resources = new ModelResources(dirname(path));
   const warnings: string[] = [];
   const warn = (message: string) => { if (!warnings.includes(message)) warnings.push(message); };
@@ -26,6 +30,7 @@ export async function importModel(input: string, options: ImportOptions = {}): P
   const io = new ModelIO(resources).registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({ 'meshopt.decoder': MeshoptDecoder })
     .setStrictResources(true).setLogger({ debug() {}, info() {}, warn, error: warn });
+  const pmx = format === 'pmx' ? readPMXMaterials(await resources.read(path)) : undefined;
   let entry = path;
   let backend: 'native' | 'wasm' | undefined;
   if (!direct) {
@@ -56,6 +61,21 @@ export async function importModel(input: string, options: ImportOptions = {}): P
     } finally { assimp.dispose(); }
   }
   const json = await io.readAsJSON(entry);
+  const avatar = format === 'vrm' || json.json.extensions?.VRM || json.json.extensions?.VRMC_vrm ? prepareVRM(json, warn) : undefined;
+  if (pmx) {
+    if (json.json.materials?.length !== pmx.materials.length) throw new Error('PMX material mapping changed during Assimp conversion');
+    pmx.materials.forEach((material, index) => {
+      const target = json.json.materials![index]!;
+      target.doubleSided = material.doubleSided;
+      target.name = material.name;
+      // PMX always multiplies diffuse/PNG alpha; it has no glTF OPAQUE/MASK switch.
+      target.alphaMode = 'BLEND';
+      const pbr = target.pbrMetallicRoughness ??= {};
+      pbr.baseColorFactor = [...(pbr.baseColorFactor ?? [1, 1, 1, 1])];
+      pbr.baseColorFactor[3] = material.alpha;
+    });
+  }
+  if (format === 'pmx') warn('PMX static fallback: Assimp may omit morphs, physics, IK, toon/sphere maps, outlines and shadow draw flags; SDEF/QDEF are reduced to linear weights. No MMD animation fidelity is promised.');
   // NodeIO warns for unknown optional extensions; retain their exact names even if unused.
   const supported = new Set(ALL_EXTENSIONS.map((extension) => extension.EXTENSION_NAME));
   for (const extension of json.json.extensionsUsed ?? []) {
@@ -75,6 +95,7 @@ export async function importModel(input: string, options: ImportOptions = {}): P
       coordinates: direct ? 'right-handed-y-up' : 'unspecified',
       importer: direct ? 'gltf-transform' : 'libassimp',
       ...(backend ? { backend } : {}),
+      ...(avatar ? { avatar } : {}),
     }, warnings,
   };
   validateModel(model);
