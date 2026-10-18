@@ -8,6 +8,34 @@ import { ModelIO, ModelResources } from './resources.ts';
 import { readPMXMaterials } from './pmx-metadata.ts';
 import { prepareVRM } from './avatar-import.ts';
 import { validateModel } from './validate-model.ts';
+import { decodeTGA } from './tga.ts';
+import sharp from 'sharp';
+import type { Document } from '@gltf-transform/core';
+
+/** Assimp passes TGA textures through verbatim; browsers and the exporter need PNG. */
+async function normalizeTgaTextures(document: Document, warn: (message: string) => void) {
+  const converted: string[] = [];
+  for (const texture of document.getRoot().listTextures()) {
+    const image = texture.getImage();
+    if (!image?.byteLength) continue;
+    const mime = (texture.getMimeType() ?? '').toLowerCase();
+    const uri = texture.getURI() ?? '';
+    if (!mime.includes('tga') && !uri.toLowerCase().endsWith('.tga')) continue;
+    try {
+      const decoded = decodeTGA(image);
+      const png = await sharp(decoded.data, {
+        raw: { width: decoded.width, height: decoded.height, channels: 4 },
+      }).png().toBuffer();
+      texture.setImage(new Uint8Array(png)).setMimeType('image/png');
+      if (uri) texture.setURI(uri.replace(/\.tga$/i, '.png'));
+      converted.push(uri || '(embedded)');
+    } catch (error) {
+      warn(`TGA texture ${uri || '(embedded)'} could not be converted: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (converted.length)
+    warn(`Converted ${converted.length} TGA texture(s) to PNG for preview and export: ${converted.join(', ')}`);
+}
 
 export interface ImportOptions { backend?: 'auto' | 'native' | 'wasm' }
 
@@ -97,6 +125,7 @@ export async function importModel(input: string, options: ImportOptions = {}): P
     if (!supported.has(extension)) warn(`Unsupported glTF extension: ${extension}`);
   }
   const document = await io.readJSON(json);
+  await normalizeTgaTextures(document, warn);
   for (const mesh of document.getRoot().listMeshes()) for (const p of mesh.listPrimitives()) {
     if (p.getMode() === 5 || p.getMode() === 6) {
       convertPrimitiveToTriangles(p);
