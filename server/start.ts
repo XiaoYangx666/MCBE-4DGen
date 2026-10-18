@@ -338,11 +338,11 @@ const server = Bun.serve({
           const name=String(form.get("name")||file.name.replace(/\.[^.]+$/,"")).trim();
           const height=Number(form.get("height")??32),bytes=new Uint8Array(await file.arrayBuffer());
           const image=await createImageSkin(bytes,{name,height});
-          const imageId=createHash("sha256").update(bytes).digest("hex"),source=resolve(storage.sources,"images",imageId+".png");
-          await mkdir(dirname(source),{recursive:true});await writeFile(source,image.sourcePng);
+          const imageId=createHash("sha256").update(bytes).digest("hex"),source=resolve(storage.sources,"images",imageId+".image");
+          await mkdir(dirname(source),{recursive:true});if(!(await Bun.file(source).exists()))await writeFile(source,image.sourceImage);
           const id=crypto.randomUUID();
           if(jobs.size>=8)jobs.delete(jobs.keys().next().value!);
-          jobs.set(id,{status:"done",message:"图片皮肤已生成",files:image.files,geometry:image.geometry,texture:image.png,meta:{source,template:"image",height},result:{report:{triangles:4},details:{},excluded:[]}});
+          jobs.set(id,{status:"done",message:"图片皮肤已生成",files:image.files,geometry:image.geometry,texture:image.png,meta:{source,sourceMime:image.sourceMime,template:"image",height},result:{report:{triangles:4},details:{},excluded:[]}});
           return json({id,name,width:image.width,height,source});
         } finally {busy=false;}
       }
@@ -771,7 +771,7 @@ const server = Bun.serve({
         const pack=(await requireManager().list()).find(p=>p.id===parts[2]);
         const source=pack?.meta?.source;
         if(pack?.meta?.template!=="image" || typeof source!=="string" || !within(storage.sources,source)) throw Error("没有可编辑的模板源图片");
-        return new Response(new Uint8Array(await readFile(source)),{headers:{"Content-Type":"image/png"}});
+        return new Response(new Uint8Array(await readFile(source)),{headers:{"Content-Type":pack.meta?.sourceMime??"image/png"}});
       }
       if (parts[0] === "api" && parts[1] === "packs" && parts[3] === "download" && req.method === "GET") {
         const folder = resolve(storage.cache, "pack-exports", crypto.randomUUID());

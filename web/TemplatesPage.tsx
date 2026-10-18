@@ -19,7 +19,7 @@ export function TemplatesPage() {
       if(!pack||pack.meta?.template!=='image')throw Error('找不到图片模板的源文件');
       const response=await fetch('/api/packs/'+encodeURIComponent(id)+'/source-image');
       if(!response.ok)throw Error('源图片读取失败');
-      const file=new File([await response.blob()],pack.name+'.png',{type:'image/png'});
+      const file=new File([await response.blob()],pack.name+'.image',{type:response.headers.get('Content-Type')??'application/octet-stream'});
       if(active){setFile(file);setName(pack.name);setHeight(pack.meta.height??32);setPreview(URL.createObjectURL(file));setDirty(true);}
     })().catch(e=>{if(active)setError(String(e));}).finally(()=>{if(active)setBusy(false);});
     return()=>{active=false;};

@@ -1,3 +1,4 @@
+import { createDemandRender } from "./demand-render";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -100,8 +101,7 @@ export function PackPreview({ packId, skinIndex = 0, revision = "", baseUrl }: {
   useEffect(() => {
     const el = host.current;
     if (!el || !scene?.geometry) return;
-    let disposed = false;
-    let frame = 0;
+
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -126,7 +126,7 @@ export function PackPreview({ packId, skinIndex = 0, revision = "", baseUrl }: {
     const group = new THREE.Group();
     world.add(group);
 
-    const texture = new THREE.TextureLoader().load(scene.texture);
+    const texture = new THREE.TextureLoader().load(scene.texture,()=>render.request());
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.magFilter = THREE.NearestFilter;
     texture.minFilter = THREE.NearestFilter;
@@ -213,18 +213,19 @@ export function PackPreview({ packId, skinIndex = 0, revision = "", baseUrl }: {
       camera.updateProjectionMatrix();
       renderer.setSize(width, height);
       if (!userMoved) view(currentView);
+      render.request();
     });
     resize.observe(el);
-    function animate() {
-      if (disposed) return;
-      frame = requestAnimationFrame(animate);
-      controls.update();
+    const render = createDemandRender(() => {
+      const moving = controls.update();
       renderer.render(world, camera);
-    }
-    animate();
+      return moving;
+    });
+    controls.addEventListener("change",render.request);
+    render.request();
     return () => {
-      disposed = true;
-      cancelAnimationFrame(frame);
+      controls.removeEventListener("change",render.request);
+      render.dispose();
       resize.disconnect();
       controls.dispose();
       group.traverse((node) => {
