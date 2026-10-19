@@ -1,5 +1,19 @@
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import {
+  createGameSkinBackup,
+  deleteGameSkinBackup,
+  listGameSkinBackups,
+  readGameSkinBackup,
+  type GameSkinBackupReason,
+} from '../../src/game-skins.ts';
+import {
+  buildPersonaRecipe,
+  exportPersonaRecipes,
+  readDefaultCastIcon,
+  readPersonaPieceThumbnail,
+} from '../../src/persona-recipe.ts';
 import { storage, within } from '../../src/workspace-storage.ts';
 import { json } from '../http.ts';
 import type { Studio } from '../studio.ts';
@@ -11,6 +25,32 @@ const GAME_REQUIRED_ROUTES = new Set([
   '/api/packs/recover',
   '/api/packs/apply-update',
 ]);
+
+/**
+ * Snapshot the character-creator profiles whenever the custom slot changes.
+ * This is deliberately best-effort: a failed backup must never undo or block
+ * the game operation that already succeeded.
+ */
+async function backupGameSkins(
+  studio: Studio,
+  reason: GameSkinBackupReason,
+): Promise<void> {
+  if (!studio.gameConfigured) return;
+  try {
+    const manager = studio.requireManager();
+    await createGameSkinBackup({
+      skinPacksRoot: manager.config.skinPacksRoot,
+      dataDir: storage.skins,
+      kind: 'auto',
+      reason,
+    });
+  } catch (error) {
+    console.warn(
+      '游戏皮肤自动备份失败：',
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
 
 export async function handlePacks(
   studio: Studio,
@@ -30,6 +70,17 @@ export async function handlePacks(
       studio.gameConfigured ? manager.status() : Promise.resolve([]),
       manager.ensureStats(),
     ]);
+    let persona: unknown = null;
+    let personaError = '';
+    if (studio.gameConfigured) {
+      try {
+        persona = await buildPersonaRecipe({
+          skinPacksRoot: manager.config.skinPacksRoot,
+        });
+      } catch (error) {
+        personaError = error instanceof Error ? error.message : String(error);
+      }
+    }
     return json({
       configured: true,
       gameConfigured: studio.gameConfigured,
@@ -40,6 +91,84 @@ export async function handlePacks(
       slots: studio.gameConfigured ? manager.config.slots : {},
       status,
       library: library.sort((a, b) => b.imported.localeCompare(a.imported)),
+      ...(persona ? { persona } : {}),
+      ...(personaError ? { personaError } : {}),
+    });
+  }
+
+  if (
+    url.pathname === '/api/persona/marketplace-icon' &&
+    req.method === 'GET'
+  ) {
+    const raw = url.searchParams.get('url') ?? '';
+    let target: URL;
+    try {
+      target = new URL(raw);
+    } catch {
+      throw Error('无效的图标地址');
+    }
+    if (
+      target.protocol !== 'https:' ||
+      !/^xforgeassets\d*\.xboxlive\.com$/i.test(target.hostname) ||
+      !/\.png$/i.test(target.pathname)
+    )
+      throw Error('不支持的图标地址');
+    const dir = resolve(storage.skins, 'cache', 'marketplace-icons');
+    const file = resolve(
+      dir,
+      createHash('sha256').update(target.href).digest('hex') + '.png',
+    );
+    try {
+      const cached = await readFile(file);
+      return new Response(new Uint8Array(cached), {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=31536000',
+        },
+      });
+    } catch {
+      /* cache miss */
+    }
+    const response = await fetch(target.href);
+    if (!response.ok) return new Response('Not found', { status: 404 });
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    await mkdir(dir, { recursive: true });
+    await writeFile(file, bytes);
+    return new Response(bytes, {
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'public, max-age=31536000',
+      },
+    });
+  }
+
+  if (
+    url.pathname === '/api/persona/piece-icon' &&
+    req.method === 'GET'
+  ) {
+    if (!studio.gameConfigured) throw Error('请先配置游戏 skin_packs 目录');
+    const icon = await readPersonaPieceThumbnail(
+      studio.requireManager().config.skinPacksRoot,
+      url.searchParams.get('name') ?? '',
+    );
+    if (!icon) return new Response('Not found', { status: 404 });
+    return new Response(icon as BodyInit, {
+      headers: { 'Content-Type': 'image/png' },
+    });
+  }
+
+  if (
+    url.pathname === '/api/persona/icon' &&
+    req.method === 'GET'
+  ) {
+    if (!studio.gameConfigured) throw Error('请先配置游戏 skin_packs 目录');
+    const icon = await readDefaultCastIcon(
+      studio.requireManager().config.skinPacksRoot,
+      url.searchParams.get('cast') ?? '',
+    );
+    if (!icon) return new Response('Not found', { status: 404 });
+    return new Response(icon as BodyInit, {
+      headers: { 'Content-Type': 'image/png' },
     });
   }
 
@@ -162,6 +291,77 @@ export async function handlePacks(
     }
   }
 
+  if (url.pathname === '/api/persona/export' && req.method === 'POST') {
+    if (!studio.gameConfigured) throw Error('请先配置游戏 skin_packs 目录');
+    const manager = studio.requireManager();
+    const result = await exportPersonaRecipes({
+      skinPacksRoot: manager.config.skinPacksRoot,
+      outputDir: resolve(storage.skins, 'exports'),
+    });
+    return json({
+      path: result.path,
+      profiles: result.recipe.profiles.length,
+      gameRunning: result.recipe.gameRunning,
+      lastUsedPersonaSlot: result.recipe.source.lastUsedPersonaSlot,
+    });
+  }
+
+  if (url.pathname === '/api/persona/backup' && req.method === 'POST') {
+    if (!studio.gameConfigured) throw Error('请先配置游戏 skin_packs 目录');
+    const body = (await req.json().catch(() => ({}))) as { label?: string };
+    const manager = studio.requireManager();
+    return json(
+      await createGameSkinBackup({
+        skinPacksRoot: manager.config.skinPacksRoot,
+        dataDir: storage.skins,
+        kind: 'manual',
+        reason: 'manual',
+        ...(body.label?.trim() ? { label: body.label.trim() } : {}),
+      }),
+    );
+  }
+
+  if (url.pathname === '/api/persona/backups' && req.method === 'GET')
+    return json({ backups: await listGameSkinBackups(storage.skins) });
+
+  if (
+    parts[0] === 'api' &&
+    parts[1] === 'persona' &&
+    parts[2] === 'backups' &&
+    parts.length === 4 &&
+    req.method === 'GET'
+  ) {
+    const id = parts[3]!;
+    const backup = await readGameSkinBackup(storage.skins, id);
+    if (!backup) return new Response('Not found', { status: 404 });
+    return new Response(JSON.stringify(backup, null, 2), {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="game-skins-${id}.json"`,
+      },
+    });
+  }
+
+  if (
+    url.pathname === '/api/persona/backups/delete' &&
+    req.method === 'POST'
+  ) {
+    const body = (await req.json()) as { id?: string };
+    const id = String(body.id ?? '');
+    return json({ id, deleted: await deleteGameSkinBackup(storage.skins, id) });
+  }
+
+  if (
+    parts[0] === 'api' &&
+    parts[1] === 'persona' &&
+    parts[2] === 'backups' &&
+    parts.length === 4 &&
+    req.method === 'DELETE'
+  ) {
+    const id = parts[3]!;
+    return json({ id, deleted: await deleteGameSkinBackup(storage.skins, id) });
+  }
+
   if (url.pathname === '/api/packs/create' && req.method === 'POST') {
     const body = (await req.json()) as { name?: string };
     return json(
@@ -229,9 +429,12 @@ export async function handlePacks(
   if (url.pathname === '/api/packs/apply-update' && req.method === 'POST') {
     if (!studio.gameConfigured) throw Error('请先配置游戏目录');
     const body = (await req.json()) as { id: string; slot: string };
-    return json(
-      await studio.requireManager().updateEnabled(body.slot, body.id),
-    );
+    const result = await studio
+      .requireManager()
+      .updateEnabled(body.slot, body.id);
+    if (body.slot === 'custom')
+      await backupGameSkins(studio, 'custom:apply-update');
+    return json(result);
   }
 
   if (url.pathname === '/api/packs/install' && req.method === 'POST') {
@@ -270,6 +473,8 @@ export async function handlePacks(
       return json({ pack, enabled: false });
     try {
       await manager.enable(body.slot, pack.id);
+      if (body.slot === 'custom')
+        await backupGameSkins(studio, 'custom:enable');
       return json({ pack, enabled: true });
     } catch (error) {
       return json({
@@ -292,11 +497,11 @@ export async function handlePacks(
       remove?: boolean;
       revision?: string;
     };
-    return json(
-      await studio
-        .requireManager()
-        .editInstalled(String(body.slot ?? ''), body),
-    );
+    const result = await studio
+      .requireManager()
+      .editInstalled(String(body.slot ?? ''), body);
+    if (body.slot === 'custom') await backupGameSkins(studio, 'custom:edit');
+    return json(result);
   }
 
   if (url.pathname === '/api/packs/enable' && req.method === 'POST') {
@@ -305,6 +510,7 @@ export async function handlePacks(
     const slot = String(body.slot ?? '');
     const result = await manager.enable(slot, String(body.id ?? ''));
     await manager.pruneBackups(slot).catch(() => {});
+    if (slot === 'custom') await backupGameSkins(studio, 'custom:enable');
     return json(result);
   }
 
@@ -314,6 +520,7 @@ export async function handlePacks(
     const slot = String(body.slot ?? '');
     const result = await manager.disable(slot, String(body.id ?? ''));
     await manager.pruneBackups(slot).catch(() => {});
+    if (slot === 'custom') await backupGameSkins(studio, 'custom:disable');
     return json(result);
   }
 
@@ -323,6 +530,7 @@ export async function handlePacks(
     const slot = String(body.slot ?? '');
     const result = await manager.restore(slot);
     await manager.pruneBackups(slot).catch(() => {});
+    if (slot === 'custom') await backupGameSkins(studio, 'custom:restore');
     return json(result);
   }
 

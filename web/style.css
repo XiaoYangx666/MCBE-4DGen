@@ -1344,7 +1344,6 @@ button.danger-button { color:var(--danger); border-color:var(--danger); backgrou
 .pane-caption { padding:9px 10px 14px; color:var(--accent); font-size:11px; }
 .pack-library-row { display:flex; align-items:center; gap:12px; width:100%; padding:13px 10px; text-align:left; background:transparent; border:1px solid transparent; margin-bottom:5px; min-width:0; }
 .pack-library-row.selected { background:var(--selected); border-color:var(--line); }
-.pack-library-row img { width:45px; height:52px; flex-shrink:0; object-fit:contain; image-rendering:pixelated; border-radius:5px; background:var(--selected); }
 .pack-library-row>span { flex:1; min-width:0; }
 .pack-library-row b { display:block; white-space:normal; overflow-wrap:anywhere; font-weight:550; line-height:1.6; }
 .pack-library-row small { display:block; margin-top:6px; color:var(--accent); font-size:11px; }
@@ -1433,3 +1432,46 @@ button.danger-button { color:var(--danger); border-color:var(--danger); backgrou
 .weight-step button { padding:4px 9px; }
 .weight-step select { flex:1; width:0; padding:4px; font-size:11px; }
 .tuner-apply { width:100%; margin-top:8px; font-size:11px; background:var(--selected); }
+.persona-recipe-panel { padding:18px 20px 24px; overflow:auto; }
+.persona-profile-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:6px; }
+.persona-profile-head h3 { margin:0 0 6px; font-size:15px; font-weight:550; }
+.persona-profile-head span { color:var(--accent); font-size:11px; }
+.game-skins-panel { display:flex; flex-direction:column; flex:1; min-height:0; }
+.game-skins-note { margin:10px 20px 0; }
+.game-skins-body { flex:1; min-height:0; overflow:auto; display:flex; flex-direction:column; }
+.game-skins-role-caption { padding:12px 20px 0; }
+.game-skins-role-tabs { display:flex; flex-wrap:wrap; gap:8px; padding:8px 20px 12px; }
+.game-skins-role-tab { flex:1 1 130px; min-width:120px; display:flex; align-items:center; gap:8px; text-align:left; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.game-skins-role-tab.selected { border-color:var(--accent); background:var(--selected); }
+.game-skins-role-tab > span:nth-child(2) { min-width:0; flex:1; }
+.game-skins-role-tab b { display:block; font-size:12px; }
+.game-skins-role-tab small { display:block; margin-top:3px; font-size:10px; color:var(--muted); }
+.game-skins-role-tab .pack-game-badge { flex:0 0 auto; }
+.game-skins-role-number { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; background:var(--selected); font-size:11px; flex:0 0 auto; }
+.game-skins-detail { padding:0 20px; }
+.game-skins-detail .persona-recipe-panel { padding:12px 0 20px; }
+.game-skins-empty { padding:8px; }
+.game-skins-backups { border-top:1px solid var(--line); padding:12px 20px 20px; }
+.game-skins-backups table { width:100%; border-collapse:collapse; font-size:11px; }
+.game-skins-backups th { text-align:left; font-weight:500; color:var(--muted); border-bottom:1px solid var(--line); padding:7px 8px; }
+.game-skins-backups td { border-bottom:1px solid var(--line); padding:7px 8px; vertical-align:middle; }
+.game-skins-backups .muted { font-size:11px; }
+.game-skins-backup-actions { display:flex; align-items:center; gap:9px; }
+.game-skins-backup-actions a { font-size:11px; }
+.game-skins-backup-actions button { padding:4px 8px; font-size:10px; }
+.persona-base { display:flex; align-items:center; gap:10px; margin:14px 0 18px; padding:12px 14px; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.persona-base b { display:block; font-size:12px; }
+.persona-base p { margin:3px 0 0; font-size:12px; color:var(--muted); }
+.persona-color { width:22px; height:22px; border-radius:5px; border:1px solid var(--line); flex:0 0 auto; }
+.persona-pieces { margin-top:12px; }
+.persona-pieces table { width:100%; border-collapse:collapse; font-size:12px; }
+.persona-pieces th { text-align:left; font-weight:500; color:var(--muted); border-bottom:1px solid var(--line); padding:7px 8px; }
+.persona-pieces td { border-bottom:1px solid var(--line); padding:8px; vertical-align:top; }
+.persona-piece-id { display:block; margin-top:3px; font-size:10px; color:var(--muted); word-break:break-all; }
+.persona-piece-thumb { width:48px; height:48px; object-fit:contain; image-rendering:pixelated; border-radius:5px; background:color-mix(in srgb,var(--hover) 6%,transparent); }
+.persona-piece-colors { display:flex; gap:4px; flex-wrap:wrap; }
+.persona-piece-color { width:15px; height:15px; border-radius:3px; border:1px solid var(--line); }
+.persona-raw { margin-top:16px; font-size:12px; }
+.persona-raw summary { cursor:pointer; color:var(--muted); }
+.persona-raw pre { max-height:320px; overflow:auto; background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:10px; font-size:11px; }
+@media(max-width:760px) { .game-skins-role-tab { flex:1 1 100%; }.game-skins-backups { overflow:auto; } }

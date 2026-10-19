@@ -370,7 +370,7 @@ export class Studio {
       version: 1,
       skinPacksRoot: resolve(path),
       stateDir: storage.skins,
-      slots: { custom: { manifestFormat: 2 }, persona: { manifestFormat: 1 } },
+      slots: { custom: { manifestFormat: 2 } },
     };
     const next = new PackManager(config);
     await next.initializePresetSources();

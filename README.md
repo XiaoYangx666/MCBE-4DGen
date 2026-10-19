@@ -8,7 +8,7 @@
 bun run packs status
 bun run workflow workflows/shino.example.json
 # 看过预览后启用；第一次使用先按文档配置目标路径
-bun run packs enable persona shino-release
+bun run packs enable custom shino-release
 ```
 
 本地环境已将最终测试版本登记为 `<sample-id>` 和 `<sample-id>`，原始空包备份已接入新管理器。默认 workflow 不部署；添加 `--deploy` 才写游戏目录。配置与管理状态不提交到 Git。

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { api, post } from "./api";
+import { GameSkinsPanel } from "./GameSkinsPanel";
 import { PackPreview } from "./PackPreview";
+import type { PersonaProfileRecipe } from "../src/persona-recipe";
 import type { Contents, LibraryPack, Packs, SkinItem } from "./pack-types";
 
 const gameSlot = (slot: string) =>
-  ({ custom: "自定义皮肤", persona: "角色皮肤" })[slot] ?? slot;
+  ({ custom: "自定义皮肤", persona: "角色创建器（游戏管理）" })[slot] ?? slot;
 
 type PackRow = {
   key: string;
@@ -14,6 +16,8 @@ type PackRow = {
   revision: string;
   preset: boolean;
   pack?: LibraryPack;
+  persona?: PersonaProfileRecipe;
+  gameSkins?: true;
 };
 
 export function PackPage() {
@@ -60,6 +64,8 @@ export function PackPage() {
   const [sourceId, setSourceId] = useState("");
   const [sourceContents, setSourceContents] = useState<Contents | null>(null);
   const [indices, setIndices] = useState<number[]>([]);
+  const [recipeBusy, setRecipeBusy] = useState(false);
+  const [recipePath, setRecipePath] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   async function refresh() {
@@ -75,8 +81,8 @@ export function PackPage() {
     void refresh().catch((e) => setError(String(e)));
   }, []);
   const library = data?.library?.filter((p) => !p.removed) ?? [];
-  const presets: PackRow[] = ["custom", "persona"]
-    .filter((id) => data?.slots?.[id])
+  const presets: PackRow[] = Object.keys(data?.slots ?? {})
+    .filter((id) => id === "custom")
     .map((id) => {
       const state = data?.status?.find((s) => s.slot === id);
       return {
@@ -88,6 +94,23 @@ export function PackPage() {
         revision: JSON.stringify(state?.active) + state?.changedOutsideManager,
       };
     });
+  const personaProfiles = data?.persona?.profiles ?? [];
+  const gameSkinsRow: PackRow = {
+    key: "@game-skins",
+    id: "game-skins",
+    name: "游戏皮肤",
+    skins: personaProfiles.length,
+    revision: JSON.stringify(
+      personaProfiles.map((profile) => [
+        profile.slot,
+        profile.lastUsed,
+        profile.pieces.length,
+      ]),
+    ),
+    preset: false,
+    gameSkins: true,
+  };
+  const gameRows = [...presets, gameSkinsRow];
   const presetSourceIds = new Set(
     data?.status?.flatMap((s) => s.presetSources ?? []) ?? [],
   );
@@ -104,12 +127,13 @@ export function PackPage() {
     }));
   const matches = (p: PackRow) =>
     !query || p.name.toLowerCase().includes(query.toLowerCase());
-  const visible = (view === "game" ? presets : local).filter(matches);
+  const visible = (view === "game" ? gameRows : local).filter(matches);
   const row = visible.find((p) => p.key === selected) ?? visible[0];
 
-  const baseUrl = row
-    ? `/api/${row.preset ? "preset-packs" : "packs"}/${row.id}`
-    : "";
+  const baseUrl =
+    row && !row.gameSkins
+      ? `/api/${row.preset ? "preset-packs" : "packs"}/${row.id}`
+      : "";
   const enabled = (id: string) =>
     data?.status?.filter((s) => (s.active ?? []).some((p) => p.id === id)) ??
     [];
@@ -126,7 +150,7 @@ export function PackPage() {
     : undefined;
 
   useEffect(() => {
-    if (!row) {
+    if (!row || row.gameSkins) {
       setContents(null);
       return;
     }
@@ -184,6 +208,30 @@ export function PackPage() {
     return () => window.removeEventListener("keydown", escape);
   }, [busy]);
 
+  async function exportRecipes() {
+    setRecipeBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = (await post("/api/persona/export", {})) as {
+        path: string;
+        profiles: number;
+        gameRunning: boolean;
+      };
+      setRecipePath(result.path);
+      setNotice(
+        `已导出 ${result.profiles} 个角色配方：${result.path}` +
+          (result.gameRunning
+            ? "（游戏正在运行，读取的是当前磁盘状态）"
+            : ""),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRecipeBusy(false);
+    }
+  }
+
   async function run(
     label: string,
     fn: () => Promise<unknown>,
@@ -236,9 +284,12 @@ export function PackPage() {
     (p) => p.skins > 0 && p.id !== row?.id,
   );
   function packageButton(p: PackRow) {
-    const game = p.preset
-      ? data?.status?.find((s) => s.slot === p.id)?.exists
-      : enabled(p.id).length > 0;
+    const game = p.gameSkins
+      ? true
+      : p.preset
+        ? data?.status?.find((s) => s.slot === p.id)?.exists
+        : enabled(p.id).length > 0;
+    const personaInUse = personaProfiles.some((profile) => profile.lastUsed);
     return (
       <button
         key={p.key}
@@ -256,18 +307,28 @@ export function PackPage() {
         <span>
           <b>{p.name}</b>
           <small>
-            {p.skins} 套皮肤
-            {p.preset ? " · " + p.id : p.pack?.draft ? " · 空包" : ""}
+            {p.gameSkins ? `${p.skins} 个角色` : `${p.skins} 套皮肤`}
+            {p.gameSkins
+              ? " · 角色创建器"
+              : p.preset
+                ? " · " + p.id
+                : p.pack?.draft
+                  ? " · 空包"
+                  : ""}
           </small>
         </span>
         {game && (
           <span className="pack-game-badge">
-            {p.preset
-              ? "游戏中"
-              : "游戏中 · " +
-                enabled(p.id)
-                  .map((s) => s.slot)
-                  .join(" / ")}
+            {p.gameSkins
+              ? personaInUse
+                ? "当前使用"
+                : "角色创建器"
+              : p.preset
+                ? "游戏中"
+                : "游戏中 · " +
+                  enabled(p.id)
+                    .map((s) => s.slot)
+                    .join(" / ")}
           </span>
         )}
       </button>
@@ -283,7 +344,7 @@ export function PackPage() {
             本地包 <span>{local.length}</span>
           </a>
           <a className={view === "game" ? "active" : ""} href="#/game">
-            游戏中 <span>{presets.length}</span>
+            游戏中 <span>{gameRows.length}</span>
           </a>
         </nav>
         <div className="pack-top-actions">
@@ -374,6 +435,16 @@ export function PackPage() {
             </aside>
             <section className="pack-content-pane">
               {row ? (
+                row.gameSkins ? (
+                  <GameSkinsPanel
+                    recipe={data.persona}
+                    error={data.personaError}
+                    exportPath={recipePath}
+                    busy={recipeBusy}
+                    onExport={() => void exportRecipes()}
+                    onRefresh={refresh}
+                  />
+                ) : (
                 <>
                   <div className="pack-detail-bar">
                     <div>
@@ -707,6 +778,7 @@ export function PackPage() {
                     </div>
                   </div>
                 </>
+                )
               ) : (
                 <div className="empty-state">没有匹配的皮肤包。</div>
               )}

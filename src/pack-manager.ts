@@ -218,7 +218,7 @@ export class PackManager {
   /** One-time UI migration: record the sources of the existing prebuilt game packs. */
   async initializePresetSources() {
     return this.locked(async () => {
-      for (const slot of ['custom', 'persona']) {
+      for (const slot of Object.keys(this.config.slots)) {
         if (!this.config.slots[slot] || !(await exists(this.statePath(slot)))) continue;
         const state = await json<TargetState>(this.statePath(slot));
         if (state.target !== this.target(slot)) throw new Error('Target state belongs to another directory');
@@ -447,21 +447,33 @@ export class PackManager {
       return { id };
     });
   }
-  /** Drop historical write snapshots, keeping only the slot's original baseline. */
-  async pruneBackups(slot: string) {
+  /**
+   * Drop old write snapshots, but never the original baseline or the most
+   * recent pre-change snapshots. A failed deploy can therefore be recovered
+   * even after several later applies.
+   */
+  async pruneBackups(slot: string, options: { keepRecent?: number } = {}) {
     const target = this.target(slot), state = await this.state(slot);
     if (state?.pending) return { removed: 0 };
+    const keepRecent = Math.max(1, Math.min(100, Math.floor(options.keepRecent ?? 10)));
     const keep = new Set(state ? [state.original] : []);
     const dir = join(this.config.stateDir, 'backups');
     if (!(await exists(dir))) return { removed: 0 };
-    let removed = 0;
+    const candidates: { name: string; info: Snapshot }[] = [];
     for (const name of await readdir(dir)) {
       if (!/^[0-9a-f-]{36}$/.test(name) || keep.has(name)) continue;
       const path = join(dir, name);
       let info: Snapshot | null = null;
       try { info = await json<Snapshot>(join(path, 'snapshot.json')); } catch { continue; }
       if (info.slot !== slot || info.target !== target) continue;
-      await rm(path, { recursive: true, force: true });
+      candidates.push({ name, info });
+    }
+    candidates.sort((a, b) => b.info.created.localeCompare(a.info.created));
+    for (const item of candidates.slice(0, keepRecent)) keep.add(item.name);
+    let removed = 0;
+    for (const item of candidates) {
+      if (keep.has(item.name)) continue;
+      await rm(join(dir, item.name), { recursive: true, force: true });
       removed++;
     }
     return { removed };
