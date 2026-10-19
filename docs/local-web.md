@@ -36,7 +36,7 @@ bun run dev
 
 ## 本地服务与桌面封装
 
-React 页面按首页/模型库、工作台、游戏槽位拆分；预览复用 Viewer 和 PackPreview。文件操作集中在本地服务器，前端通过 `web/api.ts` 调用接口；以后 Electron 可保留这些页面并替换宿主层。本次不包含 Electron 打包。
+React 页面按首页/模型库、工作台、游戏槽位拆分；预览复用 Viewer 和 PackPreview。文件操作集中在本地服务器，前端通过 `web/api.ts` 调用接口；Electron 桌面版复用这些页面，由 `desktop/main.cjs` 启动私有后台服务，打包与检查见 [桌面版](desktop.md)。
 
 ## 范围
 

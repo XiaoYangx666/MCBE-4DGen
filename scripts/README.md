@@ -9,6 +9,11 @@
 | `workflow.ts` | 读取 `workflows/*.json` 执行转换、校验、预览并入库；显式 `--deploy` 才写游戏目录。 |
 | `reduce-avatar.ts` | PMX/GLB 人形减面并生成新版本目录，拒绝覆盖已有产物。 |
 | `check-web.ts` | 对已启动的本地工作台执行真实 HTTP 冒烟检查（页面、跨源拒绝、上传、转换、皮肤包管理）。 |
+| `check-studio.ts` | 工作台存储、图片模板、转换与包管理的独立冒烟检查。 |
+| `check-node.ts` | 使用 Node 直接运行服务端与关键 CLI，验证脱离 Bun 的运行时。 |
+| `desktop.ts` | 启动 Electron 开发版。 |
+| `package-desktop.ts` | 构建 Windows 便携版；`FOURDGEN_RELEASE_DIR` 可覆盖输出目录。 |
+| `check-desktop.ts` | 对开发版或已打包的便携版执行 Electron 冒烟检查。 |
 | `probe.ts` | 依赖后端探测（Assimp native/WASM 等）。 |
 | `client-test.py` | Windows 客户端 UI 自动化与备份/恢复入口；游戏由测试者操作时不要运行。 |
 

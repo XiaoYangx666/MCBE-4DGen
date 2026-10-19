@@ -1,5 +1,3 @@
-桌面应用：`node scripts/desktop.ts`；Windows 便携版：`node scripts/package-desktop.ts`。详见 [桌面版使用与打包](docs/desktop.md)。
-
 # 4DGen：模型绑定与皮肤包管理
 
 通用模型 → 优化 → 静态/人形绑定 → Bedrock 1.8.0 poly_mesh → ZIP → 可恢复的皮肤包管理。
@@ -25,9 +23,20 @@ bun run packs enable persona shino-release
 
 运行 `bun run dev`，打开 http://127.0.0.1:4173 。React + Vite 页面和转换接口由一个 Node 进程提供，支持三维预览、材质筛选、姿势与减面调整，并可把结果保存到本地环境皮肤包库、启停与恢复。详见 [本地网页说明](docs/local-web.md)。
 
+## 桌面版
+
+```powershell
+bun run desktop          # Electron 开发版
+bun run desktop:package  # Windows 便携版，默认输出 release/4DGen-win32-x64
+bun run desktop:package --out C:\path\to\4DGen-portable  # 输出到普通目录
+bun run test:desktop     # 桌面冒烟检查
+```
+
+桌面版复用同一套页面和后台服务，使用 Electron 自带 Node 运行，不要求另装 Bun 或 Node.js。若仓库目录被宿主标记为 Low 完整性，请用 `--out` 把便携版输出到普通目录，否则 exe 启动后无法写用户数据。打包目录、数据位置和验证说明见 [桌面版使用与打包](docs/desktop.md)。
+
 ## 运行验证
 
-运行时统一使用 Node 24+；Bun 仅用于安装依赖和锁定版本。Windows 可运行 `bun run test:workflow` 检查本流程，完整测试用 `bun run test`（Vitest，24 个文件 / 125 项）。早期 Linux 格式验证记录保留在阶段文档中。
+运行时统一使用 Node 24+；Bun 仅用于安装依赖和锁定版本。Windows 可运行 `bun run test:workflow` 检查本流程，完整测试用 `bun run test`（Vitest，24 个文件 / 125 项）。工作台与桌面版另有 `bun run test:studio`、`bun run test:desktop`。
 
 ```sh
 bun install --frozen-lockfile
@@ -36,7 +45,7 @@ bun run test
 bun run probe
 ```
 
-CLI、样本脚本与自动化测试均通过 Bun 执行，不再重复运行 Node 验证。依赖中的 NodeIO 和 node: 标准库 API 由 Bun 兼容层提供。
+CLI、样本脚本与自动化测试均通过 Node 执行；Bun 只负责安装依赖、构建和锁定版本。
 
 ## 阶段计划
 
@@ -51,6 +60,7 @@ CLI、样本脚本与自动化测试均通过 Bun 执行，不再重复运行 No
 | 5B-1 | 实际导出文件四视图预览 | 完成 |
 | 6A | PMX、VRM 静态角色导入与真实样本验证 | 完成 |
 | 人形与管理 | VRM 六部分绑定、源衣物规则、Shino 客户端调校、可恢复包管理 | 已实现；见工作流程 |
+| 工作台与桌面 | 模型库、皮肤模板、统一数据目录、Node 服务、Electron 外壳与便携版打包 | 完成；便携版冒烟通过 |
 | 后续 | 平滑关节、布料物理、更多角色与动作验收 | 待实现 |
 
 每个阶段完成验证后独立提交。

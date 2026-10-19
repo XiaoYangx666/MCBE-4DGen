@@ -13,6 +13,7 @@ const smoke=process.env.FOURDGEN_DESKTOP_SMOKE;
 const smokeFile=process.env.FOURDGEN_DESKTOP_SMOKE_REPORT;
 if(smoke&&process.env.FOURDGEN_DESKTOP_USER_DATA)app.setPath('userData',process.env.FOURDGEN_DESKTOP_USER_DATA);
 function report(value){if(smokeFile)fs.writeFileSync(smokeFile,JSON.stringify(value,null,2));}
+try{fs.mkdirSync(app.getPath('userData'),{recursive:true});}catch{}
 const gotLock=app.requestSingleInstanceLock();
 if(!gotLock)app.quit();
 app.on('second-instance',()=>{if(window){if(window.isMinimized())window.restore();window.show();window.focus();}});
