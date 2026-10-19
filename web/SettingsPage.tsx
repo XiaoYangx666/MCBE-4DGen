@@ -16,6 +16,12 @@ type SettingsData = {
   pendingDataRoot: string | null;
   gameConfigured: boolean;
   managerError: string;
+  version?: string;
+  runtime?: {
+    electron: string | null;
+    node: string;
+    chrome: string | null;
+  };
 };
 
 type UsageData = {
@@ -65,7 +71,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function SettingsPage() {
+export function SettingsPage({ onAbout }: { onAbout: () => void }) {
   const [palette, updatePalette] = useState(getPalette);
   const [appearance, updateAppearance] = useState(getAppearance);
   const [data, setData] = useState<SettingsData | null>(null);
@@ -386,6 +392,21 @@ export function SettingsPage() {
                   {usageError}
                 </p>
               )}
+            </div>
+          </section>
+
+          <section>
+            <h2>关于</h2>
+            <p>
+              4DGen 本地模型与皮肤工作台。查看版本、运行环境和数据目录。
+            </p>
+            <div className="settings-save">
+              <span>
+                {data.version ? `版本 ${data.version}` : "本地模型与皮肤工作台"}
+              </span>
+              <button type="button" onClick={onAbout}>
+                关于 4DGen
+              </button>
             </div>
           </section>
         </div>

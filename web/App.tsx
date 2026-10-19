@@ -1,4 +1,5 @@
 import { AppBar } from "./AppBar";
+import { AboutDialog } from "./AboutDialog";
 import { TemplatesPage } from "./TemplatesPage";
 import { SettingsPage } from "./SettingsPage";
 import { useEffect, useState } from "react";
@@ -18,6 +19,7 @@ import type { Result, Session } from "./types";
 
 export function App() {
   const [saveOpen, setSaveOpen] = useState(false),
+    [aboutOpen, setAboutOpen] = useState(false),
     [savedRevision, setSavedRevision] = useState(0),
     [session, setSession] = useState<Session | null>(null),
     [result, setResult] = useState<Result | null>(null),
@@ -48,6 +50,9 @@ export function App() {
     [revision, setRevision] = useState(0),
     [resultRevision, setResultRevision] = useState(0);
   const { page } = useHashRoute();
+  useEffect(() => {
+    return window.desktop?.onAbout(() => setAboutOpen(true));
+  }, []);
   useEffect(() => {
     if (!busy) return;
     const started = Date.now();
@@ -195,7 +200,7 @@ export function App() {
       <div className="app">
         {navigation}
         {page === "settings" ? (
-          <SettingsPage />
+          <SettingsPage onAbout={() => setAboutOpen(true)} />
         ) : page === "packs" ? (
           <PackPage />
         ) : page === "templates" ? (
@@ -203,7 +208,6 @@ export function App() {
         ) : (
           <LibraryPage
             key={page}
-            home={page === "home"}
             onOpen={(loaded, settings) => {
               if (busy) return;
               if (
@@ -217,6 +221,7 @@ export function App() {
             }}
           />
         )}
+        {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       </div>
     );
 
@@ -399,6 +404,7 @@ export function App() {
           }}
         />
       )}
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       <footer>
         <span>4DGen / 本地模型工作台</span>
         <span>文件在本地环境处理 · 启用皮肤包时会写入游戏目录</span>

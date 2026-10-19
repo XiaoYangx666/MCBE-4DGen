@@ -12,6 +12,11 @@
   --danger-bg:#482d36;
   --on-accent:#182145;
   --viewport:#191d27;
+  --usage-sources:#6f9dff;
+  --usage-models:#4fc39a;
+  --usage-skins:#b388f5;
+  --usage-cache:#e3b15c;
+  --usage-other:#8b93a6;
   color:var(--ink);background:var(--canvas);
 }
 [data-theme="light"] {
@@ -28,6 +33,11 @@
   --danger-bg:#ffedf0;
   --on-accent:#ffffff;
   --viewport:#e7ebf4;
+  --usage-sources:#3f74d8;
+  --usage-models:#2e9c76;
+  --usage-skins:#8256d8;
+  --usage-cache:#b47a1f;
+  --usage-other:#7b8496;
 }
 body,.app,.desktop-shell .app {background:var(--canvas);color:var(--ink);}
 button,input,select,textarea {color:var(--ink);}

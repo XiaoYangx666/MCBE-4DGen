@@ -41,7 +41,7 @@ export function AppBar({
 
   return (
     <header className={`desktop-appbar${state.focused ? "" : " inactive"}`}>
-      <a className="desktop-brand" href="#/" title="4DGen 概览">
+      <a className="desktop-brand" href="#/models" title="4DGen 源模型">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="m12 2 9 5v10l-9 5-9-5V7Zm0 0v10m9-5-9 5-9-5m9 5v10" />
         </svg>

@@ -32,7 +32,7 @@ bun run desktop:package --out C:\path\to\4DGen-portable  # 输出到普通目录
 bun run test:desktop     # 桌面冒烟检查
 ```
 
-桌面版复用同一套页面和后台服务，使用 Electron 自带 Node 运行，不要求另装 Bun 或 Node.js。若仓库目录被宿主标记为 Low 完整性，请用 `--out` 把便携版输出到普通目录，否则 exe 启动后无法写用户数据。打包目录、数据位置和验证说明见 [桌面版使用与打包](docs/desktop.md)。
+桌面版复用同一套页面和后台服务，使用 Electron 自带 Node 运行，不要求另装 Bun 或 Node.js。当前 Windows 便携版约 372 MB，ZIP 约 154 MB。若仓库目录被宿主标记为 Low 完整性，请用 `--out` 把便携版输出到普通目录，否则 exe 启动后无法写用户数据。打包目录、数据位置和验证说明见 [桌面版使用与打包](docs/desktop.md)。
 
 ## 运行验证
 

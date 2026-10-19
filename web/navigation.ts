@@ -1,5 +1,4 @@
 export const pages = [
-  { key: "home", label: "概览", href: "#/" },
   { key: "models", label: "源模型", href: "#/models" },
   { key: "workbench", label: "工作台", href: "#/workbench" },
   { key: "templates", label: "皮肤模板", href: "#/templates" },
@@ -10,7 +9,6 @@ export const pages = [
 export type PageKey = (typeof pages)[number]["key"];
 
 export const pageTitles: Record<PageKey, string> = {
-  home: "首页",
   models: "源模型",
   workbench: "工作台",
   templates: "皮肤模板",
@@ -28,5 +26,7 @@ const ROUTES: { prefix: string; page: PageKey }[] = [
 ];
 
 export function pageFromHash(hash: string): PageKey {
-  return ROUTES.find((route) => hash.startsWith(route.prefix))?.page ?? "home";
+  if (!hash || hash === "#" || hash === "#/" || hash === "#/home")
+    return "models";
+  return ROUTES.find((route) => hash.startsWith(route.prefix))?.page ?? "models";
 }

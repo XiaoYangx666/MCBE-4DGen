@@ -30,6 +30,12 @@ export async function handleSettings(
           JSON.parse(value) as { dataDir?: string; migrateFrom?: string },
       )
       .catch(() => null);
+    const packageInfo = await readFile(
+      resolve(process.cwd(), 'package.json'),
+      'utf8',
+    )
+      .then((value) => JSON.parse(value) as { version?: string })
+      .catch(() => null);
     return json({
       dataRoot,
       gameRoot: studio.gameConfigured
@@ -39,6 +45,12 @@ export async function handleSettings(
       pendingDataRoot: stored?.migrateFrom ? (stored.dataDir ?? null) : null,
       gameConfigured: studio.gameConfigured,
       managerError: studio.managerError,
+      version: packageInfo?.version ?? '0.0.0',
+      runtime: {
+        electron: process.versions.electron ?? null,
+        node: process.versions.node,
+        chrome: process.versions.chrome ?? null,
+      },
     });
   }
 
