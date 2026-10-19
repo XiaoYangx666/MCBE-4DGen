@@ -1,4 +1,4 @@
-import { test, expect } from 'bun:test';
+import { test, expect } from 'vitest';
 import { Document } from '@gltf-transform/core';
 import { autoProfile } from '../src/auto-profile.ts';
 

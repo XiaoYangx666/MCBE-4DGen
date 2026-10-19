@@ -1,4 +1,4 @@
-import { test } from 'bun:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { Document } from '@gltf-transform/core';
 import { optimizeMesh } from '../src/mesh-optimizer.ts';

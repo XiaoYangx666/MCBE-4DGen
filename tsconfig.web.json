@@ -9,7 +9,7 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["bun"]
+    "types": ["node"]
   },
   "include": ["web/**/*.ts", "web/**/*.tsx", "server/**/*.ts"]
 }

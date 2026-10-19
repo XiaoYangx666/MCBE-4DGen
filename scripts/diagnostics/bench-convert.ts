@@ -3,19 +3,20 @@
  * import (cached GLB or PMX through Assimp) -> humanoid export -> skin pack.
  *
  * Usage:
- *   bun run scripts/diagnostics/bench-convert.ts [--model sample-b|shino] [--runs 3]
+ *   node scripts/diagnostics/bench-convert.ts [--model sample-b|shino] [--runs 3]
  *
  * Reports per-phase timings plus end-to-end wall time. Read-only apart from
  * writing nothing: no skin pack is installed and no game directory is touched.
  */
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 import { importModel } from "../../src/importer.ts";
 import { exportHumanoid } from "../../src/humanoid.ts";
 import type { HumanoidProfile } from "../../src/humanoid.ts";
 import { buildSkinPack } from "../../src/skin-pack.ts";
 
-const root = resolve(import.meta.dir, "../..");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 const presets: Record<string, { source: string; cache: string; profile: string; excluded: string[] }> = {
   sample-b: {
@@ -133,7 +134,7 @@ async function main() {
       ?.getRoot()
       .listBuffers()
       .forEach((buffer: any) => buffer.dispose());
-    Bun.gc(true);
+    (globalThis as { gc?: (full?: boolean) => void }).gc?.(true);
   }
 
   const stats = (values: number[]) => {

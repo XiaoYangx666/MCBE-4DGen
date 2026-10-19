@@ -1,9 +1,10 @@
-import { test, expect } from 'bun:test';
-import { mkdtemp, writeFile, rm, stat } from 'node:fs/promises';
+import { test, expect } from 'vitest';
+import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import JSZip from 'jszip';
-import { importLocal, rememberModel, updateModel, removeModel, listModels } from '../server/model-library.ts';
+import { rememberModel, updateModel, removeModel, listModels } from '../server/model-library.ts';
+import { importLocal, ownModel } from '../server/source-archive.ts';
 
 test('library preserves names and editing state across reopen; removing a record keeps source files', async () => {
   const folder = await mkdtemp(join(tmpdir(), '4dgen-entry-'));
@@ -21,7 +22,7 @@ test('library preserves names and editing state across reopen; removing a record
     expect((await listModels()).some(m => m.id === id)).toBe(true);
     await expect(updateModel(id, { name: ' ' })).rejects.toThrow('名称');
     await removeModel(id); id = '';
-    expect(await Bun.file(path).text()).toBe('source');
+    expect(await readFile(path, 'utf8')).toBe('source');
   } finally {
     if (id) await removeModel(id);
     await rm(folder, { recursive: true, force: true });
@@ -43,7 +44,7 @@ test('server imports local ZIP once, keeps sidecars and returns every model cand
     const before = await stat(first[0]!);
     expect(await importLocal(path)).toEqual(first);
     expect((await stat(first[0]!)).mtimeMs).toBe(before.mtimeMs);
-    expect(await Bun.file(join(first[0]!, '..', 'texture.png')).text()).toBe('texture');
+    expect(await readFile(join(first[0]!, '..', 'texture.png'), 'utf8')).toBe('texture');
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
 test('local import rejects ZIP paths escaping the package', async () => {
@@ -87,7 +88,6 @@ test('missing sources can be relinked without losing identity, settings or versi
 });
 
 test('managed source copies model and nested sidecars independently of original files',async()=>{
-  const {ownModel}=await import('../server/model-library.ts');
   const folder=await mkdtemp(join(tmpdir(),'4d-owned-'));
   let copied='';
   try {
@@ -97,10 +97,22 @@ test('managed source copies model and nested sidecars independently of original 
     copied=await ownModel(source);
     expect(copied).not.toBe(source);
     await rm(folder,{recursive:true,force:true});
-    expect(await Bun.file(copied).text()).toBe('model');
-    expect(await Bun.file(join(copied,'../textures/a.png')).text()).toBe('texture');
+    expect(await readFile(copied, 'utf8')).toBe('model');
+    expect(await readFile(join(copied,'../textures/a.png'), 'utf8')).toBe('texture');
   }finally{
     await rm(folder,{recursive:true,force:true});
     if(copied)await rm(join(copied,'..'),{recursive:true,force:true});
   }
+});
+
+
+test('deleting an archived model removes its own files while retaining original downloads',async()=>{
+ const folder=await mkdtemp(join(tmpdir(),'4d-model-delete-'));let id='';
+ try{
+  const original=join(folder,'delete.obj');await writeFile(original,'v 0 0 0');
+  const owned=await ownModel(original);const entry=await rememberModel(owned,'Delete me');id=entry.id;
+  await removeModel(id,true);id='';
+  expect((await stat(original)).isFile()).toBe(true);
+  await expect(stat(owned)).rejects.toThrow();
+ }finally{if(id)await removeModel(id);await rm(folder,{recursive:true,force:true});}
 });

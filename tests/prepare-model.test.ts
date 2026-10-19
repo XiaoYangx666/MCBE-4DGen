@@ -1,4 +1,4 @@
-import { test } from 'bun:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { getBounds } from '@gltf-transform/core';
 import type { Node } from '@gltf-transform/core';

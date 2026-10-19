@@ -6,7 +6,7 @@
 
 ## 环境与首次配置
 
-使用 Bun 1.4.3。普通转换和管理器均为 Bun/TypeScript，不需要 Python；Python 脚本只作为旧收据的兼容恢复入口。
+运行时使用 Node 24+；Bun 仅用于安装依赖和锁定版本。普通转换和管理器均为 Node/TypeScript，不需要 Python；Python 脚本只作为旧收据的兼容恢复入口。
 
 ```powershell
 bun install --frozen-lockfile
@@ -42,9 +42,9 @@ bun run packs status
 bun run workflow workflows/shino.example.json
 ```
 
-默认执行：读取模型 → 源骨骼姿势与衣物规则 → 转换 → 128 图集 → 皮肤包及 mcpack 校验 → 四视图预览 → 导入本地库。没有 `--deploy` 时不写游戏目录。
+默认执行：读取模型 → 源骨骼姿势与衣物规则 → 转换 → 128 图集 → 皮肤包及 ZIP 校验 → 四视图预览 → 导入本地库。没有 `--deploy` 时不写游戏目录。
 
-结果包括输出目录、同名 `.mcpack`、`-preview.png` 和 `-workflow.json`。报告记录源模型及 profile 的 SHA256、profile 内容、绑定分类、文件校验、库 ID，以及可选部署收据。输出或库 ID 已存在时拒绝覆盖；新版本换一个 output/libraryId。模型资源仍按原导入器的资源目录规则检查，模型单文件哈希不等于其全部外部贴图的哈希。
+结果包括输出目录、同名 `.zip`、`-preview.png` 和 `-workflow.json`。报告记录源模型及 profile 的 SHA256、profile 内容、绑定分类、文件校验、库 ID，以及可选部署收据。输出或库 ID 已存在时拒绝覆盖；新版本换一个 output/libraryId。模型资源仍按原导入器的资源目录规则检查，模型单文件哈希不等于其全部外部贴图的哈希。
 
 确认预览后关闭 Minecraft，再执行：
 
@@ -72,12 +72,12 @@ bun run convert avatar.vrm --out outputs/avatar-v1 --name 'My Avatar' --binding 
 
 # 检查写出的结果
 bun run validate outputs/avatar-v1
-bun run validate outputs/avatar-v1.mcpack
+bun run validate outputs/avatar-v1.zip
 bun run preview outputs/avatar-v1 --out outputs/avatar-v1-preview.png --unlit
 bun run binding:preview outputs/avatar-v1 outputs/avatar-v1-binding
 
-# 也可以直接导入别人提供的包目录或 mcpack
-bun run packs import avatar-v1 outputs/avatar-v1.mcpack
+# 也可以直接导入别人提供的包目录或 ZIP
+bun run packs import avatar-v1 outputs/avatar-v1.zip
 bun run packs enable persona avatar-v1
 ```
 
@@ -105,7 +105,7 @@ bun run packs status
 bun run packs enable persona avatar-v1
 bun run packs enable persona avatar-v2
 bun run packs disable persona avatar-v1
-bun run packs export avatar-v2 outputs/avatar-v2-export.mcpack
+bun run packs export avatar-v2 outputs/avatar-v2-export.zip
 bun run packs archive avatar-v1
 bun run packs backups persona
 bun run packs restore persona

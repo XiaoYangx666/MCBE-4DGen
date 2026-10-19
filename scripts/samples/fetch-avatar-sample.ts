@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import manifest from './avatar-samples.json' with { type: 'json' };
 
 const name = process.argv[2];
-if (name !== 'GeneLight' && name !== 'Shino') throw new Error('Usage: bun run scripts/fetch-avatar-sample.ts GeneLight|Shino');
+if (name !== 'GeneLight' && name !== 'Shino') throw new Error('Usage: node scripts/samples/fetch-avatar-sample.ts GeneLight|Shino');
 const sample = manifest[name];
 for (const file of sample.files) {
   const path = join('.cache/anime', file.path);

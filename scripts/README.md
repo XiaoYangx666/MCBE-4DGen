@@ -1,6 +1,6 @@
 # 脚本目录
 
-日常只需要 `bun run` 里的 npm script；下表是直接运行脚本时的入口。
+日常只需要 package.json 里的 npm script（可用 `bun run` 或 `npm run` 执行）；下表是直接运行脚本时的入口，运行时为 Node 24+。
 
 ## 常用入口
 

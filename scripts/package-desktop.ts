@@ -1,0 +1,34 @@
+import {build} from 'vite';
+import {spawn} from 'node:child_process';
+import {cp,mkdir,copyFile,writeFile,readFile,rm,stat} from 'node:fs/promises';
+import {dirname,resolve,join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import sharp from 'sharp';
+import {waitForExit} from './process.ts';
+if(process.platform!=='win32')throw Error('Windows 便携版请在 Windows 构建');
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),stage=join(root,'.cache/desktop-package-'+crypto.randomUUID()),payload=join(stage,'payload');
+await mkdir(payload,{recursive:true});
+try{
+ await cp(join(root,'desktop'),join(stage,'desktop'),{recursive:true});
+ for(const folder of ['server','src','profiles'])await cp(join(root,folder),join(payload,folder),{recursive:true});
+ for(const name of ['package.json','bun.lock'])await copyFile(join(root,name),join(payload,name));
+ await writeFile(join(stage,'package.json'),JSON.stringify({name:'4dgen',productName:'4DGen',version:'0.0.1',main:'desktop/main.cjs',private:true}));
+ console.log('Building desktop UI…');
+ await build({root:join(root,'web'),configFile:false,logLevel:'warn',build:{outDir:join(payload,'web-dist'),emptyOutDir:true}});
+ console.log('Installing production dependencies…');
+ const install=spawn(process.env.BUN_BINARY??'bun',['install','--production','--frozen-lockfile','--ignore-scripts'],{cwd:payload,stdio:'inherit'});
+ if(await waitForExit(install)!==0)throw Error('生产依赖安装失败');
+ const svg=await readFile(join(root,'desktop/icon.svg'));
+ const png=await sharp(svg).resize(256,256).png().toBuffer();
+ const header=Buffer.alloc(22);header.writeUInt16LE(1,2);header.writeUInt16LE(1,4);header.writeUInt16LE(1,10);header.writeUInt16LE(32,12);header.writeUInt32LE(png.length,14);header.writeUInt32LE(22,18);
+ const icon=join(stage,'icon.ico');await writeFile(icon,Buffer.concat([header,png]));
+ const electronVersion=JSON.parse(await readFile(join(root,'node_modules/electron/package.json'),'utf8')).version;
+ console.log('Packaging 4DGen for Windows…');
+ const electronZipDir=join(root,'.cache/electron-runtime');
+ const hasElectronZip=await stat(join(electronZipDir,`electron-v${electronVersion}-win32-x64.zip`)).then(()=>true).catch(()=>false);
+ const options={dir:stage,out:join(root,'release'),name:'4DGen',executableName:'4DGen',platform:'win32',arch:'x64',electronVersion,...(hasElectronZip?{electronZipDir}:{}),icon,asar:true,extraResource:[payload],overwrite:true,prune:false,win32metadata:{CompanyName:'4DGen',FileDescription:'4DGen 模型与皮肤工作台',ProductName:'4DGen'}};
+ const optionsPath=join(root,'.cache/desktop-package-options-'+crypto.randomUUID()+'.json');
+ await writeFile(optionsPath,JSON.stringify(options));
+ try {const child=spawn(process.execPath,[join(root,'scripts/package-electron.mjs'),optionsPath],{stdio:'inherit'});if(await waitForExit(child)!==0)throw Error('Electron packaging failed');} finally {await rm(optionsPath,{force:true});}
+
+}finally{if(!stage.startsWith(join(root,'.cache')+'\\'))throw Error('Unexpected staging directory');await rm(stage,{recursive:true,force:true});}

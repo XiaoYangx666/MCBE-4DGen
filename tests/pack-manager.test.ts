@@ -1,4 +1,4 @@
-import { test } from 'bun:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile, rm, unlink, readdir } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
@@ -38,7 +38,8 @@ test('library merges colliding IDs, disables individual packs, and restores exac
     await f.manager.importPack('first', f.source);
     const archive = join(f.dir, 'pack.mcpack'); await writeFile(archive, await zipSkinPack(f.files));
     await f.manager.importPack('second', archive);
-    const exported = join(f.dir, 'exported.mcpack');
+    const exported = join(f.dir, 'exported.zip');
+    await assert.rejects(f.manager.exportPack('first', join(f.dir, 'exported.mcpack')), /only be exported as .zip/);
     await f.manager.exportPack('first', exported);
     assert.equal((await validateSkinPackPath(exported)).skins, 1);
     await assert.rejects(f.manager.exportPack('first', exported), /EEXIST/);
@@ -229,4 +230,99 @@ test('offline collection is usable before game configuration and keeps existing 
     await offline.addSkins(collection.id,'offline-skin',[0]);
     assert.equal((await offline.contents(collection.id)).skins.length,1);
   }finally{await cleanup(f.dir);}
+});
+
+
+test('collection skins retain independent model origins through copying and renaming', async () => {
+  const f = await fixture();
+  try {
+    await f.manager.importFiles('model-a', f.files, [], {modelId:'source-a'});
+    await f.manager.importFiles('model-b', f.files, [], {modelId:'source-b'});
+    const collection = await f.manager.createPack('合集');
+    await f.manager.addSkins(collection.id, 'model-a', [0]);
+    await f.manager.addSkins(collection.id, 'model-b', [0]);
+    let contents = await f.manager.contents(collection.id);
+    assert.deepEqual(contents.skins.map(s => s.origin?.modelId), ['source-a', 'source-b']);
+    await f.manager.renameNames(collection.id, {skinIndex:1, skinName:'第二个角色'});
+    contents = await f.manager.contents(collection.id);
+    assert.equal(contents.skins[1]?.name, '第二个角色');
+    assert.deepEqual(contents.skins.map(s => s.origin?.modelId), ['source-a', 'source-b']);
+    await f.manager.enable('custom', collection.id);
+    assert.deepEqual((await f.manager.presetContents('custom')).skins.map(s => s.origin?.modelId), ['source-a','source-b']);
+    const copy = await f.manager.createPack('副本');
+    await f.manager.addSkins(copy.id, collection.id, [1]);
+    assert.equal((await f.manager.contents(copy.id)).skins[0]?.origin?.modelId, 'source-b');
+    await f.manager.importFiles('unknown', f.files);
+    assert.equal((await f.manager.contents('unknown')).skins[0]?.origin, null);
+  } finally { await cleanup(f.dir); }
+});
+
+
+test('game-side skin removal and names survive recomposition without changing local packs', async()=>{
+  const f=await fixture();
+  try {
+    await f.manager.importFiles('first',f.files,[],{modelId:'a'});
+    await f.manager.importFiles('second',f.files,[],{modelId:'b'});
+    await f.manager.enable('custom','first');await f.manager.enable('custom','second');
+    const original=await f.manager.contents('first');
+    const before=await f.manager.presetContents('custom');
+    await f.manager.editInstalled('custom',{name:'我的角色',revision:before.revision});
+    await assert.rejects(f.manager.editInstalled('custom',{skinIndex:0,remove:true,revision:before.revision}),/刷新/);
+    await f.manager.editInstalled('custom',{skinIndex:0,skinName:'专属名字'});
+    await f.manager.editInstalled('custom',{skinIndex:1,remove:true});
+    let game=await f.manager.presetContents('custom');
+    assert.equal(game.name,'我的角色');assert.equal(game.skins.length,1);assert.equal(game.skins[0]?.name,'专属名字');
+    assert.deepEqual(await f.manager.contents('first'),original);
+    await f.manager.renameNames('first',{name:'本地新名字'});
+    await f.manager.updateEnabled('custom','first');
+    game=await f.manager.presetContents('custom');
+    assert.equal(game.name,'我的角色');assert.equal(game.skins.length,1);assert.equal(game.skins[0]?.name,'专属名字');
+    await f.manager.enable('custom','second'); // Re-add removed skins in the current game pack.
+    assert.equal((await f.manager.presetContents('custom')).skins.length,2);
+    const operation=await f.manager.editInstalled('custom',{skinIndex:1,remove:true});
+    await f.manager.restore('custom',operation.backup);
+    assert.equal((await f.manager.presetContents('custom')).skins.length,2);
+    await f.manager.editInstalled('custom',{skinIndex:1,remove:true});
+    await f.manager.editInstalled('custom',{skinIndex:0,remove:true});
+    assert.equal((await f.manager.presetContents('custom')).skins.length,0);
+    await f.manager.enable('custom','first');
+    assert.equal((await f.manager.presetContents('custom')).skins.length,1);
+    await f.manager.restore('custom');
+    assert.equal(await readFile(join(f.root,'custom/manifest.json'),'utf8'),'{"original":true}');
+  }finally{await cleanup(f.dir);}
+});
+
+test('different game installs share library but retain separate slot state and backups',async()=>{
+ const f=await fixture();
+ try{
+  await f.manager.importFiles('first',f.files);await f.manager.enable('custom','first');
+  const root=join(f.dir,'other-game');await mkdir(join(root,'custom'),{recursive:true});
+  for(const [name,bytes] of Object.entries(f.files)){await mkdir(dirname(join(root,'custom',name)),{recursive:true});await writeFile(join(root,'custom',name),bytes);}
+  const other=new PackManager({...f.manager.config,skinPacksRoot:root,slots:{custom:{manifestFormat:2}}});
+  assert.equal((await other.status())[0]?.managed,false);
+  await other.editInstalled('custom',{name:'另一个游戏'});
+  assert.equal((await other.presetContents('custom')).name,'另一个游戏');
+  assert.notEqual((await f.manager.presetContents('custom')).name,'另一个游戏');
+  assert.equal((await other.list()).length,1);
+  await other.restore('custom');
+  assert.equal((await other.presetContents('custom')).name,(await f.manager.contents('first')).name);
+ }finally{await cleanup(f.dir);}
+});
+
+
+test('game edits identify individual skins even when they share a PNG',async()=>{
+ const f=await fixture();try{
+  const files={...f.files};const data=JSON.parse(new TextDecoder().decode(files['skins.json']));
+  data.skins.push({...data.skins[0],localization_name:'variant'});files['skins.json']=new TextEncoder().encode(JSON.stringify(data));
+  await f.manager.importFiles('variants',files);await f.manager.enable('custom','variants');
+  // Simulate an existing external game pack that references the same PNG twice.
+  const unmanaged=join(f.root,'reference-a');
+  for(const [name,bytes] of Object.entries(files)){await mkdir(dirname(join(unmanaged,name)),{recursive:true});await writeFile(join(unmanaged,name),bytes);}
+  const manager=new PackManager({...f.manager.config,slots:{reference-a:{manifestFormat:2}}});
+  await manager.editInstalled('reference-a',{skinIndex:1,skinName:'另一个皮肤'});
+  assert.notEqual((await manager.presetContents('reference-a')).skins[0]?.name,'另一个皮肤');
+  await manager.editInstalled('reference-a',{skinIndex:1,remove:true});
+  const contents=await manager.presetContents('reference-a');assert.equal(contents.skins.length,1);
+  assert.ok((await readFile(join(unmanaged,contents.skins[0]!.texture))).length);
+ }finally{await cleanup(f.dir);}
 });

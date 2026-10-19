@@ -1,4 +1,4 @@
-import { test } from 'bun:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -49,12 +49,12 @@ test('builds localized pack metadata and linked skin0.png', async () => {
   });
 });
 
-test('CLI refuses an existing sibling archive before creating output, and no-mcpack leaves it intact', async () => {
+test('CLI refuses an existing sibling archive before creating output, and no-zip leaves it intact', async () => {
   const dir = await mkdtemp(join(tmpdir(), '4d-collision-'));
   try {
     const input = await writeDocument(dir, 'glb'), output = join(dir, 'output');
     const original = 'existing archive';
-    await writeFile(output + '.mcpack', original);
+    await writeFile(output + '.zip', original);
     const run = (extra: string[]) => spawnSync(process.execPath, [
       'src/cli.ts', 'convert', input, '--out', output, '--atlas', '32', ...extra,
     ], { encoding: 'utf8' });
@@ -63,8 +63,8 @@ test('CLI refuses an existing sibling archive before creating output, and no-mcp
     assert.equal(rejected.stdout, '');
     assert.match(rejected.stderr, /archive already exists/);
     await assert.rejects(readFile(join(output, 'geometry.json')), { code: 'ENOENT' });
-    assert.equal(run(['--no-mcpack']).status, 0);
-    assert.equal(await readFile(output + '.mcpack', 'utf8'), original);
+    assert.equal(run(['--no-zip']).status, 0);
+    assert.equal(await readFile(output + '.zip', 'utf8'), original);
     assert.equal((await validateSkinPackPath(output)).skins, 1);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
@@ -86,7 +86,7 @@ test('validates actual mcpack zip contents and rejects broken links', async () =
   const dir = await mkdtemp(join(tmpdir(), '4d-pack-test-'));
   try {
     const path = join(dir, 'example.mcpack');
-    await Bun.write(path, zip);
+    await writeFile(path, zip);
     assert.equal((await validateSkinPackPath(path)).skins, 1);
     const read = await readSkinPack(path);
     assert.deepEqual(Object.keys(read).sort(), Object.keys(files).sort());
@@ -110,18 +110,18 @@ test('CLI converts a real imported GLB to unpacked files and installable archive
     const input = await writeDocument(dir, 'glb');
     const output = join(dir, 'output');
     const run = spawnSync(process.execPath, [
-      'run', 'src/cli.ts', 'convert', input, '--out', output, '--name', 'Test CLI', '--atlas', '32',
+      'src/cli.ts', 'convert', input, '--out', output, '--name', 'Test CLI', '--atlas', '32',
     ], { cwd: process.cwd(), encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     const report = JSON.parse(run.stdout);
     assert.equal(report.name, 'Test CLI');
     assert.equal(report.triangles, 2);
     assert.equal((await validateSkinPackPath(output)).skins, 1);
-    assert.equal((await validateSkinPackPath(output + '.mcpack')).skins, 1);
+    assert.equal((await validateSkinPackPath(output + '.zip')).skins, 1);
     const files = await readSkinPack(output);
     assert.ok((await readFile(join(output, 'geometry.json'))).length > 0);
     assert.ok(files['skin0.png']!.length > 0);
-    const again = spawnSync(process.execPath, ['run', 'src/cli.ts', 'convert', input, '--out', output],
+    const again = spawnSync(process.execPath, ['src/cli.ts', 'convert', input, '--out', output],
       { cwd: process.cwd(), encoding: 'utf8' });
     assert.notEqual(again.status, 0);
     assert.match(again.stderr, /not empty|already exists/);

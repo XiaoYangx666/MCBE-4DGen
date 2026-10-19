@@ -2,18 +2,18 @@
  * Fingerprint the conversion output so a performance change can be shown to be
  * behaviour-preserving. Saves geometry JSON hash, PNG hash and mesh statistics.
  *
- * Usage: bun run scripts/diagnostics/fingerprint-convert.ts --model sample-b --out outputs/bench/before.json
+ * Usage: node scripts/diagnostics/fingerprint-convert.ts --model sample-b --out outputs/bench/before.json
  */
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { importModel } from "../../src/importer.ts";
 import { exportHumanoid } from "../../src/humanoid.ts";
 import type { HumanoidProfile } from "../../src/humanoid.ts";
 import { buildSkinPack } from "../../src/skin-pack.ts";
 
-const root = resolve(import.meta.dir, "../..");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const presets: Record<string, { cache: string; profile: string; excluded: string[] }> = {
   sample-b: {
     cache: ".cache/models/sample-b/diagnostic-source.glb",

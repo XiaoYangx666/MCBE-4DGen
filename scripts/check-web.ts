@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { setTimeout as delay } from "node:timers/promises";
 const base = "http://127.0.0.1:4173";
 const post = async (path: string, body: unknown) => {
   const r = await fetch(base + path, {
@@ -66,7 +67,7 @@ for (let i = 0; i < 60; i++) {
     break;
   }
   if (i === 59) throw Error("Timed out");
-  await Bun.sleep(500);
+  await delay(500);
 }
 const repeated = await post("/api/convert", {
   session: s.id,
