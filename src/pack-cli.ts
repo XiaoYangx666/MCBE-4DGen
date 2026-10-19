@@ -18,7 +18,8 @@ Usage: node src/pack-cli.ts <command> [arguments] [--config skin-manager.local.j
   recover <slot>                              Recover interrupted deployment using its backup
   archive <id>                                Mark inactive pack archived; keep files/backups
   adopt <slot> <original-directory> [pack-id]  Track existing install and original backup
-Config paths resolve relative to the config file; enabled slots default to custom/persona.
+Config paths resolve relative to the config file; enabled slots default to custom only.
+The game's persona pack is character-creator data and is never managed by 4DGen.
 Close Minecraft before enable/disable/restore/recover; restart and reselect the skin afterward.
 `;
 async function main() {
@@ -40,7 +41,7 @@ async function main() {
     }
     if (!root) throw new Error('init requires --root <skin_packs path>');
     const config: ManagerConfig = { version: 1, skinPacksRoot: resolve(dirname(configPath), root),
-      stateDir: resolve(dirname(configPath), state), slots: { custom: { manifestFormat: 2 }, persona: { manifestFormat: 1 } } };
+      stateDir: resolve(dirname(configPath), state), slots: { custom: { manifestFormat: 2 } } };
     new PackManager(config); // Validate before writing.
     await writeFile(configPath, JSON.stringify(config, null, 2), { flag: 'wx' });
     console.log(JSON.stringify({ configPath, ...config }, null, 2)); return;

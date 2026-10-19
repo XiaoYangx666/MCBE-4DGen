@@ -5,9 +5,6 @@
   "slots": {
     "custom": {
       "manifestFormat": 2
-    },
-    "persona": {
-      "manifestFormat": 1
     }
   }
 }

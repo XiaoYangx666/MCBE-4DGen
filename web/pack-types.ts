@@ -1,4 +1,5 @@
 import type { BedrockGeometryFile } from "../src/bedrock-types";
+import type { PersonaRecipe } from "../src/persona-recipe";
 
 export type PackMeta = {
   template?: "image";
@@ -61,6 +62,8 @@ export type Packs = {
   slots?: Record<string, { manifestFormat: number }>;
   status?: SlotStatus[];
   library?: LibraryPack[];
+  persona?: PersonaRecipe;
+  personaError?: string;
 };
 
 export type Scene = {
