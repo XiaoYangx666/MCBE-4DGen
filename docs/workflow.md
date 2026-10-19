@@ -180,6 +180,6 @@ binding:preview 的彩色图是骨骼归属图，蓝色躯干、黄色头、红/
 | 双臂太张、肩太宽 | 肩外移量与外展角过大；从较小值开始 |
 | 外部修改拒绝覆盖 | 先保存并检查自己的改动；不要直接篡改收据哈希 |
 
-Windows Bun 1.4.3 的原生 Assimp 全套测试曾发生模块加载崩溃；GLB/VRM 直接导入不再预加载原生 Assimp。相关流程已验证，不把未跑通的原生格式或完整测试套件声称为通过。具体证据见 `windows-client-test.md`；实验脚本在 `scripts/experiments/`，不再作为日常操作入口。
+早期 Windows Bun 1.4.3 的原生 Assimp 测试曾发生模块加载崩溃；现在运行时为 Node 24+，PMX 使用 WASM 入口，GLB/VRM 直接导入不再预加载原生 Assimp。相关流程已验证，不把未跑通的原生格式或完整测试套件声称为通过。具体证据见 `windows-client-test.md`；实验脚本在 `scripts/experiments/`，不再作为日常操作入口。
 
-当前验证：`bun run check` 通过，`bun run test:workflow` 共 37 项通过；静态 Avocado 与人形 Shino 的完整 workflow --deploy 已分别在工作区隔离目录运行，并恢复原始空包。当前已测试版本迁移与原始备份均通过 SHA256 一致性检查。受限沙箱中 CLI 子进程可能返回 EPERM，测试需要在允许启动子进程的正常终端运行。
+当前验证：`bun run check`、`bun run check:web` 通过，`bun run test:workflow` 共 70 项通过，完整 `bun run test` 为 24 个文件 / 125 项通过。受限沙箱中 CLI 子进程可能返回 EPERM，测试需要在允许启动子进程的正常终端运行。

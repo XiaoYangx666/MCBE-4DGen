@@ -7,6 +7,8 @@ import sharp from 'sharp';
 import {waitForExit} from './process.ts';
 if(process.platform!=='win32')throw Error('Windows 便携版请在 Windows 构建');
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),stage=join(root,'.cache/desktop-package-'+crypto.randomUUID()),payload=join(stage,'payload');
+const outFlag=process.argv.indexOf('--out'),outValue=outFlag>=0?process.argv[outFlag+1]:process.argv.find(arg=>arg.startsWith('--out='))?.slice(6);
+const outDir=resolve(root,outValue??process.env.FOURDGEN_RELEASE_DIR??'release');
 await mkdir(payload,{recursive:true});
 try{
  await cp(join(root,'desktop'),join(stage,'desktop'),{recursive:true});
@@ -26,9 +28,11 @@ try{
  console.log('Packaging 4DGen for Windows…');
  const electronZipDir=join(root,'.cache/electron-runtime');
  const hasElectronZip=await stat(join(electronZipDir,`electron-v${electronVersion}-win32-x64.zip`)).then(()=>true).catch(()=>false);
- const options={dir:stage,out:join(root,'release'),name:'4DGen',executableName:'4DGen',platform:'win32',arch:'x64',electronVersion,...(hasElectronZip?{electronZipDir}:{}),icon,asar:true,extraResource:[payload],overwrite:true,prune:false,win32metadata:{CompanyName:'4DGen',FileDescription:'4DGen 模型与皮肤工作台',ProductName:'4DGen'}};
+ const options={dir:stage,out:outDir,name:'4DGen',executableName:'4DGen',platform:'win32',arch:'x64',electronVersion,...(hasElectronZip?{electronZipDir}:{}),icon,asar:true,extraResource:[payload],overwrite:true,prune:false,win32metadata:{CompanyName:'4DGen',FileDescription:'4DGen 模型与皮肤工作台',ProductName:'4DGen'}};
  const optionsPath=join(root,'.cache/desktop-package-options-'+crypto.randomUUID()+'.json');
  await writeFile(optionsPath,JSON.stringify(options));
  try {const child=spawn(process.execPath,[join(root,'scripts/package-electron.mjs'),optionsPath],{stdio:'inherit'});if(await waitForExit(child)!==0)throw Error('Electron packaging failed');} finally {await rm(optionsPath,{force:true});}
+  console.log('便携版输出：'+outDir);
+  console.log('如果双击 exe 没有窗口，请把整个目录复制到工作区外，或用 --out 指定普通可写目录。');
 
 }finally{if(!stage.startsWith(join(root,'.cache')+'\\'))throw Error('Unexpected staging directory');await rm(stage,{recursive:true,force:true});}

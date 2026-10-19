@@ -6,12 +6,13 @@
 
 - [完整工作流程](workflow.md)：转换、校验、预览、皮肤包入库、备份与恢复。
 - [本地网页工作台](local-web.md)：`bun run dev`（Node 服务端）、材质筛选、姿势预览、减面与图集参数。
+- [桌面版使用与打包](desktop.md)：Electron 开发版、Windows 便携版、启动检查与验证限制。
 - [样本 A与样本 B PMX 转换记录](pmx-model-tests.md)：实际模型、profile、产物与已知问题。
 - [Windows 客户端验收记录](windows-client-test.md)：Shino、贴图尺寸与绑定结果。
 
 ## 当前问题与规划
 
-- [交接说明](HANDOFF.md)：当前状态、样本 B色块问题证据链、下一步优先级。
+- [交接说明](HANDOFF.md)：当前仓库状态、验证结果、部署内容与后续任务。
 - [静态表情与图集预算调查](investigation-static-expressions.md)：表情遮挡审计、面积预算对照。
 - [自动化路线图](automation-roadmap.md)：只写规划，不接入主流程。
 
