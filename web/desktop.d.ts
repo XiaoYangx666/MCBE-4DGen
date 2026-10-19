@@ -9,5 +9,6 @@ declare global {
  windowState():Promise<DesktopWindowState>;
  windowAction(action:'minimize'|'maximize'|'close'|'menu'):Promise<void>;
  onWindowState(callback:(state:DesktopWindowState)=>void):()=>void;
+ onAbout(callback:()=>void):()=>void;
  }}
 }

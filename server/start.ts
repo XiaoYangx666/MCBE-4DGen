@@ -1,5 +1,4 @@
 import { resolve } from 'node:path';
-import { build } from 'vite';
 import { initializeStorage } from '../src/workspace-storage.ts';
 import { createHandler } from './router.ts';
 import { serve } from './serve.ts';
@@ -21,13 +20,15 @@ if (process.env.FOURDGEN_PARENT_PID) {
 await initializeStorage();
 const studio = new Studio();
 
-if (process.env.FOURDGEN_SKIP_WEB_BUILD !== '1')
+if (process.env.FOURDGEN_SKIP_WEB_BUILD !== '1') {
+  const { build } = await import('vite');
   await build({
     root: resolve(studio.root, 'web'),
     configFile: false,
     logLevel: 'warn',
     build: { outDir: studio.dist, emptyOutDir: true },
   });
+}
 
 await studio.initialize();
 

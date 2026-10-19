@@ -97,7 +97,7 @@ async function start(){
     return {path:result.canceled?null:result.filePaths[0]??null};
   });
   ipcMain.handle('desktop:restart',event=>{trusted(event);setImmediate(()=>{app.relaunch();app.quit();});return true;});
-  const template=[{label:'4DGen',submenu:[{label:'设置',click:()=>void window.loadURL(origin+'/#/settings')},{label:'重新启动',click:()=>{app.relaunch();app.quit();}},{type:'separator'},{role:'quit',label:'退出'}]},{label:'视图',submenu:[{role:'reload',label:'刷新界面'},{role:'togglefullscreen',label:'全屏'},{role:'resetzoom',label:'实际大小'},{role:'zoomin',label:'放大'},{role:'zoomout',label:'缩小'},...(!packaged?[{role:'toggleDevTools',label:'开发者工具'}]:[])]}];
+  const template=[{label:'4DGen',submenu:[{label:'关于 4DGen',click:()=>window.webContents.send('desktop:about')},{type:'separator'},{label:'设置',click:()=>void window.loadURL(origin+'/#/settings')},{label:'重新启动',click:()=>{app.relaunch();app.quit();}},{type:'separator'},{role:'quit',label:'退出'}]},{label:'视图',submenu:[{role:'reload',label:'刷新界面'},{role:'togglefullscreen',label:'全屏'},{role:'resetzoom',label:'实际大小'},{role:'zoomin',label:'放大'},{role:'zoomout',label:'缩小'},...(!packaged?[{role:'toggleDevTools',label:'开发者工具'}]:[])]}];
   Menu.setApplicationMenu(null);
   window.setMenu(null);
   const popup=Menu.buildFromTemplate(template);

@@ -35,10 +35,8 @@ const when = (v: string) =>
 const num = (v?: number) => (v === undefined ? "—" : v.toLocaleString("zh-CN"));
 
 export function LibraryPage({
-  home = false,
   onOpen,
 }: {
-  home?: boolean;
   onOpen: (s: Session, settings?: any) => void;
 }) {
   const [models, setModels] = useState<Model[]>([]),
@@ -213,12 +211,10 @@ export function LibraryPage({
     location.hash = "#/models?model=" + encodeURIComponent(r.id);
   };
   return (
-    <div className={"page-content library-page" + (home ? " home-page" : "")}>
+    <div className="page-content library-page">
       <div className="page-heading">
         <div>
-          {home && <span className="eyebrow">YOUR LOCAL STUDIO</span>}
-          <h1>{home ? "你的模型与皮肤工作室" : "源模型"}</h1>
-          {home && <p>从上次的模型继续，或开始制作一个新皮肤。</p>}
+          <h1>源模型</h1>
         </div>
         <div className="button-row">
           <button
@@ -240,59 +236,6 @@ export function LibraryPage({
           </button>
         </div>
       </div>
-      {home && (
-        <>
-          <div className="overview-grid">
-            <div>
-              <span>源模型</span>
-              <strong>{models.length}</strong>
-            </div>
-            <div>
-              <span>本地皮肤包</span>
-              <strong>
-                {packs?.library?.filter((p) => !p.removed).length ?? 0}
-              </strong>
-            </div>
-            <div>
-              <span>已启用皮肤包</span>
-              <strong>
-                {
-                  new Set(
-                    packs?.status?.flatMap((s) =>
-                      (s.active ?? []).map((p) => p.id),
-                    ),
-                  ).size
-                }
-              </strong>
-            </div>
-          </div>
-          <div className="workflow-cards">
-            <a href="#/models">
-              <b>01 / 导入源模型</b>
-              <span>模型、贴图和骨骼</span>
-            </a>
-            <a href="#/workbench">
-              <b>02 / 调整并生成</b>
-              <span>材质、姿势与面数</span>
-            </a>
-            <a href="#/packs">
-              <b>03 / 整理皮肤包</b>
-              <span>保存成品、组合与导出</span>
-            </a>
-            <a href="#/game">
-              <b>04 / 加入游戏</b>
-              <span>查看启用状态与更新</span>
-            </a>
-          </div>
-          <div className="home-actions">
-            <div>
-              <h2>最近编辑</h2>
-              <p>从最近的模型开始，或导入一个新角色。</p>
-            </div>
-            <a href="#/workbench">打开工作台 →</a>
-          </div>
-        </>
-      )}
       {error && (
         <div className="pack-message error" role="alert">
           {error}
@@ -311,35 +254,6 @@ export function LibraryPage({
       )}
       {loading ? (
         <div className="empty-state">正在读取本地模型…</div>
-      ) : home ? (
-        <div className="recent-grid">
-          {visible.slice(0, 6).map((r) => (
-            <button
-              className="recent-card"
-              key={r.id}
-              onClick={() => choose(r)}
-            >
-              <div className="model-avatar">
-                <span>{r.name.replace(/[【】]/g, "").slice(0, 1)}</span>
-              </div>
-              <div>
-                <b>{r.name}</b>
-                <small>
-                  {r.model ? when(r.model.updated) : "待关联源模型"} ·{" "}
-                  {r.packs.length} 个皮肤版本
-                </small>
-              </div>
-              <span>↗</span>
-            </button>
-          ))}
-          {!rows.length && (
-            <div className="empty-state">
-              <h2>开始你的第一个模型</h2>
-              <p>导入 ZIP、PMX、VRM、GLB 或包含贴图的模型文件夹。</p>
-              <button onClick={() => setImporting(true)}>导入模型</button>
-            </div>
-          )}
-        </div>
       ) : (
         <>
           <div className="model-browser">

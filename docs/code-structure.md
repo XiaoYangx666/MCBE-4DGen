@@ -73,6 +73,7 @@ bun run test:node
 - `main.tsx`、`App.tsx`：挂载、工作台状态与页面切换。
 - `navigation.ts`、`use-hash-route.ts`、`WebNav.tsx`、`AppBar.tsx`：哈希路由、页面标题和网页/桌面导航。
 - `LibraryPage.tsx`、`PackPage.tsx`、`TemplatesPage.tsx`、`SettingsPage.tsx`：主要页面。
+- `AboutDialog.tsx`：版本、运行环境与数据目录弹窗，可由设置页或桌面菜单打开。
 - `PackPreview.tsx`、`pack-types.ts`：皮肤包预览与共享类型。
 - `Viewer.tsx`、`MaterialPanel.tsx`、`SettingsPanel.tsx`、`OutputPanels.tsx`、`SaveSkinDialog.tsx`、`WorkflowStrip.tsx`：工作台组件。
 - `appearance.ts`、`theme.css`、`style.css`、`workflow.css`：主题、配色与布局。

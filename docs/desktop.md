@@ -17,6 +17,8 @@ bun run desktop
 
 Electron 自动启动私有本地转换服务并打开工作台，退出应用时关闭对应服务。后台端口自动分配，不占用网页模式的 4173。目录选择使用 Electron 原生对话框；数据迁移设置保存后可点击“重启应用”。
 
+应用菜单「关于 4DGen」和设置页的「关于 4DGen」都会打开同一个弹窗，显示版本、Electron/Node/Chromium 版本和数据目录。
+
 首次在源码目录启动桌面版时，将当前数据目录与游戏配置登记到 `%APPDATA%/4DGen/`，沿用现有模型和皮肤，不复制或删除数据。开发版与便携版使用同一桌面配置。桌面日志为 `%APPDATA%/4DGen/desktop.log`。没有现有项目配置的首次便携版运行，默认数据目录为 `%APPDATA%/4DGen/data`。
 
 ## Windows 便携版
@@ -46,6 +48,16 @@ bun run desktop:package --out C:\path\to\4DGen-portable
 ```
 
 这不会影响普通机器上的默认 `release/` 输出。
+
+### 体积与裁剪
+
+打包时只安装生产依赖；`react`、`react-dom`、`three`、`vite` 等仅用于构建前端，不再进入便携版。Vite 在服务端改为按需动态导入，桌面模式跳过网页构建。打包完成后还会：
+
+- 只保留 `en-US`、`zh-CN`、`zh-TW` 三个 Electron locale；
+- 清理 `node_modules` 中的 `@types`、`.bin`、文档、类型声明和 source map；
+- 删除运行时不用的 `bun.lock`。
+
+当前构建约 **372.1 MB**，ZIP 约 **153.5 MB**（2026-10-19，Windows x64）。实际大小随依赖版本变化。
 
 ## 检查
 
