@@ -15,10 +15,10 @@ const help = [
   'Minecraft Bedrock 4D/5D Skin Converter',
   '',
   'Usage:',
-  '  bun run src/cli.ts inspect <model> [--json] [--backend auto|native|wasm]',
-  '  bun run src/cli.ts convert <model> [options]',
-  '  bun run src/cli.ts validate <directory|file.mcpack>',
-  '  bun run src/cli.ts preview <directory|file.mcpack|geometry.json> [--out file.png]',
+  '  node src/cli.ts inspect <model> [--json] [--backend auto|native|wasm]',
+  '  node src/cli.ts convert <model> [options]',
+  '  node src/cli.ts validate <directory|file.zip>',
+  '  node src/cli.ts preview <directory|file.zip|geometry.json> [--out file.png]',
   '    [--texture atlas.png] [--geometry geometry.id] [--size 64..1024] [--no-cull] [--unlit]',
   '',
   'Convert options:',
@@ -31,9 +31,9 @@ const help = [
   '  --max-texture <int>  Maximum source texture edge (default: 256)',
   '  --atlas <int>        Fixed atlas edge (default: automatic)',
   '  --backend <name>     Assimp importer: auto, native, wasm (except GLB/glTF)',
-  '  --no-mcpack         Write unpacked files only (default: also create .mcpack)',
+  '  --no-zip         Write unpacked files only (default: also create .zip)',
   '',
-  'Output: manifest.json, skins.json, geometry.json, skin0.png, texts/, and optionally .mcpack.',
+  'Output: manifest.json, skins.json, geometry.json, skin0.png, texts/, and optionally .zip.',
   'Input formats: ' + INPUT_FORMATS.join(', '),
   'Default static binding attaches the whole model to body; --binding humanoid uses VRM player limbs.',
 ].join('\n');
@@ -96,7 +96,7 @@ async function main() {
     return;
   }
   if (command === 'validate') {
-    if (args.length) throw new Error('validate expects exactly one directory or .mcpack');
+    if (args.length) throw new Error('validate expects exactly one directory or .zip');
     const result = await validateSkinPackPath(input);
     console.log(JSON.stringify({ valid: true, ...result }, null, 2));
     return;
@@ -104,7 +104,7 @@ async function main() {
   if (command !== 'convert') throw new Error('Unknown command: ' + command + '\n' + help);
   let out: string | undefined, packName = 'Custom Skin Pack', height = 32;
   let ratio: number | undefined, textureSize = 256, atlas: number | undefined;
-  let importer: 'auto' | 'native' | 'wasm' = 'auto', mcpack = true;
+  let importer: 'auto' | 'native' | 'wasm' = 'auto', archive = true;
   let binding: 'static' | 'humanoid' = 'static';
   let profilePath: string | undefined;
   const requireValue = (flag: string): string => {
@@ -130,12 +130,12 @@ async function main() {
     else if (flag === '--max-texture') textureSize = positive(requireValue(flag), flag, true);
     else if (flag === '--atlas') atlas = positive(requireValue(flag), flag, true);
     else if (flag === '--backend') importer = backend(requireValue(flag));
-    else if (flag === '--no-mcpack') mcpack = false;
+    else if (flag === '--no-zip') archive = false;
     else throw new Error('Unknown convert argument: ' + flag);
   }
   const outputDir = resolve(out ?? (parsePath(basename(input)).name + '-skin-pack'));
-  const archivePath = outputDir + '.mcpack';
-  if (mcpack) {
+  const archivePath = outputDir + '.zip';
+  if (archive) {
     try {
       await lstat(archivePath);
       throw new Error('Output archive already exists: ' + archivePath + '. Choose another --out path.');
@@ -169,7 +169,7 @@ async function main() {
   const exported = humanoid ?? await exportBedrockGeometry(bindStatic(optimized!.model), { identifier: 'geometry.skin0', skinTextureSize: 128 });
   const files = buildSkinPack({ geometry: exported.file, png: exported.png, packName, identifier: 'geometry.skin0' });
   await validateSkinPackFiles(files);
-  const zip = mcpack ? await zipSkinPack(files) : null;
+  const zip = archive ? await zipSkinPack(files) : null;
   await mkdir(outputDir, { recursive: true });
   for (const [name, bytes] of Object.entries(files)) {
     const path = resolve(outputDir, name); await mkdir(dirname(path), { recursive: true });
@@ -182,7 +182,7 @@ async function main() {
   }
   console.log(JSON.stringify({
     outputDir,
-    ...(zip ? { mcpack: archivePath } : {}),
+    ...(zip ? { zip: archivePath } : {}),
     ...result,
     binding,
     ...(humanoid ? { humanoid: humanoid.binding } : {}),

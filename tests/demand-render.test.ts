@@ -1,4 +1,4 @@
-import { expect,test } from 'bun:test';
+import { expect,test } from 'vitest';
 import { createDemandRender } from '../web/demand-render.ts';
 
 test('preview coalesces changes, settles to no frames, wakes again, and cancels on dispose',()=>{

@@ -1,62 +1,52 @@
-import { copyFile, rm, mkdir, readFile, writeFile, readdir, stat, rename, unlink } from 'node:fs/promises';
-import { resolve, isAbsolute, relative } from 'node:path';
 import { createHash } from 'node:crypto';
-import JSZip from 'jszip';
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
+import { storage, within } from '../src/workspace-storage.ts';
+import { modelPattern } from './model-files.ts';
 
-import { storage, dataRoot, within } from '../src/workspace-storage.ts';
 export const libraryRoot = storage.models;
-export const modelPattern = /\.(pmx|vrm|glb|gltf|obj|fbx|dae|stl|ply)$/i;
-export async function modelFiles(folder: string): Promise<string[]> {
-  const files: string[] = [];
-  for (const entry of await readdir(folder, { withFileTypes: true })) {
-    if (entry.isSymbolicLink()) continue;
-    const path = resolve(folder, entry.name);
-    if (entry.isDirectory()) files.push(...await modelFiles(path));
-    else if (modelPattern.test(path)) files.push(path);
-  }
-  return files;
-}
-export async function importLocal(path: string) {
-  if (!isAbsolute(path)) throw Error('请输入本地绝对路径');
-  const info = await stat(path);
-  if (info.isDirectory()) return modelFiles(path);
-  if (modelPattern.test(path)) return [path];
-  if (!/\.zip$/i.test(path)) throw Error('请选择 ZIP、模型文件或模型文件夹');
-  const bytes = await readFile(path);
-  const key = createHash('sha256').update(bytes).digest('hex');
-  const folder = resolve(libraryRoot, 'packages', key);
-  if (await Bun.file(resolve(folder, '.complete')).exists()) return modelFiles(folder);
-  const zip = await JSZip.loadAsync(bytes);
-  const entries = Object.values(zip.files).filter(e => !e.dir);
-  if (entries.length > 2000) throw Error('文件过多');
-  let total = 0;
-  for (const entry of entries) {
-    const name = (entry as typeof entry & { unsafeOriginalName?: string }).unsafeOriginalName ?? entry.name;
-    if (name.replaceAll('\\', '/').split('/').some(p => !p || p === '.' || p === '..' || /[:\x00-\x1f]/.test(p))) throw Error('包内路径无效');
-    const target = resolve(folder, name.replaceAll('\\','/'));
-    const data = await entry.async('uint8array');
-    total += data.length;
-    if (total > 256 * 1024 * 1024) throw Error('解压内容超过 256 MB');
-    await mkdir(resolve(target, '..'), { recursive: true });
-    await writeFile(target, data);
-  }
-  await writeFile(resolve(folder, '.complete'), 'ok');
-  return modelFiles(folder);
-}
+
 export interface EditSettings {
-  binding: string; ratio: number; maxError: number; height: number;
-  excluded: string[]; materialWeights: Record<string, number>; profile: unknown;
+  binding: string;
+  ratio: number;
+  maxError: number;
+  height: number;
+  excluded: string[];
+  materialWeights: Record<string, number>;
+  profile: unknown;
 }
+
 export interface ModelEntry {
-  id: string; path: string; name: string; created: string; updated: string;
-  settings?: EditSettings; packIds?: string[]; profile?: unknown;
-  stats?: { triangles: number; materials: number; bytes: number }; previewKey?: string; sourceAvailable?: boolean;
+  id: string;
+  path: string;
+  name: string;
+  created: string;
+  updated: string;
+  settings?: EditSettings;
+  packIds?: string[];
+  profile?: unknown;
+  stats?: { triangles: number; materials: number; bytes: number };
+  previewKey?: string;
+  sourceAvailable?: boolean;
 }
-function entryPath(id: string) {
+
+function entryPath(id: string): string {
   if (!/^[a-f0-9]{64}$/.test(id)) throw Error('模型 ID 无效');
   return resolve(libraryRoot, 'entries', id + '.json');
 }
-async function store(entry: ModelEntry) {
+
+async function store(entry: ModelEntry): Promise<ModelEntry> {
   const path = entryPath(entry.id);
   await mkdir(resolve(path, '..'), { recursive: true });
   const temp = path + '.' + crypto.randomUUID() + '.tmp';
@@ -64,61 +54,151 @@ async function store(entry: ModelEntry) {
   await rename(temp, path);
   return entry;
 }
-export async function rememberModel(path: string, name: string, details: Partial<ModelEntry> = {}, existingId?: string) {
+
+export async function rememberModel(
+  path: string,
+  name: string,
+  details: Partial<ModelEntry> = {},
+  existingId?: string,
+): Promise<ModelEntry> {
   const id = existingId ?? createHash('sha256').update(path).digest('hex');
-  const old = await readFile(entryPath(id), 'utf8').then(v => JSON.parse(v) as ModelEntry).catch(() => null);
-  return store({ id, name, created: old?.created ?? new Date().toISOString(), ...old, ...details, path, updated: new Date().toISOString() });
+  const previous = await readFile(entryPath(id), 'utf8')
+    .then((value) => JSON.parse(value) as ModelEntry)
+    .catch(() => null);
+  return store({
+    id,
+    name,
+    created: previous?.created ?? new Date().toISOString(),
+    ...previous,
+    ...details,
+    path,
+    updated: new Date().toISOString(),
+  });
 }
-export async function updateModel(id: string, patch: { name?: string; settings?: EditSettings; packIds?: string[]; path?: string }) {
+
+export async function updateModel(
+  id: string,
+  patch: {
+    name?: string;
+    settings?: EditSettings;
+    packIds?: string[];
+    path?: string;
+  },
+): Promise<ModelEntry> {
   const entry = JSON.parse(await readFile(entryPath(id), 'utf8')) as ModelEntry;
-  if (patch.path !== undefined && (!isAbsolute(patch.path) || !modelPattern.test(patch.path) || !(await stat(patch.path)).isFile())) throw Error("请选择有效的模型文件绝对路径");
-  if (patch.name !== undefined && (!patch.name.trim() || patch.name.length > 120)) throw Error('名称需为 1–120 个字符');
+  if (
+    patch.path !== undefined &&
+    (!isAbsolute(patch.path) ||
+      !modelPattern.test(patch.path) ||
+      !(await stat(patch.path)).isFile())
+  )
+    throw Error('请选择有效的模型文件绝对路径');
+  if (
+    patch.name !== undefined &&
+    (!patch.name.trim() || patch.name.length > 120)
+  )
+    throw Error('名称需为 1–120 个字符');
   if (patch.settings) {
-    const s = patch.settings;
-    if (!['static', 'humanoid'].includes(s.binding) || !Number.isFinite(s.ratio) || s.ratio <= 0 || s.ratio > 1 || !Number.isFinite(s.height) || s.height <= 0 || !Number.isFinite(s.maxError) || s.maxError < 0 || !Array.isArray(s.excluded) || s.excluded.some(v => typeof v !== 'string') || !s.materialWeights || Object.values(s.materialWeights).some(v => !Number.isFinite(v) || v < 0 || v > 20)) throw Error('编辑配置无效');
+    const settings = patch.settings;
+    if (
+      !['static', 'humanoid'].includes(settings.binding) ||
+      !Number.isFinite(settings.ratio) ||
+      settings.ratio <= 0 ||
+      settings.ratio > 1 ||
+      !Number.isFinite(settings.height) ||
+      settings.height <= 0 ||
+      !Number.isFinite(settings.maxError) ||
+      settings.maxError < 0 ||
+      !Array.isArray(settings.excluded) ||
+      settings.excluded.some((value) => typeof value !== 'string') ||
+      !settings.materialWeights ||
+      Object.values(settings.materialWeights).some(
+        (value) => !Number.isFinite(value) || value < 0 || value > 20,
+      )
+    )
+      throw Error('编辑配置无效');
   }
-  return store({ ...entry, ...patch, ...(patch.name !== undefined ? { name: patch.name.trim() } : {}), updated: new Date().toISOString() });
+  return store({
+    ...entry,
+    ...patch,
+    ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+    updated: new Date().toISOString(),
+  });
 }
-export async function removeModel(id: string) { await unlink(entryPath(id)); }
+
+export async function removeModel(
+  id: string,
+  deleteSource = false,
+): Promise<void> {
+  const entry = JSON.parse(await readFile(entryPath(id), 'utf8')) as ModelEntry;
+  if (deleteSource) {
+    const ownedRoots = [storage.sources, resolve(libraryRoot, 'packages')];
+    const source = resolve(entry.path);
+    const ownedRoot = ownedRoots.find(
+      (root) => within(root, source) && root !== source,
+    );
+    if (
+      ownedRoot &&
+      (await stat(source)
+        .then(() => true)
+        .catch(() => false))
+    ) {
+      // Never follow linked paths or delete shared source folders.
+      const canonical = await realpath(source);
+      if (
+        resolve(canonical).toLowerCase() !== source.toLowerCase() ||
+        (await lstat(source)).isSymbolicLink()
+      )
+        throw Error('源文件是链接，请先重新定位');
+      const others = (await listModels()).filter((model) => model.id !== id);
+      if (
+        !others.some(
+          (model) => resolve(model.path).toLowerCase() === source.toLowerCase(),
+        )
+      ) {
+        const parts = relative(ownedRoot, source).split(/[\\/]/);
+        const group =
+          ownedRoot === storage.sources &&
+          ['local', 'uploads'].includes(parts[0] ?? '') &&
+          parts.length > 2
+            ? resolve(ownedRoot, parts[0]!, parts[1]!)
+            : ownedRoot !== storage.sources && parts.length > 1
+              ? resolve(ownedRoot, parts[0]!)
+              : null;
+        if (
+          group &&
+          within(ownedRoot, group) &&
+          !(await lstat(group)).isSymbolicLink() &&
+          !others.some((model) => within(group, resolve(model.path)))
+        ) {
+          const actual = await realpath(group);
+          if (resolve(actual).toLowerCase() !== group.toLowerCase())
+            throw Error('源目录是链接，请先重新定位');
+          await rm(group, { recursive: true });
+        } else await unlink(source);
+      }
+    }
+  }
+  await unlink(entryPath(id));
+}
+
 export async function listModels(): Promise<ModelEntry[]> {
   const folder = resolve(libraryRoot, 'entries');
   const result: ModelEntry[] = [];
   for (const file of await readdir(folder).catch(() => [] as string[])) {
     if (!/^[a-f0-9]{64}\.json$/.test(file)) continue;
-    const entry = JSON.parse(await readFile(resolve(folder, file), 'utf8')) as ModelEntry;
+    const entry = JSON.parse(
+      await readFile(resolve(folder, file), 'utf8'),
+    ) as ModelEntry;
     const info = await stat(resolve(folder, file));
-    result.push({ ...entry, sourceAvailable: await stat(entry.path).then(i => i.isFile()).catch(() => false), created: entry.created ?? info.birthtime.toISOString(), updated: entry.updated ?? info.mtime.toISOString() });
+    result.push({
+      ...entry,
+      sourceAvailable: await stat(entry.path)
+        .then((value) => value.isFile())
+        .catch(() => false),
+      created: entry.created ?? info.birthtime.toISOString(),
+      updated: entry.updated ?? info.mtime.toISOString(),
+    });
   }
-  return result.sort((a,b) => b.updated.localeCompare(a.updated));
-}
-
-
-/** Keep the source model and its sidecars together, independent of Downloads. */
-export async function ownModel(path: string) {
-  if (within(dataRoot,path)) return path;
-  if (!(await stat(path)).isFile()) throw Error('源模型文件不存在');
-  const source = resolve(path,'..');
-  const key = createHash('sha256').update(path).digest('hex');
-  const folder = resolve(storage.sources,'local',key);
-  const target = resolve(folder,relative(source,path));
-  if (await Bun.file(resolve(folder,'.complete')).exists()) return target;
-  let total=0,count=0;
-  const stage=folder+'.import-'+crypto.randomUUID();
-  async function copy(dir:string) {
-    for (const entry of await readdir(dir,{withFileTypes:true})) {
-      const file=resolve(dir,entry.name),dest=resolve(stage,relative(source,file));
-      if (within(dataRoot,file) || entry.isSymbolicLink() || ['node_modules','.git','.cache'].includes(entry.name)) continue;
-      if (entry.isDirectory()) await copy(file);
-      else {
-        if (modelPattern.test(file) && file!==path) continue;
-        if (file!==path && !/\.(png|jpe?g|tga|bmp|webp|dds|ktx2?|bin|mtl|json)$/i.test(file)) continue;
-        total+=(await stat(file)).size;count++;
-        if(total>256*1024*1024||count>2000)throw Error('模型及贴图超过 256 MB 或 2000 个文件，请将模型整理到独立文件夹后导入');
-        await mkdir(resolve(dest,'..'),{recursive:true});await copyFile(file,dest);
-      }
-    }
-  }
-  try { await copy(source);await writeFile(resolve(stage,'.complete'),'ok');await mkdir(resolve(folder,'..'),{recursive:true});await rename(stage,folder); }
-  finally { await rm(stage,{recursive:true,force:true}); }
-  return target;
+  return result.sort((a, b) => b.updated.localeCompare(a.updated));
 }

@@ -5,7 +5,7 @@
 ## 使用与流程
 
 - [完整工作流程](workflow.md)：转换、校验、预览、皮肤包入库、备份与恢复。
-- [本地网页工作台](local-web.md)：`bun run dev`、材质筛选、姿势预览、减面与图集参数。
+- [本地网页工作台](local-web.md)：`bun run dev`（Node 服务端）、材质筛选、姿势预览、减面与图集参数。
 - [样本 A与样本 B PMX 转换记录](pmx-model-tests.md)：实际模型、profile、产物与已知问题。
 - [Windows 客户端验收记录](windows-client-test.md)：Shino、贴图尺寸与绑定结果。
 
@@ -29,4 +29,5 @@
 
 ## 参考
 
+- [代码结构](code-structure.md)：入口、转换核心、服务端路由与前端模块职责。
 - [依赖、版本与许可证](dependencies.md)

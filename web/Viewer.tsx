@@ -1,3 +1,4 @@
+import {bindViewportAppearance} from "./viewport-appearance";
 import { createDemandRender } from "./demand-render";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
@@ -59,9 +60,13 @@ export function Viewer({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [textures, setTextures] = useState(0);
+  const [textureWarning, setTextureWarning] = useState("");
 
   useEffect(() => {
     setError("");
+    setTextures(0);
+    setTextureWarning("");
     const el = host.current!;
     let disposed = false;
 
@@ -157,7 +162,10 @@ export function Viewer({
       setProgress(0);
       try {
         if (viewKind !== "result" || !result) {
-          const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+          const manager = new THREE.LoadingManager();
+          let textureFailed = false;
+          manager.onError = () => { textureFailed = true; };
+          const loader = new GLTFLoader(manager).setMeshoptDecoder(MeshoptDecoder);
           const gltf = await loader.loadAsync(previewUrl ?? ("/api/session/" + session.id + "/preview"), (event) => {
             if (!disposed && event.total) setProgress(Math.min(1, event.loaded / event.total));
           });
@@ -170,6 +178,15 @@ export function Viewer({
               object.userData.sourceName = gltf.parser.json.nodes[association.nodes]?.name;
             }
           }
+          const maps = new Set<THREE.Texture>();
+          gltf.scene.traverse(object => {
+            if (!(object instanceof THREE.Mesh)) return;
+            for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+              if (material.map?.image) maps.add(material.map);
+            }
+          });
+          setTextures(maps.size);
+          if (textureFailed) setTextureWarning('部分纹理未能加载，请检查模型的贴图文件。');
           group.add(gltf.scene);
           poseController = createPosePreview(group);
         } else {
@@ -305,7 +322,9 @@ export function Viewer({
     invalidate.current = () => {modelDirty = true;render.request();};
     controls.addEventListener("change",render.request);
     render.request();
+    const unbindAppearance=bindViewportAppearance(scene, grid, render.request);
     return () => {
+      unbindAppearance();
       disposed = true;
       setLoading(false);
       cameraState.current = {
@@ -334,7 +353,8 @@ export function Viewer({
   }, [previewUrl, session?.id, viewKind === "result" ? result?.id : undefined, viewKind]);
 
   return (
-    <div className="viewport" ref={host}>
+    <div className="viewport" ref={host} data-preview-state={loading?"loading":error?"error":"ready"} data-preview-textures={textures}>
+      {textureWarning && <div className="viewer-error">{textureWarning}</div>}
       {error && <div className="viewer-error">预览失败：{error}</div>}
       {loading && (
         <div className="viewer-loading">

@@ -12,4 +12,4 @@
 
 帧调度测试覆盖合并重复请求、阻尼结束、再次唤醒、销毁时取消。浏览器检查实际 WebGL draw 调用：静止预览不绘制，拖动后可重绘并恢复静止，线框变化触发源模型重绘；同时验证图片保存、重新编辑和窄屏布局。
 
-图片回归包括透明度、比例、双面几何和带 EXIF 旋转的 JPEG，并检查保留的原图字节未改写。常规命令为 `bun run check`、`bun run check:web`、`bun test --timeout 30000` 和 `bun run test:studio`。
+图片回归包括透明度、比例、双面几何和带 EXIF 旋转的 JPEG，并检查保留的原图字节未改写。常规命令为 `bun run check`、`bun run check:web`、`bun run test` 和 `bun run test:studio`。

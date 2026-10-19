@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { expect, test } from 'vitest';
 import sharp from 'sharp';
 import { createImageSkin } from '../src/image-template.ts';
 import { validateSkinPackFiles } from '../src/skin-pack.ts';

@@ -1,4 +1,4 @@
-import {test,expect} from 'bun:test';
+import {test,expect} from 'vitest';
 import sharp from 'sharp';
 import {normalizeImportedPack,parsePackJSON,safeExternalAsset} from '../src/import-skin-pack.ts';
 import {validateSkinPackFiles} from '../src/skin-pack.ts';

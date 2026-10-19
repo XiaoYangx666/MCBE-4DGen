@@ -1,4 +1,4 @@
-import { test } from 'bun:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { decodeGeometryTriangles, parseGeometryJSON, validateGeometry } from '../src/geometry-validator.ts';
 import type { BedrockGeometryFile } from '../src/bedrock-types.ts';

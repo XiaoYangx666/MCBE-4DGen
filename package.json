@@ -5,27 +5,31 @@
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "bun test",
-    "test:workflow": "bun test tests/pack-manager.test.ts tests/humanoid.test.ts tests/texture-optimizer.test.ts tests/rigid-mesh-reducer.test.ts tests/pmx-wasm.test.ts tests/bedrock-export.test.ts tests/geometry-validator.test.ts tests/prepare-model.test.ts tests/skin-pack.test.ts tests/preview.test.ts tests/web-preview.test.ts --timeout 30000",
-    "probe": "bun run scripts/probe.ts",
-    "inspect": "bun run src/cli.ts inspect",
-    "sample:fetch": "bun run scripts/samples/fetch-sample.ts",
-    "sample:check": "bun run scripts/samples/check-sample.ts",
-    "sample:prepare": "bun run scripts/samples/prepare-sample.ts",
-    "sample:export": "bun run scripts/samples/export-sample.ts",
-    "convert": "bun run src/cli.ts convert",
-    "validate": "bun run src/cli.ts validate",
-    "preview": "bun run src/cli.ts preview",
-    "packs": "bun run src/pack-cli.ts",
-    "binding:inspect": "bun run scripts/diagnostics/inspect-avatar-binding.ts",
-    "binding:preview": "bun run scripts/diagnostics/preview-binding.ts",
-    "workflow": "bun run scripts/workflow.ts",
-    "dev": "bun server/start.ts",
+    "test": "vitest run",
+    "test:workflow": "vitest run tests/pack-manager.test.ts tests/humanoid.test.ts tests/texture-optimizer.test.ts tests/rigid-mesh-reducer.test.ts tests/pmx-wasm.test.ts tests/bedrock-export.test.ts tests/geometry-validator.test.ts tests/prepare-model.test.ts tests/skin-pack.test.ts tests/preview.test.ts tests/web-preview.test.ts --testTimeout=30000",
+    "probe": "node scripts/probe.ts",
+    "inspect": "node src/cli.ts inspect",
+    "sample:fetch": "node scripts/samples/fetch-sample.ts",
+    "sample:check": "node scripts/samples/check-sample.ts",
+    "sample:prepare": "node scripts/samples/prepare-sample.ts",
+    "sample:export": "node scripts/samples/export-sample.ts",
+    "convert": "node src/cli.ts convert",
+    "validate": "node src/cli.ts validate",
+    "preview": "node src/cli.ts preview",
+    "packs": "node src/pack-cli.ts",
+    "binding:inspect": "node scripts/diagnostics/inspect-avatar-binding.ts",
+    "binding:preview": "node scripts/diagnostics/preview-binding.ts",
+    "workflow": "node scripts/workflow.ts",
+    "dev": "node server/start.ts",
     "check:web": "tsc --noEmit -p tsconfig.web.json",
-    "test:studio": "bun scripts/check-studio.ts"
+    "test:studio": "node scripts/check-studio.ts",
+    "test:node": "node scripts/check-node.ts",
+    "desktop": "node scripts/desktop.ts",
+    "desktop:package": "node scripts/package-desktop.ts",
+    "test:desktop": "node scripts/check-desktop.ts"
   },
   "engines": {
-    "bun": ">=1.4.3"
+    "node": ">=24"
   },
   "dependencies": {
     "@gltf-transform/core": "4.5.1",
@@ -42,11 +46,16 @@
     "vite": "^8.3.4"
   },
   "devDependencies": {
-    "@types/bun": "1.4.3",
+    "@electron/packager": "20.3.0",
+    "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.186.0",
-    "typescript": "7.0.2"
+    "electron": "44.9.0",
+    "typescript": "7.0.2",
+    "vitest": "^5.0.5"
   },
-  "packageManager": "bun@1.4.3"
+  "packageManager": "bun@1.4.3",
+  "main": "desktop/main.cjs",
+  "productName": "4DGen"
 }

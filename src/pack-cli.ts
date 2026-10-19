@@ -5,10 +5,10 @@ import { PackManager } from './pack-manager.ts';
 import type { ManagerConfig } from './pack-manager.ts';
 
 const help = `Skin pack library and reversible slot manager
-Usage: bun run packs <command> [arguments] [--config skin-manager.local.json]
+Usage: node src/pack-cli.ts <command> [arguments] [--config skin-manager.local.json]
   init --root <skin_packs> [--state <directory>]  Write local config; no game writes
   import <id> <directory|mcpack>                Import immutable copy into library
-  export <id> <output.mcpack>                   Export stored pack; refuse overwrite
+  export <id> <output.zip>                   Export stored pack; refuse overwrite
   list                                        List library packs
   status                                      Inspect configured slots and external changes
   enable <slot> <id>                           Add library pack to slot (backs up first)

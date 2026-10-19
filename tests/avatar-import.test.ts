@@ -1,4 +1,4 @@
-import { test } from 'bun:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -48,7 +48,7 @@ test('PMX 2.0/2.1 UTF16/UTF8, 1/2/4 byte indices, Chinese sidecars, double-sided
   const converted = run(['convert', path, '--out', out, '--atlas', '64']);
   assert.equal(converted.status, 0, converted.stderr);
   assert.equal(JSON.parse(converted.stdout).triangles, 3); // only first material is two-sided
-  assert.equal((await validateSkinPackPath(out + '.mcpack')).skins, 1);
+  assert.equal((await validateSkinPackPath(out + '.zip')).skins, 1);
   await rm(join(dir, '贴图', '脸.png'));
   await assert.rejects(importModel(path), /ENOENT|Missing PMX resources/);
 }));
@@ -107,7 +107,7 @@ for (const version of ['0', '1'] as const) test(`VRM ${version}: initial skin, m
   const out = join(dir, 'pack');
   const result = run(['convert', path, '--out', out, '--atlas', '64']);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal((await validateSkinPackPath(out + '.mcpack')).skins, 1);
+  assert.equal((await validateSkinPackPath(out + '.zip')).skins, 1);
   await writeVRM(dir, version, true);
   await assert.rejects(importModel(path), /extension/i);
 }));
@@ -141,7 +141,7 @@ test('rigged FBX imports joint weights through native/WASM and converts to a sta
     }
     const result = run(['convert', path, '--out', join(dir, 'pack'), '--atlas', '32']);
     assert.equal(result.status, 0, result.stderr);
-    assert.equal((await validateSkinPackPath(join(dir, 'pack.mcpack'))).skins, 1);
+    assert.equal((await validateSkinPackPath(join(dir, 'pack.zip'))).skins, 1);
   } finally { assimp.dispose(); }
 }));
 

@@ -33,4 +33,4 @@ const zip = new JSZip().file('probe.png', png);
 const bytes = await zip.generateAsync({ type: 'uint8array' });
 const reopened = await JSZip.loadAsync(bytes);
 assert.equal((await reopened.file('probe.png')?.async('uint8array'))?.length, png.length);
-console.log(JSON.stringify({ meshoptimizer: 'ready', sharp: 'resize+alpha OK', jszip: 'roundtrip OK', runtime: `Bun ${Bun.version}` }));
+console.log(JSON.stringify({ meshoptimizer: 'ready', sharp: 'resize+alpha OK', jszip: 'roundtrip OK', runtime: `Node ${process.version}` }));

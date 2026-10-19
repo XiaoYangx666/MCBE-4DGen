@@ -1,4 +1,4 @@
-import { test } from 'bun:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -54,7 +54,7 @@ for (const format of ['fbx', 'dae', 'stl', 'ply'] as const) {
       assert.equal(report.sourceTriangles, 4);
       assert.equal(report.triangles, format === 'ply' ? 8 : 4);
       assert.equal((await validateSkinPackPath(out)).skins, 1);
-      assert.equal((await validateSkinPackPath(out + '.mcpack')).skins, 1);
+      assert.equal((await validateSkinPackPath(out + '.zip')).skins, 1);
     } finally {
       assimp.dispose();
       await rm(dir, { recursive: true, force: true });
@@ -119,7 +119,7 @@ test('DAE resolves external texture, preserves node transforms and rejects missi
     }
     const run = spawnSync(process.execPath, ['src/cli.ts', 'convert', path, '--out', join(dir, 'pack'), '--atlas', '32'], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
-    assert.equal((await validateSkinPackPath(join(dir, 'pack.mcpack'))).skins, 1);
+    assert.equal((await validateSkinPackPath(join(dir, 'pack.zip'))).skins, 1);
     await rm(join(dir, 'textures', 'color.png'));
     for (const backend of ['native', 'wasm'] as const) await assert.rejects(importModel(path, { backend }), /Missing DAE resources|ENOENT/);
   } finally { await rm(dir, { recursive: true, force: true }); }
@@ -147,7 +147,7 @@ test('FBX embedded texture and alpha survive native and WASM import and CLI outp
     const run = spawnSync(process.execPath, ['src/cli.ts', 'convert', path, '--out', out, '--atlas', '32'], { encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
     assert.equal(JSON.parse(run.stdout).sourceTriangles, 2);
-    assert.equal((await validateSkinPackPath(out + '.mcpack')).skins, 1);
+    assert.equal((await validateSkinPackPath(out + '.zip')).skins, 1);
   } finally {
     assimp.dispose();
     await rm(dir, { recursive: true, force: true });

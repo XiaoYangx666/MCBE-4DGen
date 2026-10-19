@@ -3,7 +3,10 @@ outputs/
 .cache/
 skin-manager.local.json
 .skin-pack-manager/
+debug.log
 
 
 4dgen-data/
 storage.local.json
+
+release/

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { normalizeImportedPack } from "./import-skin-pack.ts";
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, readdir, lstat, realpath, unlink, rmdir, rename, rm } from 'node:fs/promises';
@@ -17,8 +18,10 @@ export interface ManagerConfig {
 type Hashes = Record<string, string>;
 type Active = { id: string; revision: string }[];
 interface Tree { files: SkinPackFiles; directories: string[] }
-interface Snapshot { id: string; slot: string; target: string; created: string; hashes: Hashes; directories: string[]; active: Active }
+interface SlotEdits { name?: string; skins: Record<string, { name?: string; removed?: boolean }> }
+interface Snapshot { edits?: SlotEdits; id: string; slot: string; target: string; created: string; hashes: Hashes; directories: string[]; active: Active }
 interface TargetState {
+  edits?: SlotEdits;
   presetSources?: string[];
   slot: string; target: string; original: string; active: Active; installed: Hashes;
   headerUUID: string; moduleUUID: string; generation: number;
@@ -33,7 +36,9 @@ export interface PackStats {
   bytes: number;
 }
 /** Project metadata kept beside the pack; not part of the installable pack files. */
+export interface SkinOrigin { packId: string; skinIndex: number; modelId?: string | undefined; template?: "image" | undefined; source?: string | undefined }
 export interface PackMeta {
+  skinOrigins?: (SkinOrigin | null)[];
   template?: "image";
   sourceMime?: string;
   importWarnings?: string[];
@@ -48,6 +53,16 @@ export interface PackMeta {
   excluded?: string[];
   profile?: unknown;
   note?: string;
+}
+function skinOrigin(pack: LibraryPack, index: number): SkinOrigin | null {
+  if (pack.meta?.skinOrigins) return pack.meta.skinOrigins[index] ?? null;
+  if (pack.skins !== 1 || !pack.meta || (!pack.meta.modelId && !pack.meta.template)) return null;
+  return { packId: pack.id, skinIndex: index, modelId: pack.meta.modelId, template: pack.meta.template, source: pack.meta.source };
+}
+type InstalledSkin = {texture:string; geometry?:string; localization_name?:string};
+function skinIdentity(skin: InstalledSkin,index:number) {
+  const name=skin.localization_name ?? `fourdgen_${index}_${createHash('sha256').update(skin.texture+'|'+(skin.geometry??'')).digest('hex').slice(0,12)}`;
+  return {name,key:skin.texture+'::'+(skin.geometry??'')+'::'+name};
 }
 const encode = (v: unknown) => new TextEncoder().encode(JSON.stringify(v, null, 2));
 const decode = <T>(bytes: Uint8Array): T => JSON.parse(new TextDecoder().decode(bytes)) as T;
@@ -139,7 +154,9 @@ async function statsFor(files: SkinPackFiles): Promise<PackStats> {
 }
 
 export class PackManager {
-  constructor(readonly config: ManagerConfig) {
+  readonly config: ManagerConfig;
+  constructor(config: ManagerConfig) {
+    this.config = config;
     if (config.version !== 1 || !isAbsolute(config.skinPacksRoot) || !isAbsolute(config.stateDir) || !Object.keys(config.slots).length) throw new Error('Invalid manager config');
     for (const [slot, options] of Object.entries(config.slots)) {
       validID(slot); if (!options || ![1, 2].includes(options.manifestFormat)) throw new Error('Invalid slot manifestFormat');
@@ -153,7 +170,13 @@ export class PackManager {
     if (!inside(this.config.skinPacksRoot, target)) throw new Error('Target escapes root');
     return target;
   }
-  private statePath(slot: string) { this.target(slot); return join(this.config.stateDir, 'targets', slot + '.json'); }
+  private statePath(slot: string) {
+    this.target(slot);
+    let owner: {root:string} | null = null;
+    try { owner = JSON.parse(readFileSync(join(this.config.stateDir,'owner.json'),'utf8')); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    const namespace = owner && owner.root !== this.config.skinPacksRoot ? createHash('sha256').update(this.config.skinPacksRoot).digest('hex') : '';
+    return join(this.config.stateDir, 'targets', namespace, slot + '.json');
+  }
   private libraryPath(id: string) { return join(this.config.stateDir, 'library', validID(id) + '.json'); }
   private revisionPath(id: string, revision: string) {
     if (!/^[0-9a-f-]{36}$/.test(revision)) throw new Error('Invalid library revision');
@@ -175,7 +198,7 @@ export class PackManager {
     try { await mkdir(lock); } catch { throw new Error('Another manager operation is running (or operation.lock remains after a crash); inspect before clearing the lock'); }
     try {
       if (this.config.libraryOnly) { /* Local collection operations do not bind a game directory. */ } else if (await exists(owner)) {
-        if ((await json<{ root: string }>(owner)).root !== this.config.skinPacksRoot) throw new Error('State directory belongs to a different root');
+        // Other installs use a target namespace while sharing the local library.
       } else await atomicJSON(owner, { root: this.config.skinPacksRoot });
       return await action();
     } finally { await rmdir(lock); }
@@ -235,7 +258,7 @@ export class PackManager {
         composed.files[path] = new TextEncoder().encode([`skinpack.${key}=${target.name}`, ...lines].join('\n'));
       }
       if (!target.draft) await atomicJSON(this.revisionPath(targetId, target.revision) + '.json', target);
-      const result = await this.store(targetId, composed.files, composed.directories, target.meta);
+      const result = await this.store(targetId, composed.files, composed.directories, { ...target.meta, skinOrigins: [...Array.from({length:target.skins}, (_,i) => skinOrigin(target,i)), ...Array.from({length:source.skins}, (_,i) => i).filter(i => indices.includes(i)).map(i => skinOrigin(source,i))] });
       await atomicJSON(this.libraryPath(targetId), { ...result, imported: target.imported });
       return result;
     });
@@ -246,7 +269,17 @@ export class PackManager {
     const skins = files['skins.json'] ? decode<{ skins?: { localization_name?: string; texture: string; geometry: string }[]; localization_name?: string; serialize_name?: string }>(files['skins.json']) : { skins: [] };
     const labels = new Map<string,string>();
     for (const locale of ['en_US','zh_CN']) for (const line of new TextDecoder().decode(files[`texts/${locale}.lang`] ?? new Uint8Array()).split(/\r?\n/)) { const i = line.indexOf('='); if (i > 0) labels.set(line.slice(0,i),line.slice(i+1)); }
-    return { id: slot, name: slot, revision: createHash('sha256').update(JSON.stringify(hashes(files))).digest('hex'), skins: (skins.skins ?? []).map((skin,index) => ({ index, name: labels.get(`skin.${skins.localization_name ?? skins.serialize_name}.${skin.localization_name}`) ?? skin.localization_name ?? `皮肤 ${index+1}`, geometry: skin.geometry, texture: skin.texture })) };
+    const origins = new Map<string, SkinOrigin>();
+    const state = await this.state(slot);
+    for (const ref of state?.active ?? []) {
+      const latest = await json<LibraryPack>(this.libraryPath(ref.id));
+      const pack = latest.revision === ref.revision ? latest : await json<LibraryPack>(this.revisionPath(ref.id, ref.revision) + '.json');
+      for (let index = 0; index < pack.skins; index++) {
+        const origin = skinOrigin(pack, index);
+        if (origin) origins.set(`${pack.id}_${index}.png`, origin);
+      }
+    }
+    return { id: slot, name: decode<{header?:{name?:string}}>(files['manifest.json']!).header?.name ?? slot, revision: createHash('sha256').update(JSON.stringify(hashes(files))).digest('hex'), skins: (skins.skins ?? []).map((skin,index) => ({ index, name: labels.get(`skin.${skins.localization_name ?? skins.serialize_name}.${skin.localization_name}`) ?? skin.localization_name ?? `皮肤 ${index+1}`, geometry: skin.geometry, texture: skin.texture, origin: origins.get(skin.texture) ?? null })) };
   }
   async presetScene(slot: string, index: number) {
     const files = (await tree(this.target(slot))).files;
@@ -314,7 +347,7 @@ export class PackManager {
       }
     }
     const key = data.localization_name ?? data.serialize_name;
-    return { id, name: pack.name, revision: pack.revision, skins: data.skins.map((skin, index) => ({ index, name: strings.get(`skin.${key}.${skin.localization_name}`) ?? skin.localization_name ?? `皮肤 ${index + 1}`, geometry: skin.geometry, texture: skin.texture })) };
+    return { id, name: pack.name, revision: pack.revision, skins: data.skins.map((skin, index) => ({ index, name: strings.get(`skin.${key}.${skin.localization_name}`) ?? skin.localization_name ?? `皮肤 ${index + 1}`, geometry: skin.geometry, texture: skin.texture, origin: skinOrigin(pack, index) })) };
   }
   /** Write a new verified revision; installed revisions are unchanged until explicitly updated. */
   async renameNames(id: string, change: { name?: string; skinIndex?: number; skinName?: string }) {
@@ -361,6 +394,21 @@ export class PackManager {
       return { ...next, imported: pack.imported };
     });
   }
+  async removeSkin(id: string, index: number) {
+    return this.locked(async()=>{
+      const pack = await json<LibraryPack>(this.libraryPath(id));
+      if(pack.draft || !Number.isInteger(index) || index<0 || index>=pack.skins)throw Error('请选择有效皮肤');
+      const files = await readSkinPack(this.revisionPath(id,pack.revision));
+      if(!same(hashes(files),pack.hashes))throw Error('Library hash mismatch: '+id);
+      const data = decode<{skins:{texture:string}[]}>(files['skins.json']!);
+      const next = this.editTree({files,directories:[]},{skins:{[skinIdentity(data.skins[index]!,index).key]:{removed:true}}});
+      const meta = {...pack.meta,skinOrigins:Array.from({length:pack.skins},(_,i)=>skinOrigin(pack,i)).filter((_,i)=>i!==index)};
+      await atomicJSON(this.revisionPath(id,pack.revision)+'.json',pack);
+      const result = pack.skins>1 ? await this.store(id,next.files,next.directories,meta) : {...pack,revision:randomUUID(),draft:true,skins:0,hashes:{},meta,stats:{triangles:0,vertices:0,bones:0,texture:null,bytes:0}};
+      await atomicJSON(this.libraryPath(id),{...result,imported:pack.imported});
+      return result;
+    });
+  }
   async updateEnabled(slot: string, id: string) {
     this.requireGame();
     return this.locked(async () => {
@@ -372,10 +420,25 @@ export class PackManager {
       return this.apply(slot, state, await this.compose(slot, state, active), active);
     });
   }
+  private async assertInactive(id: string) {
+    const inspect = async(folder:string):Promise<void>=>{
+      await noLinks(folder);
+      for(const entry of await readdir(folder,{withFileTypes:true}).catch(()=>[])) {
+        if(entry.isSymbolicLink())throw Error('Links are not supported');
+        const path=join(folder,entry.name);
+        if(entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name))await inspect(path);
+        else if(entry.isFile() && entry.name.endsWith('.json')) {
+          const state=await json<TargetState>(path);
+          if(state.active?.some(p=>p.id===id))throw Error('Disable this pack from its slot before deleting it');
+        }
+      }
+    };
+    await inspect(join(this.config.stateDir,'targets'));
+  }
   /** Permanently remove a library pack. Only allowed when no slot uses it. */
   async remove(id: string) {
     return this.locked(async () => {
-      for (const slot of Object.keys(this.config.slots)) if ((await this.state(slot))?.active.some((p) => p.id === id)) throw new Error('Disable this pack from its slot before deleting it');
+      await this.assertInactive(id);
       const path = this.libraryPath(id), pack = await json<LibraryPack>(path);
       if (!inside(this.config.stateDir, path) || !inside(this.config.stateDir, this.revisionPath(id, pack.revision))) throw new Error('Library path escapes state directory');
       await rm(this.revisionPath(id, pack.revision), { recursive: true, force: true });
@@ -422,6 +485,7 @@ export class PackManager {
   }
 
   async exportPack(id: string, output: string) {
+    if (!/\.zip$/i.test(output)) throw new Error("Skin packs can only be exported as .zip");
     return this.locked(async () => {
       const pack = await json<LibraryPack>(this.libraryPath(id));
       const files = await readSkinPack(this.revisionPath(id, pack.revision));
@@ -437,16 +501,18 @@ export class PackManager {
       if (!(await exists(target))) return { slot, target, exists: false, managed: !!state, active: state?.active ?? [], presetSources: state?.presetSources ?? [], pending: state?.pending ?? null, changedOutsideManager: null, skins: null, originalBackup: state?.original ?? null };
       const current = await tree(target);
       let skins: number | null = null;
+      let name: string = slot;
+      try { name = decode<{header:{name:string}}>(current.files['manifest.json']!).header.name; } catch {}
       try { skins = decode<{ skins: unknown[] }>(current.files['skins.json']!).skins.length; } catch { /* report unreadable metadata */ }
-      return { slot, target, exists: true, managed: !!state, skins, active: state?.active ?? [], presetSources: state?.presetSources ?? [],
+      return { slot, name, target, exists: true, managed: !!state, skins, active: state?.active ?? [], presetSources: state?.presetSources ?? [],
         changedOutsideManager: state ? !same(hashes(current.files), state.installed) : null,
         pending: state?.pending ?? null, originalBackup: state?.original ?? null };
     }));
   }
-  private async snapshot(slot: string, value: Tree, active: Active) {
+  private async snapshot(slot: string, value: Tree, active: Active, edits?: SlotEdits) {
     const id = randomUUID(), path = join(this.config.stateDir, 'backups', id);
     await writeTree(join(path, 'files'), value);
-    const info: Snapshot = { id, slot, target: this.target(slot), created: new Date().toISOString(), hashes: hashes(value.files), directories: value.directories, active };
+    const info: Snapshot = { id, slot, target: this.target(slot), created: new Date().toISOString(), hashes: hashes(value.files), directories: value.directories, active, ...(edits ? {edits} : {}) };
     if (!same(hashes((await tree(join(path, 'files'))).files), info.hashes)) throw new Error('Backup hash verification failed');
     await atomicJSON(join(path, 'snapshot.json'), info); return info;
   }
@@ -492,7 +558,7 @@ export class PackManager {
     });
   }
   private async compose(slot: string, state: TargetState, active: Active, selection?: { id: string; indices: number[] }): Promise<Tree> {
-    if (!active.length) return (await this.loadSnapshot(slot, state.original)).value;
+    if (!active.length) return this.editTree((await this.loadSnapshot(slot, state.original)).value, state.edits);
     const files: SkinPackFiles = Object.create(null) as SkinPackFiles;
     const geometry: Record<string, unknown> = { format_version: '1.8.0' }, skins: Record<string, unknown>[] = [];
     const key = 'FourDGen_' + slot;
@@ -535,19 +601,83 @@ export class PackManager {
     files['texts/languages.json'] = encode(['en_US', 'zh_CN']);
     for (const locale of ['en_US', 'zh_CN']) files[`texts/${locale}.lang`] = new TextEncoder().encode(lang.join('\n') + '\n');
     await validateSkinPackFiles(files);
-    return { files, directories: ['texts'] };
+    return this.editTree({ files, directories: ['texts'] }, state.edits);
   }
-  private async apply(slot: string, state: TargetState, next: Tree, active: Active) {
+  /** Edits belong to a game install, never to its source library packs. */
+  private editTree(value: Tree, edits?: SlotEdits): Tree {
+    if (!edits) return value;
+    const files = {...value.files};
+    const data = decode<{serialize_name:string; localization_name?:string; skins: {texture:string; localization_name?:string}[]}>(files['skins.json']!);
+    const key = data.localization_name ?? data.serialize_name;
+    const updates = new Map<string,string>();
+    const identities=new Map(data.skins.map((skin,index)=>[skin,skinIdentity(skin,index)]));
+    const editFor=(skin:InstalledSkin)=>edits.skins[identities.get(skin)!.key] ?? edits.skins[skin.texture];
+    const removed = data.skins.filter(skin=>editFor(skin)?.removed);
+    data.skins = data.skins.filter(skin => !editFor(skin)?.removed);
+    for(const skin of removed) if(!data.skins.some(s=>s.texture===skin.texture))delete files[skin.texture];
+    if(removed.length && files['geometry.json']) {
+      const geometry=decode<Record<string,unknown>>(files['geometry.json']);
+      const used=new Set(data.skins.map(s=>(s as {geometry?:string}).geometry));
+      for(const key of Object.keys(geometry))if(key.startsWith('geometry.')&&!used.has(key))delete geometry[key];
+      if(Object.keys(geometry).some(key=>key.startsWith('geometry.')))files['geometry.json']=encode(geometry);else delete files['geometry.json'];
+    }
+    data.skins.forEach((skin,index) => {
+      const name = editFor(skin)?.name;
+      if (name !== undefined) { skin.localization_name ??= identities.get(skin)!.name; updates.set(`skin.${key}.${skin.localization_name}`,name); }
+    });
+    if (edits.name !== undefined) {
+      const manifest = decode<{header:{name:string}}>(files['manifest.json']!);
+      manifest.header.name = edits.name; files['manifest.json'] = encode(manifest);
+      updates.set('skinpack.'+key,edits.name);
+    }
+    files['skins.json'] = encode(data);
+    const paths = new Set(['texts/en_US.lang','texts/zh_CN.lang',...Object.keys(files).filter(p=>/^texts\/[^/]+\.lang$/.test(p))]);
+    for (const path of paths) {
+      const lines = new TextDecoder().decode(files[path] ?? new Uint8Array()).split(/\r?\n/).filter(line=>!updates.has(line.split('=')[0]!));
+      files[path] = new TextEncoder().encode([...lines.filter(Boolean),...Array.from(updates,([key,value])=>key+'='+value)].join('\n')+'\n');
+    }
+    return {files,directories:[...new Set([...value.directories,'texts'])]};
+  }
+  async editInstalled(slot: string, change: {name?:string; skinIndex?:number; skinName?:string; remove?:boolean; revision?:string}) {
+    this.requireGame();
+    return this.locked(async()=>{
+      const current = await tree(this.target(slot));
+      const revision = createHash('sha256').update(JSON.stringify(hashes(current.files))).digest('hex');
+      if (change.revision && change.revision !== revision) throw Error('皮肤包已变化，请刷新后重试');
+      const state = await this.state(slot) ?? await this.initialState(slot,current);
+      const edits: SlotEdits = structuredClone(state.edits ?? {skins:{}});
+      const label = (value:string) => { if(typeof value!=='string' || !value.trim() || value.length>120 || /[\r\n\x00]/.test(value)) throw Error('名称需为 1–120 个字符'); return value.trim(); };
+      if (change.name !== undefined) edits.name = label(change.name);
+      if (change.skinName !== undefined || change.remove) {
+        const entries = decode<{skins:{texture:string}[]}>(current.files['skins.json']!).skins;
+        const index = change.skinIndex;
+        if (!Number.isInteger(index) || index! < 0 || !entries[index!]) throw Error('请选择有效皮肤');
+        const texture = skinIdentity(entries[index!]!,index!).key;
+        edits.skins[texture] = {...edits.skins[texture],...(change.skinName!==undefined?{name:label(change.skinName)}:{}),...(change.remove?{removed:true}:{})};
+      }
+      if(change.name===undefined && change.skinName===undefined && !change.remove) throw Error('没有要修改的内容');
+      const next = this.editTree(current,edits);
+      const manifest=decode<{header:{version?:number[]};modules?:{version?:number[]}[]}>(next.files['manifest.json']!);
+      const version=manifest.header.version ?? [1,0,0];
+      const nextVersion=[version[0]??1,version[1]??0,(version[2]??0)+1];
+      manifest.header.version=nextVersion;
+      for(const module of manifest.modules??[])module.version=nextVersion;
+      next.files['manifest.json']=encode(manifest);
+      return this.apply(slot,state,next,state.active,edits);
+    });
+  }
+  private async apply(slot: string, state: TargetState, next: Tree, active: Active, edits: SlotEdits | null | undefined = state.edits) {
     const current = await tree(this.target(slot)), currentHashes = hashes(current.files);
     if (state.pending) throw new Error('An interrupted operation requires recover before changing this slot');
     if (!same(currentHashes, state.installed)) throw new Error('Slot changed outside manager; refusing to overwrite external changes');
-    const backup = await this.snapshot(slot, current, state.active);
+    const backup = await this.snapshot(slot, current, state.active, state.edits);
     state.pending = { backup: backup.id, planned: hashes(next.files) };
     await atomicJSON(this.statePath(slot), state);
     try {
       // Recheck after backup, immediately before mutation.
       if (!same(hashes((await tree(this.target(slot))).files), currentHashes)) throw new Error('Target changed while backing up');
       await replaceTree(this.target(slot), next);
+      if (edits) state.edits = edits; else delete state.edits;
       state.active = active; state.installed = hashes(next.files); state.generation++; delete state.pending;
       await atomicJSON(this.statePath(slot), state);
     } catch (error) {
@@ -562,7 +692,13 @@ export class PackManager {
       const pack = await json<LibraryPack>(this.libraryPath(id)); if (pack.removed || pack.draft || !pack.skins) throw new Error('皮肤包为空或已归档，请先添加皮肤');
       if (pack.warnings?.length) throw new Error('Pack needs client compatibility adjustment: ' + pack.warnings.join('; '));
       const state = await this.state(slot) ?? await this.initialState(slot, await tree(this.target(slot)));
-      if (state.active.some((p) => p.id === id)) throw new Error('Pack already enabled in this slot');
+      if (state.active.some((p) => p.id === id)) {
+        const edits = structuredClone(state.edits ?? {skins:{}});
+        let restored = false;
+        for (const [texture,edit] of Object.entries(edits.skins)) if(texture.startsWith(id+'_')&&edit.removed) {delete edit.removed;restored=true;}
+        if (!restored) throw Error('该包的皮肤已全部在游戏中');
+        return this.apply(slot,state,await this.compose(slot,{...state,edits},state.active),state.active,edits);
+      }
       const active = [...state.active, { id, revision: pack.revision }];
       return this.apply(slot, state, await this.compose(slot, state, active), active);
     });
@@ -580,7 +716,7 @@ export class PackManager {
     return this.locked(async () => {
       const state = await this.state(slot); if (!state) throw new Error('Slot is not managed');
       const backup = await this.loadSnapshot(slot, backupID ?? state.original);
-      return this.apply(slot, state, backup.value, backup.info.active);
+      return this.apply(slot, state, backup.value, backup.info.active, backup.info.edits ?? null);
     });
   }
   async recover(slot: string) {
@@ -591,13 +727,14 @@ export class PackManager {
       const current = hashes((await tree(this.target(slot))).files);
       for (const [key, hash] of Object.entries(current)) if (backup.info.hashes[key] !== hash && state.pending.planned[key] !== hash) throw new Error('Recovery found unknown external changes; refusing overwrite');
       await replaceTree(this.target(slot), backup.value);
+      if (backup.info.edits) state.edits = backup.info.edits; else delete state.edits;
       state.active = backup.info.active; state.installed = backup.info.hashes; delete state.pending;
       await atomicJSON(this.statePath(slot), state); return { slot, recovered: backup.info.id };
     });
   }
   async archive(id: string) {
     return this.locked(async () => {
-      for (const slot of Object.keys(this.config.slots)) if ((await this.state(slot))?.active.some((p) => p.id === id)) throw new Error('Disable this pack before archiving');
+      await this.assertInactive(id);
       const path = this.libraryPath(id), pack = await json<LibraryPack>(path); pack.removed = true;
       await atomicJSON(path, pack); return pack;
     });

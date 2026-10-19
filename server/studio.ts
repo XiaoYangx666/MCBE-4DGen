@@ -1,0 +1,466 @@
+import { createHash } from 'node:crypto';
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
+import { dirname, isAbsolute, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { NodeIO } from '@gltf-transform/core';
+import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
+import { MeshoptEncoder } from 'meshoptimizer';
+import { autoProfile } from '../src/auto-profile.ts';
+import type { HumanoidProfile, PreparedHumanoid } from '../src/humanoid.ts';
+import { importModel } from '../src/importer.ts';
+import type { IntermediateModel } from '../src/model.ts';
+import { PackManager } from '../src/pack-manager.ts';
+import type { ManagerConfig, PackMeta } from '../src/pack-manager.ts';
+import type { PreparedOptimization } from '../src/optimizer.ts';
+import {
+  buildPreviewGlb,
+  PREVIEW_TEXTURE_LIMIT,
+} from '../src/preview-asset.ts';
+import type { SkinPackFiles } from '../src/skin-pack.ts';
+import {
+  dataRoot,
+  resolveManagerConfig,
+  storage,
+} from '../src/workspace-storage.ts';
+import {
+  listModels,
+  rememberModel,
+  updateModel,
+} from './model-library.ts';
+import type { EditSettings } from './model-library.ts';
+import { fileExists, pathExists, readFileBytes } from './fs.ts';
+import { ownModel } from './source-archive.ts';
+
+export interface Preset {
+  id: string;
+  name: string;
+  path: string;
+  cache?: string;
+  profile: string;
+}
+
+export interface SessionMaterial {
+  name: string;
+  triangles: number;
+  alpha: number;
+  doubleSided: boolean;
+  transparent: boolean;
+}
+
+export interface Session {
+  modelId: string;
+  model: IntermediateModel;
+  preview: Uint8Array;
+  profile: HumanoidProfile | null;
+  name: string;
+  materials: SessionMaterial[];
+}
+
+export interface Job {
+  status: 'running' | 'done' | 'error';
+  message: string;
+  result?: unknown;
+  files?: SkinPackFiles;
+  texture?: Uint8Array;
+  geometry?: unknown;
+  key?: string;
+  meta?: PackMeta;
+}
+
+export type PreparedState = {
+  humanoid?: PreparedHumanoid;
+  static?: PreparedOptimization;
+};
+
+export interface LoadedSession {
+  id: string;
+  modelId: string;
+  name: string;
+  settings: EditSettings | null;
+  profile: HumanoidProfile | null;
+  materials: SessionMaterial[];
+  warnings: string[];
+}
+
+const PRESETS: Preset[] = [
+  {
+    id: 'rin',
+    name: '样本 B',
+    path: '.cache/models/sample-b/样本 Bfashion2/样本 Bfasion2.pmx',
+    cache: '.cache/models/sample-b/diagnostic-source.glb',
+    profile: 'profiles/sample-b.json',
+  },
+  {
+    id: 'sample-a',
+    name: '样本 A',
+    path: '.cache/models/sample-a/样本 A.pmx',
+    profile: 'profiles/sample-a.json',
+  },
+];
+
+/**
+ * Owns the long-lived studio state: model sessions, conversion jobs, the skin
+ * pack manager, and preview/model caches. HTTP routing lives in `routes/`.
+ */
+export class Studio {
+  readonly root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  readonly dist = resolve(
+    process.env.FOURDGEN_WEB_DIST ?? resolve(this.root, '.cache/web-dist'),
+  );
+  readonly presets = PRESETS;
+  readonly sessions = new Map<string, Session>();
+  readonly jobs = new Map<string, Job>();
+  readonly preparedModels = new Map<string, PreparedState>();
+  readonly io = new NodeIO()
+    .registerExtensions(ALL_EXTENSIONS)
+    .registerDependencies({ 'meshopt.encoder': MeshoptEncoder });
+  readonly previewCacheDir = resolve(storage.cache, 'web-preview');
+  readonly managerConfigPath = resolve(
+    this.root,
+    process.env.SKIN_MANAGER_CONFIG ?? 'skin-manager.local.json',
+  );
+  manager: PackManager | null = null;
+  managerError = '';
+  gameConfigured = false;
+  busy = false;
+
+  async initialize(): Promise<void> {
+    await this.initializeManager();
+    await this.ownKnownSources();
+    await this.upgradeLibraryEntries();
+  }
+
+  requireManager(): PackManager {
+    if (!this.manager) throw Error(this.managerError);
+    return this.manager;
+  }
+
+  addJob(id: string, job: Job): void {
+    if (this.jobs.size >= 8) this.jobs.delete(this.jobs.keys().next().value!);
+    this.jobs.set(id, job);
+  }
+
+  retainPrepared(key: string, state: PreparedState): void {
+    if (!this.preparedModels.has(key) && this.preparedModels.size >= 2)
+      this.preparedModels.delete(this.preparedModels.keys().next().value!);
+    this.preparedModels.set(key, state);
+  }
+
+  previewCachePath(key: string): string {
+    return resolve(this.previewCacheDir, key + '.glb');
+  }
+
+  async previewCacheKey(source: string): Promise<string> {
+    const info = await stat(source).catch(() => null);
+    const dependencies: string[] = [];
+    const scan = async (folder: string): Promise<void> => {
+      for (const entry of await readdir(folder, { withFileTypes: true })) {
+        if (entry.isSymbolicLink()) continue;
+        const file = resolve(folder, entry.name);
+        if (entry.isDirectory()) await scan(file);
+        else if (/\.(png|jpe?g|tga|bmp|webp|dds|bin|mtl)$/i.test(file)) {
+          const item = await stat(file);
+          dependencies.push(`${file}:${item.size}:${item.mtimeMs}`);
+        }
+      }
+    };
+    await scan(dirname(source));
+    return createHash('sha1')
+      .update(
+        `${source}:${info?.size ?? 0}:${info?.mtimeMs ?? 0}:${PREVIEW_TEXTURE_LIMIT}:${dependencies.sort().join(';')}:v3`,
+      )
+      .digest('hex');
+  }
+
+  async readPreviewCache(file: string): Promise<Uint8Array | null> {
+    return (await fileExists(file)) ? readFileBytes(file) : null;
+  }
+
+  async writePreviewCache(file: string, bytes: Uint8Array): Promise<void> {
+    await mkdir(this.previewCacheDir, { recursive: true });
+    await writeFile(file, bytes).catch(() => {});
+  }
+
+  /** Preview caches are keyed by source version; drop ones no longer reachable. */
+  async cleanPreviewCache(maxAgeMs = 14 * 24 * 60 * 60 * 1000): Promise<void> {
+    const cutoff = Date.now() - maxAgeMs;
+    for (const name of await readdir(this.previewCacheDir).catch(
+      () => [] as string[],
+    )) {
+      if (!name.endsWith('.glb')) continue;
+      const file = resolve(this.previewCacheDir, name);
+      const info = await stat(file).catch(() => null);
+      if (info && info.mtimeMs < cutoff)
+        await rm(file, { force: true }).catch(() => {});
+    }
+  }
+
+  /** Preview generation is expensive only on the first load of a source file. */
+  async buildPreview(
+    document: IntermediateModel['document'],
+  ): Promise<Uint8Array> {
+    try {
+      return await buildPreviewGlb(document, this.io);
+    } catch (error) {
+      console.warn(
+        '预览优化失败，回退到原始 GLB：',
+        error instanceof Error ? error.message : String(error),
+      );
+      return new Uint8Array(await this.io.writeBinary(document));
+    }
+  }
+
+  async load(
+    path: string,
+    name: string,
+    profile: HumanoidProfile | null,
+    options: {
+      cache?: string;
+      cachePreview?: boolean;
+      existingId?: string;
+    } = {},
+  ): Promise<LoadedSession> {
+    const { cache, cachePreview = true, existingId } = options;
+    path = await ownModel(path);
+    if (this.sessions.size >= 4)
+      this.sessions.delete(this.sessions.keys().next().value!);
+    const source =
+      cache && (await fileExists(resolve(this.root, cache)))
+        ? resolve(this.root, cache)
+        : path;
+    const modelKey = await this.previewCacheKey(source);
+    const modelCache = resolve(storage.cache, 'web-models', modelKey);
+    let model: IntermediateModel;
+    try {
+      const meta = JSON.parse(await readFile(modelCache + '.json', 'utf8'));
+      model = { ...meta, document: await this.io.read(modelCache + '.glb') };
+    } catch {
+      model = await importModel(source, { backend: 'wasm' });
+      await mkdir(resolve(modelCache, '..'), { recursive: true });
+      await writeFile(
+        modelCache + '.glb',
+        await this.io.writeBinary(model.document),
+      );
+      await writeFile(
+        modelCache + '.json',
+        JSON.stringify({ source: model.source, warnings: model.warnings }),
+      );
+    }
+    profile ??= autoProfile(model.document);
+    let preview: Uint8Array | null = null;
+    const cacheFile = cachePreview ? this.previewCachePath(modelKey) : null;
+    if (cacheFile) preview = await this.readPreviewCache(cacheFile);
+    if (!preview) {
+      preview = await this.buildPreview(model.document);
+      if (cacheFile) await this.writePreviewCache(cacheFile, preview);
+    }
+    const instances: import('@gltf-transform/core').Mesh[] = [];
+    (
+      model.document.getRoot().getDefaultScene() ??
+      model.document.getRoot().listScenes()[0]
+    )?.traverse((node) => {
+      if (node.getMesh()) instances.push(node.getMesh()!);
+    });
+    const materials = model.document
+      .getRoot()
+      .listMaterials()
+      .map((material) => ({
+        name: material.getName(),
+        alpha: material.getBaseColorFactor()[3],
+        doubleSided: material.getDoubleSided(),
+        transparent: material.getAlphaMode() === 'BLEND',
+        triangles: instances
+          .flatMap((mesh) => mesh.listPrimitives())
+          .filter((primitive) => primitive.getMaterial() === material)
+          .reduce(
+            (sum, primitive) =>
+              sum +
+              (primitive.getIndices()?.getCount() ??
+                primitive.getAttribute('POSITION')!.getCount()) /
+                3,
+            0,
+          ),
+      }));
+    const id = crypto.randomUUID();
+    const defaultProfile = profile ? { ...profile, shoulderOutset: 0 } : null;
+    const entry = await rememberModel(
+      path,
+      name,
+      {
+        profile: defaultProfile,
+        previewKey: modelKey,
+        stats: {
+          triangles: materials.reduce(
+            (sum, material) => sum + material.triangles,
+            0,
+          ),
+          materials: materials.length,
+          bytes: (await stat(path)).size,
+        },
+      },
+      existingId,
+    );
+    this.sessions.set(id, {
+      modelId: entry.id,
+      model,
+      preview,
+      profile: defaultProfile,
+      name: entry.name,
+      materials,
+    });
+    return {
+      id,
+      modelId: entry.id,
+      name: entry.name,
+      settings: entry.settings ?? null,
+      profile: defaultProfile,
+      materials,
+      warnings: model.warnings,
+    };
+  }
+
+  /** Precompute preset previews in the background so the first click is instant. */
+  async warmPresetPreviews(): Promise<void> {
+    await this.cleanPreviewCache();
+    for (const preset of this.presets) {
+      try {
+        const source =
+          preset.cache &&
+          (await fileExists(resolve(this.root, preset.cache)))
+            ? resolve(this.root, preset.cache)
+            : resolve(this.root, preset.path);
+        if (!(await fileExists(source))) continue;
+        const cacheFile = this.previewCachePath(
+          await this.previewCacheKey(source),
+        );
+        if (await fileExists(cacheFile)) continue;
+        const model = await importModel(source, { backend: 'wasm' });
+        await this.writePreviewCache(
+          cacheFile,
+          await this.buildPreview(model.document),
+        );
+      } catch (error) {
+        console.warn(
+          `预览预热失败（${preset.id}）：`,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
+  }
+
+  async setGameDirectory(path: string): Promise<string> {
+    if (this.busy || (await pathExists(resolve(storage.skins, 'operation.lock'))))
+      throw Error('正在处理任务，请稍后修改目录');
+    if (
+      !isAbsolute(path) ||
+      !(await stat(path)
+        .then((info) => info.isDirectory())
+        .catch(() => false))
+    )
+      throw Error('请输入存在的 skin_packs 文件夹绝对路径');
+    const config: ManagerConfig = {
+      version: 1,
+      skinPacksRoot: resolve(path),
+      stateDir: storage.skins,
+      slots: { custom: { manifestFormat: 2 }, persona: { manifestFormat: 1 } },
+    };
+    const next = new PackManager(config);
+    await next.initializePresetSources();
+    const temp = this.managerConfigPath + '.' + crypto.randomUUID() + '.tmp';
+    await writeFile(temp, JSON.stringify(config, null, 2));
+    await rename(temp, this.managerConfigPath);
+    this.manager = next;
+    this.gameConfigured = true;
+    this.managerError = '';
+    return config.skinPacksRoot;
+  }
+
+  private async initializeManager(): Promise<void> {
+    try {
+      const config = JSON.parse(
+        await readFile(this.managerConfigPath, 'utf8'),
+      ) as ManagerConfig;
+      this.manager = new PackManager(
+        await resolveManagerConfig(config, this.managerConfigPath),
+      );
+      this.gameConfigured = true;
+    } catch (error) {
+      this.managerError =
+        `未找到或无法读取皮肤包管理配置 ${this.managerConfigPath}：` +
+        (error instanceof Error ? error.message : String(error));
+    }
+    if (!this.manager)
+      this.manager = new PackManager({
+        libraryOnly: true,
+        version: 1,
+        skinPacksRoot: resolve(dataRoot, 'game-targets'),
+        stateDir: storage.skins,
+        slots: {
+          custom: { manifestFormat: 2 },
+          persona: { manifestFormat: 1 },
+        },
+      });
+    if (this.gameConfigured) await this.manager.initializePresetSources();
+  }
+
+  /** Keep sources independent of Downloads; rewrite entries that moved. */
+  private async ownKnownSources(): Promise<void> {
+    for (const entry of await listModels()) {
+      try {
+        const path = await ownModel(entry.path);
+        if (path !== entry.path) await updateModel(entry.id, { path });
+      } catch (error) {
+        console.warn('源模型归档未完成：', entry.name, String(error));
+      }
+    }
+  }
+
+  /** Upgrade previous library entries from parsed-model caches, without re-importing. */
+  private async upgradeLibraryEntries(): Promise<void> {
+    for (const entry of await listModels()) {
+      if (entry.previewKey && entry.stats && entry.profile !== undefined)
+        continue;
+      for (const file of await readdir(
+        resolve(storage.cache, 'web-models'),
+      ).catch(() => [] as string[])) {
+        if (!file.endsWith('.json')) continue;
+        try {
+          const meta = JSON.parse(
+            await readFile(resolve(storage.cache, 'web-models', file), 'utf8'),
+          );
+          if (meta.source?.path !== entry.path) continue;
+          const key = file.slice(0, -5);
+          const document = await this.io.read(
+            resolve(storage.cache, 'web-models', key + '.glb'),
+          );
+          let triangles = 0;
+          for (const mesh of document.getRoot().listMeshes())
+            for (const primitive of mesh.listPrimitives())
+              triangles +=
+                (primitive.getIndices()?.getCount() ??
+                  primitive.getAttribute('POSITION')!.getCount()) / 3;
+          await rememberModel(entry.path, entry.name, {
+            profile: autoProfile(document),
+            previewKey: key,
+            stats: {
+              triangles,
+              materials: document.getRoot().listMaterials().length,
+              bytes: (await stat(entry.path)).size,
+            },
+          });
+          break;
+        } catch (error) {
+          console.warn('模型库缓存升级失败：', entry.name, String(error));
+        }
+      }
+    }
+  }
+}

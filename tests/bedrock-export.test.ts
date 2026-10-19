@@ -1,4 +1,4 @@
-import { test } from "bun:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
 import sharp from "sharp";
 import { documentFixture } from "./fixtures.ts";

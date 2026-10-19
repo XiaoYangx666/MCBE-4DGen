@@ -4,7 +4,7 @@ import sharp from 'sharp';
 import { previewOutput } from '../../src/preview.ts';
 import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 
-if (!process.argv[2]) throw new Error('Usage: bun run binding:preview <generated-pack-directory> [output-prefix]');
+if (!process.argv[2]) throw new Error('Usage: node scripts/diagnostics/preview-binding.ts <generated-pack-directory> [output-prefix]');
 const source = resolve(process.argv[2]);
 const output = resolve(process.argv[3] ?? 'outputs/binding-preview');
 await mkdir(dirname(output), { recursive: true });

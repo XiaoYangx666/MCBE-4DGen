@@ -1,8 +1,8 @@
-import { test } from 'bun:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, readFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { NodeIO } from '@gltf-transform/core';
 import { importModel } from '../src/importer.ts';
@@ -139,9 +139,15 @@ test('external resources outside the model folder are rejected, including symlin
   await writeFile(path, JSON.stringify(json));
   await assert.rejects(importModel(path), /outside the model directory/);
   json.images[0].uri = 'linked.png';
-  await symlink('/etc/hosts', join(dir, 'linked.png'));
-  await writeFile(path, JSON.stringify(json));
-  await assert.rejects(importModel(path), /outside the model directory/);
+  const outside = join(dirname(dir), `outside-${crypto.randomUUID()}.png`);
+  await writeFile(outside, 'outside');
+  try {
+    await symlink(outside, join(dir, 'linked.png'));
+    await writeFile(path, JSON.stringify(json));
+    await assert.rejects(importModel(path), /outside the model directory/);
+  } finally {
+    await rm(outside, { force: true });
+  }
   json.images[0].uri = 'https://example.com/texture.png';
   await writeFile(path, JSON.stringify(json));
   await assert.rejects(importModel(path), /schemes are unsupported|network|HTTP/i);
