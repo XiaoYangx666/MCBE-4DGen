@@ -34,6 +34,42 @@ const when = (v: string) =>
   });
 const num = (v?: number) => (v === undefined ? "—" : v.toLocaleString("zh-CN"));
 
+/** Show the backend's current import stage plus elapsed time. */
+function BusyStatus({ label }: { label: string }) {
+  const [activity, setActivity] = useState<{
+    label: string;
+    startedAt: number;
+  } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () =>
+      api("/api/activity")
+        .then((value) => {
+          if (!cancelled) setActivity(value.activity ?? null);
+        })
+        .catch(() => {});
+    void poll();
+    const poller = setInterval(poll, 600);
+    const ticker = setInterval(() => setNow(Date.now()), 500);
+    return () => {
+      cancelled = true;
+      clearInterval(poller);
+      clearInterval(ticker);
+    };
+  }, [label]);
+  const stage = activity?.label ?? label;
+  const seconds = activity
+    ? Math.max(0, Math.round((now - activity.startedAt) / 1000))
+    : 0;
+  return (
+    <p role="status">
+      {stage}
+      {seconds >= 1 ? `（${seconds} 秒）` : ""}
+    </p>
+  );
+}
+
 export function LibraryPage({
   onOpen,
 }: {
@@ -840,7 +876,7 @@ export function LibraryPage({
                 </button>
               </>
             )}
-            {busy && <p role="status">{busy}</p>}
+            {busy && <BusyStatus label={busy} />}
             {error && (
               <p role="alert" className="error">
                 {error}

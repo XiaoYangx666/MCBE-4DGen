@@ -21,6 +21,9 @@ export async function handleModels(
   if (url.pathname === '/api/models' && req.method === 'GET')
     return json(await listModels());
 
+  if (url.pathname === '/api/activity' && req.method === 'GET')
+    return json({ activity: studio.activity });
+
   if (url.pathname === '/api/models/update' && req.method === 'POST') {
     const body = (await req.json()) as {
       id: string;
