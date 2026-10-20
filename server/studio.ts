@@ -20,6 +20,7 @@ import type { IntermediateModel } from '../src/model.ts';
 import { PackManager } from '../src/pack-manager.ts';
 import type { ManagerConfig, PackMeta } from '../src/pack-manager.ts';
 import type { PreparedOptimization } from '../src/optimizer.ts';
+import { buildPersonaRecipe } from '../src/persona-recipe.ts';
 import {
   buildPreviewGlb,
   PREVIEW_TEXTURE_LIMIT,
@@ -131,6 +132,12 @@ export class Studio {
   managerError = '';
   gameConfigured = false;
   busy = false;
+  /** Coarse progress label for the long-running import/preview work. */
+  activity: { label: string; startedAt: number } | null = null;
+
+  private setActivity(label: string) {
+    this.activity = { label, startedAt: Date.now() };
+  }
 
   async initialize(): Promise<void> {
     await this.initializeManager();
@@ -228,6 +235,23 @@ export class Studio {
       existingId?: string;
     } = {},
   ): Promise<LoadedSession> {
+    try {
+      return await this.loadInternal(path, name, profile, options);
+    } finally {
+      this.activity = null;
+    }
+  }
+
+  private async loadInternal(
+    path: string,
+    name: string,
+    profile: HumanoidProfile | null,
+    options: {
+      cache?: string;
+      cachePreview?: boolean;
+      existingId?: string;
+    } = {},
+  ): Promise<LoadedSession> {
     const { cache, cachePreview = true, existingId } = options;
     path = await ownModel(path);
     if (this.sessions.size >= 4)
@@ -236,6 +260,7 @@ export class Studio {
       cache && (await fileExists(resolve(this.root, cache)))
         ? resolve(this.root, cache)
         : path;
+    this.setActivity('正在检查模型缓存…');
     const modelKey = await this.previewCacheKey(source);
     const modelCache = resolve(storage.cache, 'web-models', modelKey);
     let model: IntermediateModel;
@@ -243,7 +268,12 @@ export class Studio {
       const meta = JSON.parse(await readFile(modelCache + '.json', 'utf8'));
       model = { ...meta, document: await this.io.read(modelCache + '.glb') };
     } catch {
-      model = await importModel(source, { backend: 'wasm' });
+      this.setActivity('正在解析模型…');
+      model = await importModel(source, {
+        backend: 'wasm',
+        onStage: (stage) => this.setActivity(stage),
+      });
+      this.setActivity('正在保存模型缓存…');
       await mkdir(resolve(modelCache, '..'), { recursive: true });
       await writeFile(
         modelCache + '.glb',
@@ -259,9 +289,11 @@ export class Studio {
     const cacheFile = cachePreview ? this.previewCachePath(modelKey) : null;
     if (cacheFile) preview = await this.readPreviewCache(cacheFile);
     if (!preview) {
+      this.setActivity('正在生成预览…');
       preview = await this.buildPreview(model.document);
       if (cacheFile) await this.writePreviewCache(cacheFile, preview);
     }
+    this.setActivity('正在整理材质…');
     const instances: import('@gltf-transform/core').Mesh[] = [];
     (
       model.document.getRoot().getDefaultScene() ??
@@ -291,6 +323,7 @@ export class Studio {
       }));
     const id = crypto.randomUUID();
     const defaultProfile = profile ? { ...profile, shoulderOutset: 0 } : null;
+    this.setActivity('正在保存模型…');
     const entry = await rememberModel(
       path,
       name,
@@ -329,6 +362,10 @@ export class Studio {
 
   /** Precompute preset previews in the background so the first click is instant. */
   async warmPresetPreviews(): Promise<void> {
+    // Warm the persona catalogue too: the first /api/packs request otherwise
+    // pays for scanning the Marketplace cache.
+    if (this.manager && this.gameConfigured)
+      void buildPersonaRecipe({ skinPacksRoot: this.manager.config.skinPacksRoot }).catch(() => {});
     await this.cleanPreviewCache();
     for (const preset of this.presets) {
       try {

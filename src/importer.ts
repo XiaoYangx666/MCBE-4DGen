@@ -37,7 +37,23 @@ async function normalizeTgaTextures(document: Document, warn: (message: string) 
     warn(`Converted ${converted.length} TGA texture(s) to PNG for preview and export: ${converted.join(', ')}`);
 }
 
-export interface ImportOptions { backend?: 'auto' | 'native' | 'wasm' }
+export interface ImportOptions {
+  backend?: 'auto' | 'native' | 'wasm';
+  /** Coarse progress callback for long imports; labels are user-facing. */
+  onStage?: (stage: string) => void;
+}
+
+/**
+ * Assimp's default post-process also runs `joinIdenticalVertices`, which is
+ * pathological for large PMX meshes: on an 82k-vertex model it took 60 s and
+ * expanded the mesh to 347k vertices. The remaining steps keep the output valid
+ * (triangles, UVs, one primitive type) and finish in under a second.
+ */
+const IMPORT_POST_PROCESS = [
+  'triangulate',
+  'generateUvCoordinates',
+  'sortByPrimitiveType',
+] as const;
 
 /** Only formats covered by import and full conversion tests are advertised. */
 export const INPUT_FORMATS = ['obj', 'glb', 'gltf', 'fbx', 'dae', 'stl', 'ply', 'pmx', 'vrm'] as const;
@@ -60,6 +76,7 @@ export async function importModel(input: string, options: ImportOptions = {}): P
   const pmx = format === 'pmx' ? readPMXMaterials(await resources.read(path)) : undefined;
   let entry = path;
   let backend: 'native' | 'wasm' | undefined;
+  options.onStage?.('正在转换模型格式…');
   if (!direct) {
     // Direct glTF/VRM inputs must not load the optional native Assimp addon.
     const windowsBun = process.platform === 'win32' && !!process.versions.bun;
@@ -74,6 +91,7 @@ export async function importModel(input: string, options: ImportOptions = {}): P
       const missing = new Set<string>();
       const result = await assimp.convert({ name: basename(path), bytes: await resources.read(path) }, {
         to: 'glb',
+        postProcess: IMPORT_POST_PROCESS,
         resolve: async (name) => {
           try { return await resources.read(name); }
           catch (error) {
@@ -125,6 +143,7 @@ export async function importModel(input: string, options: ImportOptions = {}): P
     if (!supported.has(extension)) warn(`Unsupported glTF extension: ${extension}`);
   }
   const document = await io.readJSON(json);
+  options.onStage?.('正在处理材质与贴图…');
   await normalizeTgaTextures(document, warn);
   for (const mesh of document.getRoot().listMeshes()) for (const p of mesh.listPrimitives()) {
     if (p.getMode() === 5 || p.getMode() === 6) {
@@ -142,6 +161,7 @@ export async function importModel(input: string, options: ImportOptions = {}): P
       ...(avatar ? { avatar } : {}),
     }, warnings,
   };
+  options.onStage?.('正在校验模型…');
   validateModel(model);
   if (document.getRoot().listSkins().length) warn('Skin joints and original weights are preserved; bounds use node transforms, not evaluated skin deformation.');
   if (document.getRoot().listAnimations().length) warn('Animation data is preserved; inspect uses the initial node pose.');
