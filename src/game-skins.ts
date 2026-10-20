@@ -67,7 +67,6 @@ export interface GameSkinBackupOptions {
   userDir?: string;
   now?: Date;
 }
-
 const AUTO_BACKUP_LIMIT = 30;
 const MANUAL_BACKUP_LIMIT = 100;
 
@@ -214,8 +213,11 @@ async function pruneGameSkinBackups(dataDir: string): Promise<void> {
 export async function createGameSkinBackup(
   options: GameSkinBackupOptions,
 ): Promise<GameSkinBackup> {
+  // A backup only stores piece ids and colors, so the decoration lookups are
+  // pure overhead on the critical "join game" path.
   const recipe = await buildPersonaRecipe({
     skinPacksRoot: options.skinPacksRoot,
+    minimal: true,
     ...(options.appDataRoot ? { appDataRoot: options.appDataRoot } : {}),
     ...(options.userDir ? { userDir: options.userDir } : {}),
   });
