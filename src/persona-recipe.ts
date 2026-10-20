@@ -55,6 +55,13 @@ export interface PersonaRecipeSourceOptions {
   appDataRoot?: string;
   /** Override the com.mojang user directory. */
   userDir?: string;
+  /**
+   * Skip the piece-name / cast-matching lookups. Backups only need the piece
+   * ids and colors, so those tasks cost hundreds of milliseconds for nothing.
+   */
+  minimal?: boolean;
+  /** Only the recipe export needs the process probe; pass it there. */
+  gameRunning?: boolean;
 }
 
 export interface PersonaRecipeOptions extends PersonaRecipeSourceOptions {
@@ -81,14 +88,26 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * Detect a running game without the multi-second `tasklist` shell-out. The
+ * profile snapshot is written to disk while the game is open, so the flaky
+ * process probe is replaced by a fast process-name lookup that stays
+ * best-effort either way.
+ */
 function gameRunning(): boolean {
+  if (process.platform !== 'win32') return false;
   try {
     const out = execFileSync(
-      'tasklist',
-      ['/FI', 'IMAGENAME eq Minecraft.Windows.exe', '/NH'],
-      { encoding: 'utf8', windowsHide: true },
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        'if (Get-Process -Name Minecraft.Windows -ErrorAction SilentlyContinue) { 1 } else { 0 }',
+      ],
+      { encoding: 'utf8', windowsHide: true, timeout: 5000 },
     );
-    return out.toLowerCase().includes('minecraft.windows.exe');
+    return out.trim() === '1';
   } catch {
     return false;
   }
@@ -390,62 +409,38 @@ function summarizeProfile(
   premiumMap: Map<string, PieceInfo>,
   marketplaceMap: Map<string, PieceInfo>,
   casts: Awaited<ReturnType<typeof defaultCasts>>,
+  minimal = false,
 ): PersonaProfileRecipe {
   const appearance = (value?.personaCollection?.universalApp ?? []) as Json[];
   const base = appearance[0] ?? {};
   const rawPieces = appearance.slice(1);
-  const normalized = normalizeAppearance(appearance);
-  let matched: PersonaProfileRecipe['matchedCast'] = null;
-  for (const cast of casts) {
-    const castNormalized = normalizeAppearance(cast.appearance);
-    const score = jaccard(normalized, castNormalized);
-    if (!matched || score > matched.score)
-      matched = {
-        file: cast.file,
-        name: cast.name,
-        ...(cast.uuid ? { uuid: cast.uuid } : {}),
-        score,
-        exact:
-          JSON.stringify(normalized) === JSON.stringify(castNormalized),
-      };
-  }
+  const matched = minimal
+    ? (null as PersonaProfileRecipe['matchedCast'])
+    : matchCast(appearance, casts);
   const pieces: PersonaPieceRecipe[] = rawPieces
     .filter((item) => typeof item?.id === 'string')
     .map((item) => {
-      const baseId = item.id.split('/')[0]!;
-      const sources = [
-        pieceMap.get(baseId),
-        premiumMap.get(baseId),
-        marketplaceMap.get(baseId),
-      ];
-      const name = sources.find((source) => source?.name)?.name;
-      const type = sources.find((source) => source?.type)?.type;
-      const thumbnail = sources.find((source) => source?.thumbnail)?.thumbnail;
-      const thumbnailUrl = sources.find(
-        (source) => source?.thumbnailUrl,
-      )?.thumbnailUrl;
-      return {
-        id: String(item.id),
-        ...(Array.isArray(item.col) ? { colors: item.col.map(String) } : {}),
-        ...(name ? { name } : {}),
-        ...(type ? { type } : {}),
-        ...(thumbnail ? { thumbnail } : {}),
-        ...(thumbnailUrl ? { thumbnailUrl } : {}),
-      };
+      const recipe: PersonaPieceRecipe = minimal
+        ? { id: String(item.id) }
+        : describePiece(item, pieceMap, premiumMap, marketplaceMap);
+      if (Array.isArray(item.col)) recipe.colors = item.col.map(String);
+      return recipe;
     });
-  // Marketplace face pieces often have no readable meta. Infer the missing
-  // eye/mouth slot from the profile order so the recipe is not just "unknown".
-  for (const piece of pieces) {
-    if (piece.name || piece.type || !piece.id.endsWith('/f')) continue;
-    if (!pieces.some((item) => item.type === 'persona_eyes')) {
-      piece.name = 'Marketplace 眼睛（推断）';
-      piece.type = 'persona_eyes';
-    } else if (!pieces.some((item) => item.type === 'persona_mouth')) {
-      piece.name = 'Marketplace 嘴（推断）';
-      piece.type = 'persona_mouth';
-    } else {
-      piece.name = 'Marketplace 面部部件（未缓存）';
-      piece.type = 'persona_face';
+  if (!minimal) {
+    // Marketplace face pieces often have no readable meta. Infer the missing
+    // eye/mouth slot from the profile order so the recipe is not just "unknown".
+    for (const piece of pieces) {
+      if (piece.name || piece.type || !piece.id.endsWith('/f')) continue;
+      if (!pieces.some((item) => item.type === 'persona_eyes')) {
+        piece.name = 'Marketplace 眼睛（推断）';
+        piece.type = 'persona_eyes';
+      } else if (!pieces.some((item) => item.type === 'persona_mouth')) {
+        piece.name = 'Marketplace 嘴（推断）';
+        piece.type = 'persona_mouth';
+      } else {
+        piece.name = 'Marketplace 面部部件（未缓存）';
+        piece.type = 'persona_face';
+      }
     }
   }
   return {
@@ -461,6 +456,55 @@ function summarizeProfile(
     pieces,
     matchedCast: matched && matched.score > 0 ? matched : null,
     rawAppearance: appearance,
+  };
+}
+
+/** Best default cast by appearance overlap; null when no definition matches. */
+function matchCast(
+  appearance: Json[],
+  casts: Awaited<ReturnType<typeof defaultCasts>>,
+): PersonaProfileRecipe['matchedCast'] {
+  const normalized = normalizeAppearance(appearance);
+  let matched: PersonaProfileRecipe['matchedCast'] = null;
+  for (const cast of casts) {
+    const castNormalized = normalizeAppearance(cast.appearance);
+    const score = jaccard(normalized, castNormalized);
+    if (!matched || score > matched.score)
+      matched = {
+        file: cast.file,
+        name: cast.name,
+        ...(cast.uuid ? { uuid: cast.uuid } : {}),
+        score,
+        exact: JSON.stringify(normalized) === JSON.stringify(castNormalized),
+      };
+  }
+  return matched;
+}
+
+function describePiece(
+  item: Json,
+  pieceMap: Map<string, PieceInfo>,
+  premiumMap: Map<string, PieceInfo>,
+  marketplaceMap: Map<string, PieceInfo>,
+): PersonaPieceRecipe {
+  const baseId = item.id.split('/')[0]!;
+  const sources = [
+    pieceMap.get(baseId),
+    premiumMap.get(baseId),
+    marketplaceMap.get(baseId),
+  ];
+  const name = sources.find((source) => source?.name)?.name;
+  const type = sources.find((source) => source?.type)?.type;
+  const thumbnail = sources.find((source) => source?.thumbnail)?.thumbnail;
+  const thumbnailUrl = sources.find(
+    (source) => source?.thumbnailUrl,
+  )?.thumbnailUrl;
+  return {
+    id: String(item.id),
+    ...(name ? { name } : {}),
+    ...(type ? { type } : {}),
+    ...(thumbnail ? { thumbnail } : {}),
+    ...(thumbnailUrl ? { thumbnailUrl } : {}),
   };
 }
 
@@ -481,11 +525,19 @@ export async function buildPersonaRecipe(
   const lastUsedSlot = lastUsedPersonaSlot
     ? 'personaProfile' + lastUsedPersonaSlot.replace('persona_profile_persona', '')
     : null;
-  const [casts, pieceMap, premiumMap] = await Promise.all([
-    defaultCasts(options.skinPacksRoot),
-    builtinPieceMap(options.skinPacksRoot),
-    premiumPieceMap(root),
-  ]);
+  // The decoration lookups scan megabytes of brarchives and the marketplace
+  // dump. Only the ids and colors survive a backup, so skip them for it.
+  const decorated = options.minimal
+    ? { casts: [], pieceMap: new Map<string, PieceInfo>(), premiumMap: new Map<string, PieceInfo>() }
+    : await Promise.all([
+        defaultCasts(options.skinPacksRoot),
+        builtinPieceMap(options.skinPacksRoot),
+        premiumPieceMap(root),
+      ]).then(([casts, pieceMap, premiumMap]) => ({ casts, pieceMap, premiumMap }));
+  // Compact backups don't retain this field, so avoid spawning PowerShell on
+  // the latency-sensitive install path.
+  const gameRunningNow = options.gameRunning ?? false;
+  const modified = (await stat(user.ud)).mtime.toISOString();
   const profiles: PersonaProfileRecipe[] = [];
   for (const key of Object.keys(sync)) {
     if (!/^personaProfile\d+$/.test(key)) continue;
@@ -494,10 +546,11 @@ export async function buildPersonaRecipe(
         key,
         sync[key] ?? {},
         key === lastUsedSlot,
-        pieceMap,
-        premiumMap,
-        marketplacePieces(),
-        casts,
+        decorated.pieceMap,
+        decorated.premiumMap,
+        options.minimal ? new Map() : marketplacePieces(),
+        decorated.casts,
+        options.minimal === true,
       ),
     );
   }
@@ -505,11 +558,11 @@ export async function buildPersonaRecipe(
   const recipe: PersonaRecipe = {
     version: 1,
     exportedAt: new Date().toISOString(),
-    gameRunning: gameRunning(),
+    gameRunning: gameRunningNow,
     source: {
       userDir: user.dir,
       ud: user.ud,
-      modified: (await stat(user.ud)).mtime.toISOString(),
+      modified,
       lastUsedPersonaSlot,
     },
     profiles,
@@ -518,7 +571,10 @@ export async function buildPersonaRecipe(
 }
 
 export async function exportPersonaRecipes(options: PersonaRecipeOptions) {
-  const recipe = await buildPersonaRecipe(options);
+  const recipe = await buildPersonaRecipe({
+    ...options,
+    gameRunning: gameRunning(),
+  });
   await mkdir(options.outputDir, { recursive: true });
   const stamp = new Date()
     .toISOString()

@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { exportPersonaRecipes } from '../src/persona-recipe.ts';
+import { buildPersonaRecipe, exportPersonaRecipes } from '../src/persona-recipe.ts';
 
 const roots: string[] = [];
 
@@ -90,5 +90,23 @@ describe('persona recipe export', () => {
       lastUsed: true,
       base: { arm: 'slim', skinColor: '#ffffffff' },
     });
+  });
+
+  it('builds a minimal recipe for backups without decoration lookups', async () => {
+    const f = await fixture();
+    const recipe = await buildPersonaRecipe({
+      skinPacksRoot: f.skinPacks,
+      userDir: f.user,
+      minimal: true,
+    });
+
+    expect(recipe.profiles[0]).toMatchObject({
+      slot: 'personaProfile1',
+      kind: 'persona',
+      pieces: [{ id: 'piece-a/d', colors: ['#ff000000'] }],
+      matchedCast: null,
+    });
+    expect(recipe.profiles[0]?.pieces[0]).not.toHaveProperty('name');
+    expect(recipe.profiles[0]?.pieces[0]).not.toHaveProperty('type');
   });
 });

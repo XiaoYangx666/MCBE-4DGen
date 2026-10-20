@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile, rm, unlink, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile, rm, unlink, readdir, stat } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
 import sharp from 'sharp';
 import { PackManager } from '../src/pack-manager.ts';
@@ -45,7 +45,11 @@ test('library merges colliding IDs, disables individual packs, and restores exac
     await assert.rejects(f.manager.exportPack('first', exported), /EEXIST/);
     await f.manager.enable('custom', 'first');
     const firstUUID = JSON.parse(await readFile(join(f.root, 'custom/manifest.json'), 'utf8')).header.uuid;
+    const firstTexture = join(f.root, 'custom/first_0.png');
+    const firstTextureMtime = (await stat(firstTexture)).mtimeMs;
+    await new Promise((resolve) => setTimeout(resolve, 20));
     const second = await f.manager.enable('custom', 'second');
+    assert.equal((await stat(firstTexture)).mtimeMs, firstTextureMtime, 'unchanged textures should not be rewritten');
     const validated = await validateSkinPackPath(join(f.root, 'custom'));
     assert.equal(validated.skins, 2); assert.equal(new Set(validated.geometries).size, 2);
     assert.equal(JSON.parse(await readFile(join(f.root, 'custom/manifest.json'), 'utf8')).header.uuid, firstUUID);
@@ -117,6 +121,21 @@ test('adopt tracks an accepted install without modifying it and restores supplie
     await f.manager.disable('custom', 'accepted');
     assert.deepEqual(await readdir(target), ['skins.json']);
     assert.equal(await readFile(join(target, 'skins.json'), 'utf8'), '{"skins":[]}');
+  } finally { await cleanup(f.dir); }
+});
+
+test('status uses a cheap signature and still reports external edits', async () => {
+  const f = await fixture();
+  try {
+    await f.manager.importPack('first', f.source);
+    await f.manager.enable('custom', 'first');
+    const slot = async () => (await f.manager.status()).find((s) => s.slot === 'custom')!;
+    assert.equal((await slot()).changedOutsideManager, false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await writeFile(join(f.root, 'custom/notes.txt'), 'external work');
+    assert.equal((await slot()).changedOutsideManager, true);
+    await unlink(join(f.root, 'custom/notes.txt'));
+    assert.equal((await slot()).changedOutsideManager, false);
   } finally { await cleanup(f.dir); }
 });
 

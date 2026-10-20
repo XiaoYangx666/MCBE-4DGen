@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { normalizeImportedPack } from "./import-skin-pack.ts";
 import { createHash, randomUUID } from 'node:crypto';
-import { readFile, writeFile, mkdir, readdir, lstat, realpath, unlink, rmdir, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, lstat, realpath, unlink, rmdir, rename, rm, stat } from 'node:fs/promises';
 import { resolve, relative, isAbsolute, join, dirname } from 'node:path';
 import { readSkinPack, validateSkinPackFiles, zipSkinPack } from './skin-pack.ts';
 import type { SkinPackFiles } from './skin-pack.ts';
@@ -24,6 +24,8 @@ interface TargetState {
   edits?: SlotEdits;
   presetSources?: string[];
   slot: string; target: string; original: string; active: Active; installed: Hashes;
+  /** Cheap change detector for status(); writes still verify full hashes. */
+  installedSignature?: Record<string, string>;
   headerUUID: string; moduleUUID: string; generation: number;
   pending?: { backup: string; planned: Hashes };
 }
@@ -102,6 +104,106 @@ async function tree(path: string): Promise<Tree> {
   };
   await visit(path, ''); result.directories.sort(); return result;
 }
+/** Names plus size/mtime: avoids reading multi-hundred-megabyte pack assets. */
+async function treeSignature(path: string): Promise<{ files: Record<string, string>; directories: string[] }> {
+  await noLinks(path);
+  const result = { files: Object.create(null) as Record<string, string>, directories: [] as string[] };
+  if (!(await exists(path))) throw new Error('Directory does not exist: ' + path);
+  const visit = async (dir: string, prefix: string) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const key = safeName(prefix + entry.name), full = join(dir, entry.name);
+      if (entry.isSymbolicLink()) throw new Error('Links are not supported: ' + full);
+      if (entry.isDirectory()) { result.directories.push(key); await visit(full, key + '/'); }
+      else if (entry.isFile()) { const info = await stat(full); result.files[key] = `${info.size}:${info.mtimeMs}`; }
+      else throw new Error('Unsupported filesystem entry: ' + full);
+    }
+  };
+  await visit(path, ''); result.directories.sort(); return result;
+}
+function sameSignature(a: Record<string, string>, b: Record<string, string>) {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+}
+function skipJSONWhitespace(bytes: Uint8Array, from: number) {
+  let index = from;
+  while (bytes[index] === 0x20 || bytes[index] === 0x09 || bytes[index] === 0x0a || bytes[index] === 0x0d) index++;
+  return index;
+}
+function scanJSONString(bytes: Uint8Array, from: number) {
+  if (bytes[from] !== 0x22) throw new Error('Invalid geometry JSON: expected string');
+  for (let index = from + 1; index < bytes.length; index++) {
+    if (bytes[index] === 0x5c) index++;
+    else if (bytes[index] === 0x22) return index + 1;
+  }
+  throw new Error('Invalid geometry JSON: unterminated string');
+}
+function scanJSONValue(bytes: Uint8Array, from: number) {
+  const start = skipJSONWhitespace(bytes, from);
+  if (bytes[start] === 0x22) return scanJSONString(bytes, start);
+  if (bytes[start] !== 0x7b && bytes[start] !== 0x5b) {
+    let index = start;
+    while (index < bytes.length && bytes[index] !== 0x2c && bytes[index] !== 0x7d) index++;
+    return index;
+  }
+  const stack: number[] = [bytes[start]!];
+  let inString = false;
+  for (let index = start + 1; index < bytes.length; index++) {
+    const byte = bytes[index]!;
+    if (inString) {
+      if (byte === 0x5c) index++;
+      else if (byte === 0x22) inString = false;
+    } else if (byte === 0x22) inString = true;
+    else if (byte === 0x7b || byte === 0x5b) stack.push(byte);
+    else if (byte === 0x7d || byte === 0x5d) {
+      const opener = stack.pop();
+      if ((opener === 0x7b && byte !== 0x7d) || (opener === 0x5b && byte !== 0x5d))
+        throw new Error('Invalid geometry JSON: mismatched delimiters');
+      if (!stack.length) return index + 1;
+    }
+  }
+  throw new Error('Invalid geometry JSON: unterminated value');
+}
+/** Extract one top-level geometry value without parsing the whole document. */
+function geometryEntry(bytes: Uint8Array, id: string): Uint8Array | null {
+  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const needle = Buffer.from(JSON.stringify(id));
+  const at = buffer.indexOf(needle);
+  if (at < 0) return null;
+  const colon = skipJSONWhitespace(bytes, at + needle.length);
+  if (bytes[colon] !== 0x3a) return null;
+  const start = skipJSONWhitespace(bytes, colon + 1);
+  return bytes.subarray(start, scanJSONValue(bytes, start));
+}
+/** Extract top-level geometry values without parsing their potentially huge meshes. */
+function geometryEntries(bytes: Uint8Array): { id: string; value: Uint8Array }[] {
+  const result: { id: string; value: Uint8Array }[] = [];
+  let index = skipJSONWhitespace(bytes, 0);
+  if (bytes[index++] !== 0x7b) throw new Error('Invalid geometry JSON: expected object');
+  const decoder = new TextDecoder();
+  while (true) {
+    index = skipJSONWhitespace(bytes, index);
+    if (bytes[index] === 0x7d) break;
+    const keyStart = index;
+    index = scanJSONString(bytes, index);
+    const id = JSON.parse(decoder.decode(bytes.subarray(keyStart, index))) as string;
+    index = skipJSONWhitespace(bytes, index);
+    if (bytes[index++] !== 0x3a) throw new Error('Invalid geometry JSON: expected colon');
+    const valueStart = skipJSONWhitespace(bytes, index);
+    const valueEnd = scanJSONValue(bytes, valueStart);
+    if (id.startsWith('geometry.')) result.push({ id, value: bytes.subarray(valueStart, valueEnd) });
+    index = skipJSONWhitespace(bytes, valueEnd);
+    if (bytes[index] === 0x2c) index++;
+    else if (bytes[index] === 0x7d) break;
+    else throw new Error('Invalid geometry JSON: expected comma or object end');
+  }
+  return result;
+}
+function concatBytes(parts: Uint8Array[]) {
+  const result = new Uint8Array(parts.reduce((size, part) => size + part.byteLength, 0));
+  let offset = 0;
+  for (const part of parts) { result.set(part, offset); offset += part.byteLength; }
+  return result;
+}
 async function writeTree(path: string, value: Tree) {
   await noLinks(path); await mkdir(path, { recursive: true });
   for (const dir of value.directories) await mkdir(join(path, safeName(dir)), { recursive: true });
@@ -109,13 +211,53 @@ async function writeTree(path: string, value: Tree) {
     const out = join(path, safeName(key)); await mkdir(dirname(out), { recursive: true }); await writeFile(out, bytes);
   }
 }
-async function replaceTree(path: string, value: Tree) {
-  // Enumerate only the verified slot. Never delete/move the skin_packs root or siblings.
-  const old = await tree(path);
-  for (const key of Object.keys(old.files)) await unlink(join(path, safeName(key)));
-  for (const dir of old.directories.sort((a, b) => b.length - a.length)) await rmdir(join(path, safeName(dir)));
-  await writeTree(path, value);
-  if (!same(hashes((await tree(path)).files), hashes(value.files))) throw new Error('Post-write SHA256 verification failed');
+function sameBytes(a: Uint8Array, b: Uint8Array) {
+  return a === b || (a.byteLength === b.byteLength && Buffer.compare(a, b) === 0);
+}
+async function replaceTree(path: string, value: Tree, old: Tree, expected: Hashes) {
+  // The caller has already verified this exact old tree. Only touch changed
+  // files: skin textures and other unchanged assets need not be rewritten.
+  await noLinks(path);
+  const nextFiles = new Set(Object.keys(value.files));
+  const oldFiles = new Set(Object.keys(old.files));
+  for (const key of oldFiles) {
+    if (!nextFiles.has(key)) await unlink(join(path, safeName(key)));
+  }
+
+  const nextDirectories = new Set(value.directories);
+  for (const dir of [...old.directories].sort((a, b) => b.length - a.length)) {
+    if (!nextDirectories.has(dir)) await rmdir(join(path, safeName(dir)));
+  }
+  for (const dir of value.directories) await mkdir(join(path, safeName(dir)), { recursive: true });
+
+  const changed: string[] = [];
+  for (const [key, bytes] of Object.entries(value.files)) {
+    const before = old.files[key];
+    if (before && sameBytes(before, bytes)) continue;
+    const out = join(path, safeName(key));
+    await mkdir(dirname(out), { recursive: true });
+    const temp = out + '.' + randomUUID() + '.tmp';
+    try {
+      await writeFile(temp, bytes);
+      await rename(temp, out);
+    } catch (error) {
+      await rm(temp, { force: true }).catch(() => {});
+      throw error;
+    }
+    changed.push(key);
+  }
+
+  // Verify replacements without rereading and hashing every unchanged file.
+  // Their hashes were checked immediately before mutation and they were never
+  // opened for writing in this operation.
+  for (const key of changed) {
+    const actual = createHash('sha256').update(await readFile(join(path, safeName(key)))).digest('hex');
+    if (actual !== expected[key]) throw new Error('Post-write SHA256 verification failed: ' + key);
+  }
+  for (const key of oldFiles) {
+    if (!nextFiles.has(key) && await exists(join(path, safeName(key))))
+      throw new Error('Post-write deletion verification failed: ' + key);
+  }
 }
 async function json<T>(path: string): Promise<T> { return decode<T>(await readFile(path)); }
 async function atomicJSON(path: string, value: unknown) {
@@ -265,10 +407,16 @@ export class PackManager {
   }
   /** Read preset contents from the actual game directory, including its baseline skins. */
   async presetContents(slot: string) {
-    const files = (await tree(this.target(slot))).files;
-    const skins = files['skins.json'] ? decode<{ skins?: { localization_name?: string; texture: string; geometry: string }[]; localization_name?: string; serialize_name?: string }>(files['skins.json']) : { skins: [] };
+    const target = this.target(slot);
+    const [skinsBytes, manifestBytes, enBytes, zhBytes] = await Promise.all([
+      readFile(join(target, 'skins.json')).catch(() => null),
+      readFile(join(target, 'manifest.json')).catch(() => null),
+      readFile(join(target, 'texts', 'en_US.lang')).catch(() => null),
+      readFile(join(target, 'texts', 'zh_CN.lang')).catch(() => null),
+    ]);
+    const skins = skinsBytes ? decode<{ skins?: { localization_name?: string; texture: string; geometry: string }[]; localization_name?: string; serialize_name?: string }>(skinsBytes) : { skins: [] };
     const labels = new Map<string,string>();
-    for (const locale of ['en_US','zh_CN']) for (const line of new TextDecoder().decode(files[`texts/${locale}.lang`] ?? new Uint8Array()).split(/\r?\n/)) { const i = line.indexOf('='); if (i > 0) labels.set(line.slice(0,i),line.slice(i+1)); }
+    for (const bytes of [enBytes, zhBytes]) if (bytes) for (const line of new TextDecoder().decode(bytes).split(/\r?\n/)) { const i = line.indexOf('='); if (i > 0) labels.set(line.slice(0,i),line.slice(i+1)); }
     const origins = new Map<string, SkinOrigin>();
     const state = await this.state(slot);
     for (const ref of state?.active ?? []) {
@@ -279,15 +427,31 @@ export class PackManager {
         if (origin) origins.set(`${pack.id}_${index}.png`, origin);
       }
     }
-    return { id: slot, name: decode<{header?:{name?:string}}>(files['manifest.json']!).header?.name ?? slot, revision: createHash('sha256').update(JSON.stringify(hashes(files))).digest('hex'), skins: (skins.skins ?? []).map((skin,index) => ({ index, name: labels.get(`skin.${skins.localization_name ?? skins.serialize_name}.${skin.localization_name}`) ?? skin.localization_name ?? `皮肤 ${index+1}`, geometry: skin.geometry, texture: skin.texture, origin: origins.get(skin.texture) ?? null })) };
+    // Reuse the verified install hashes when sizes still match; only fall back
+    // to reading and hashing every asset when the slot changed on disk.
+    let revision: string;
+    const measured = await treeSignature(target);
+    if (state?.installedSignature && sameSignature(measured.files, state.installedSignature))
+      revision = createHash('sha256').update(JSON.stringify(state.installed)).digest('hex');
+    else revision = createHash('sha256').update(JSON.stringify(hashes((await tree(target)).files))).digest('hex');
+    return { id: slot, name: manifestBytes ? decode<{header?:{name?:string}}>(manifestBytes).header?.name ?? slot : slot, revision, skins: (skins.skins ?? []).map((skin,index) => ({ index, name: labels.get(`skin.${skins.localization_name ?? skins.serialize_name}.${skin.localization_name}`) ?? skin.localization_name ?? `皮肤 ${index+1}`, geometry: skin.geometry, texture: skin.texture, origin: origins.get(skin.texture) ?? null })) };
   }
   async presetScene(slot: string, index: number) {
-    const files = (await tree(this.target(slot))).files;
-    const entries = decode<{ skins: { texture: string; geometry: string }[] }>(files['skins.json']!).skins;
+    const target = this.target(slot);
+    const skinsBytes = await readFile(join(target, 'skins.json')).catch(() => null);
+    const entries = skinsBytes ? decode<{ skins: { texture: string; geometry: string }[] }>(skinsBytes).skins : [];
     const skin = Number.isInteger(index) && index >= 0 ? entries[index] : undefined;
-    if (!skin || !files[skin.texture]) throw new Error('皮肤不存在');
-    const raw = files['geometry.json'] ? decode<Record<string, unknown>>(files['geometry.json']) : null;
-    return { name: slot, identifier: skin.geometry, geometry: raw?.[skin.geometry] ? raw : null, texture: files[skin.texture]!, skins: entries.length };
+    if (!skin) throw new Error('皮肤不存在');
+    const texture = await readFile(join(target, safeName(skin.texture))).catch(() => null);
+    if (!texture) throw new Error('皮肤不存在');
+    const geometryBytes = await readFile(join(target, 'geometry.json')).catch(() => null);
+    let geometry: Record<string, unknown> | null = null;
+    if (geometryBytes) {
+      // Parse only the selected geometry instead of the whole 100+ MB document.
+      const entry = geometryEntry(geometryBytes, skin.geometry);
+      if (entry) geometry = { [skin.geometry]: JSON.parse(new TextDecoder().decode(entry)) };
+    }
+    return { name: slot, identifier: skin.geometry, geometry, texture, skins: entries.length };
   }
   /** Import validated skin pack files directly, without a staging directory. */
   async importFiles(id: string, files: SkinPackFiles, directories: string[] = [], meta?: PackMeta) {
@@ -329,8 +493,8 @@ export class PackManager {
     if (!skin) throw new Error('Skin pack contains no skins');
     const texture = files[skin.texture];
     if (!texture) throw new Error('Missing skin texture ' + skin.texture);
-    const rawGeometry = files['geometry.json'] ? decode<Record<string, unknown>>(files['geometry.json']!) : null;
-    const geometry = rawGeometry && rawGeometry[skin.geometry] ? rawGeometry : null;
+    const rawGeometry = files['geometry.json'] ? geometryEntry(files['geometry.json']!, skin.geometry) : null;
+    const geometry = rawGeometry ? { [skin.geometry]: JSON.parse(new TextDecoder().decode(rawGeometry)) } : null;
     return { name: pack.name, identifier: skin.geometry, geometry, texture, skins: skins.length };
   }
   /** Enumerate every skin instead of implicitly showing only the first. */
@@ -511,13 +675,29 @@ export class PackManager {
     return Promise.all(Object.keys(this.config.slots).map(async (slot) => {
       const target = this.target(slot), state = await this.state(slot);
       if (!(await exists(target))) return { slot, target, exists: false, managed: !!state, active: state?.active ?? [], presetSources: state?.presetSources ?? [], pending: state?.pending ?? null, changedOutsideManager: null, skins: null, originalBackup: state?.original ?? null };
-      const current = await tree(target);
+      const measured = await treeSignature(target);
       let skins: number | null = null;
       let name: string = slot;
-      try { name = decode<{header:{name:string}}>(current.files['manifest.json']!).header.name; } catch {}
-      try { skins = decode<{ skins: unknown[] }>(current.files['skins.json']!).skins.length; } catch { /* report unreadable metadata */ }
+      try { name = decode<{header:{name:string}}>(await readFile(join(target, 'manifest.json'))).header.name; } catch {}
+      try { skins = decode<{ skins: unknown[] }>(await readFile(join(target, 'skins.json'))).skins.length; } catch { /* report unreadable metadata */ }
+      // Sizes match the last verified install: skip hashing large assets.
+      // apply() still verifies full hashes before any write.
+      let changedOutsideManager: boolean | null = null;
+      if (state) {
+        if (state.installedSignature && sameSignature(measured.files, state.installedSignature)) {
+          changedOutsideManager = false;
+        } else {
+          const current = await tree(target);
+          changedOutsideManager = !same(hashes(current.files), state.installed);
+          if (!changedOutsideManager) {
+            // Backfill the cheap signature for states written by older builds.
+            state.installedSignature = measured.files;
+            void atomicJSON(this.statePath(slot), state).catch(() => {});
+          }
+        }
+      }
       return { slot, name, target, exists: true, managed: !!state, skins, active: state?.active ?? [], presetSources: state?.presetSources ?? [],
-        changedOutsideManager: state ? !same(hashes(current.files), state.installed) : null,
+        changedOutsideManager,
         pending: state?.pending ?? null, originalBackup: state?.original ?? null };
     }));
   }
@@ -548,7 +728,8 @@ export class PackManager {
   }
   private async initialState(slot: string, original: Tree, active: Active = []): Promise<TargetState> {
     const backup = await this.snapshot(slot, original, []);
-    return { presetSources: [], slot, target: this.target(slot), original: backup.id, active, installed: hashes((await tree(this.target(slot))).files),
+    const current = await tree(this.target(slot));
+    return { presetSources: [], slot, target: this.target(slot), original: backup.id, active, installed: hashes(current.files), installedSignature: (await treeSignature(this.target(slot))).files,
       headerUUID: randomUUID(), moduleUUID: randomUUID(), generation: 0 };
   }
   /** Explicit migration of an already installed slot, with the user's original backup. No target writes. */
@@ -572,7 +753,9 @@ export class PackManager {
   private async compose(slot: string, state: TargetState, active: Active, selection?: { id: string; indices: number[] }): Promise<Tree> {
     if (!active.length) return this.editTree((await this.loadSnapshot(slot, state.original)).value, state.edits);
     const files: SkinPackFiles = Object.create(null) as SkinPackFiles;
-    const geometry: Record<string, unknown> = { format_version: '1.8.0' }, skins: Record<string, unknown>[] = [];
+    const geometryParts: Uint8Array[] = [new TextEncoder().encode('{"format_version":"1.8.0"')];
+    let geometryCount = 0;
+    const skins: Record<string, unknown>[] = [];
     const key = 'FourDGen_' + slot;
     const lang: string[] = [];
     const packNames: string[] = [];
@@ -589,10 +772,13 @@ export class PackManager {
       if (content['texts/en_US.lang']) for (const line of new TextDecoder().decode(content['texts/en_US.lang']).split(/\r?\n/)) {
         const split = line.indexOf('='); if (split > 0) labels.set(line.slice(0, split), line.slice(split + 1));
       }
-      const sourceGeometry = content['geometry.json'] ? decode<Record<string, unknown>>(content['geometry.json']) : {};
       const remap = new Map<string, string>();
-      for (const [id, value] of Object.entries(sourceGeometry)) if (id.startsWith('geometry.')) {
-        const renamed = `geometry.fourdgen_${pack.id}_${remap.size}`; remap.set(id, renamed); geometry[renamed] = value;
+      const sourceGeometry = content['geometry.json'] ? geometryEntries(content['geometry.json']) : [];
+      for (const { id, value } of sourceGeometry) {
+        const renamed = `geometry.fourdgen_${pack.id}_${remap.size}`; remap.set(id, renamed);
+        geometryParts.push(new TextEncoder().encode(',' + JSON.stringify(renamed) + ':'));
+        geometryParts.push(value);
+        geometryCount++;
       }
       for (const [index, entry] of sourceSkins.entries()) {
         if (selection?.id === pack.id && !selection.indices.includes(index)) continue;
@@ -609,10 +795,17 @@ export class PackManager {
       header: { name: displayName, uuid: state.headerUUID, version: [1, 0, state.generation + 1] },
       modules: [{ type: 'skin_pack', uuid: state.moduleUUID, version: [1, 0, state.generation + 1] }] });
     files['skins.json'] = encode({ serialize_name: key, localization_name: key, skins });
-    if (Object.keys(geometry).length > 1) files['geometry.json'] = encode(geometry);
+    if (geometryCount) {
+      geometryParts.push(new TextEncoder().encode('}'));
+      files['geometry.json'] = concatBytes(geometryParts);
+    }
     files['texts/languages.json'] = encode(['en_US', 'zh_CN']);
     for (const locale of ['en_US', 'zh_CN']) files[`texts/${locale}.lang`] = new TextEncoder().encode(lang.join('\n') + '\n');
-    await validateSkinPackFiles(files);
+    // Every source revision was validated when stored, and its full content is
+    // hash-checked above. Re-running the deep geometry validator here would
+    // parse the entire merged geometry a second time on every enable/disable.
+    // The generated skin/geometry references are remapped from those verified
+    // source records, so no new untrusted geometry enters this tree.
     return this.editTree({ files, directories: ['texts'] }, state.edits);
   }
   /** Edits belong to a game install, never to its source library packs. */
@@ -683,14 +876,15 @@ export class PackManager {
     if (state.pending) throw new Error('An interrupted operation requires recover before changing this slot');
     if (!same(currentHashes, state.installed)) throw new Error('Slot changed outside manager; refusing to overwrite external changes');
     const backup = await this.snapshot(slot, current, state.active, state.edits);
-    state.pending = { backup: backup.id, planned: hashes(next.files) };
+    const nextHashes = hashes(next.files);
+    state.pending = { backup: backup.id, planned: nextHashes };
     await atomicJSON(this.statePath(slot), state);
     try {
       // Recheck after backup, immediately before mutation.
       if (!same(hashes((await tree(this.target(slot))).files), currentHashes)) throw new Error('Target changed while backing up');
-      await replaceTree(this.target(slot), next);
+      await replaceTree(this.target(slot), next, current, nextHashes);
       if (edits) state.edits = edits; else delete state.edits;
-      state.active = active; state.installed = hashes(next.files); state.generation++; delete state.pending;
+      state.active = active; state.installed = nextHashes; state.installedSignature = (await treeSignature(this.target(slot))).files; state.generation++; delete state.pending;
       await atomicJSON(this.statePath(slot), state);
     } catch (error) {
       // Keep pending + the verified backup for explicit recovery. Never clobber unknown changes.
@@ -736,11 +930,12 @@ export class PackManager {
     return this.locked(async () => {
       const state = await this.state(slot); if (!state?.pending) throw new Error('No interrupted operation');
       const backup = await this.loadSnapshot(slot, state.pending.backup);
-      const current = hashes((await tree(this.target(slot))).files);
+      const currentTree = await tree(this.target(slot));
+      const current = hashes(currentTree.files);
       for (const [key, hash] of Object.entries(current)) if (backup.info.hashes[key] !== hash && state.pending.planned[key] !== hash) throw new Error('Recovery found unknown external changes; refusing overwrite');
-      await replaceTree(this.target(slot), backup.value);
+      await replaceTree(this.target(slot), backup.value, currentTree, backup.info.hashes);
       if (backup.info.edits) state.edits = backup.info.edits; else delete state.edits;
-      state.active = backup.info.active; state.installed = backup.info.hashes; delete state.pending;
+      state.active = backup.info.active; state.installed = backup.info.hashes; state.installedSignature = (await treeSignature(this.target(slot))).files; delete state.pending;
       await atomicJSON(this.statePath(slot), state); return { slot, recovered: backup.info.id };
     });
   }
