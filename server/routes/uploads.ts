@@ -7,6 +7,7 @@ import { fileExists } from '../fs.ts';
 import { json, safeName, withBusy } from '../http.ts';
 import { modelPattern } from '../model-files.ts';
 import type { Studio } from '../studio.ts';
+import { isUploadSessionId, uploadSessionId } from '../upload-session.ts';
 
 const MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
 const MAX_UPLOAD_FILES = 2000;
@@ -31,7 +32,7 @@ export async function handleUploads(
         uploadHash.update(new Uint8Array(await file.arrayBuffer()));
       }
       const digest = uploadHash.digest('hex');
-      const uploadId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20, 36)}`;
+      const uploadId = uploadSessionId(digest);
       const folder = resolve(storage.sources, 'uploads', uploadId);
       await mkdir(folder, { recursive: true });
       let total = 0;
@@ -86,7 +87,7 @@ export async function handleUploads(
     return withBusy(studio, async () => {
       const body = (await req.json()) as { pending?: string; main?: string };
       const id = String(body.pending ?? '');
-      if (!/^[0-9a-f-]{36}$/.test(id)) throw Error('上传会话无效或已过期');
+      if (!isUploadSessionId(id)) throw Error('上传会话无效或已过期');
       const folder = resolve(storage.sources, 'uploads', id);
       const main = resolve(folder, safeName(String(body.main ?? '')));
       if (!main.startsWith(folder + '\\') && !main.startsWith(folder + '/'))
