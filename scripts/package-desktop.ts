@@ -53,11 +53,14 @@ try{
  console.log('Packaging 4DGen for Windows…');
  const electronZipDir=join(root,'.cache/electron-runtime');
  const hasElectronZip=await stat(join(electronZipDir,`electron-v${electronVersion}-win32-x64.zip`)).then(()=>true).catch(()=>false);
- const options={dir:stage,out:outDir,name:'4DGen',executableName:'4DGen',platform:'win32',arch:'x64',electronVersion,...(hasElectronZip?{electronZipDir}:{}),icon,asar:true,extraResource:[payload],overwrite:true,prune:false,win32metadata:{CompanyName:'4DGen',FileDescription:'4DGen 模型与皮肤工作台',ProductName:'4DGen'}};
+ const options={dir:stage,out:outDir,name:'4DGen',executableName:'4DGen',platform:'win32',arch:'x64',electronVersion,...(hasElectronZip?{electronZipDir}:{}),asar:true,extraResource:[payload],overwrite:true,prune:false};
  const optionsPath=join(root,'.cache/desktop-package-options-'+crypto.randomUUID()+'.json');
  await writeFile(optionsPath,JSON.stringify(options));
  try {const child=spawn(process.execPath,[join(root,'scripts/package-electron.mjs'),optionsPath],{stdio:'inherit'});if(await waitForExit(child)!==0)throw Error('Electron packaging failed');} finally {await rm(optionsPath,{force:true});}
   const appDir=join(outDir,'4DGen-win32-x64');
+  // electron-packager still rewrites the executable for its default metadata.
+  // Keep the known-good upstream PE so the portable build starts reliably.
+  await copyFile(join(root,'node_modules/electron/dist/electron.exe'),join(appDir,'4DGen.exe'));
   const locales=join(appDir,'locales');
   for(const name of await readdir(locales).catch(()=>[] as string[]))if(!keepLocales.has(name))await rm(join(locales,name),{force:true});
   await pruneRuntime(join(appDir,'resources','payload','node_modules'));
