@@ -184,21 +184,23 @@ export async function removeModel(
 
 export async function listModels(): Promise<ModelEntry[]> {
   const folder = resolve(libraryRoot, 'entries');
-  const result: ModelEntry[] = [];
-  for (const file of await readdir(folder).catch(() => [] as string[])) {
-    if (!/^[a-f0-9]{64}\.json$/.test(file)) continue;
-    const entry = JSON.parse(
-      await readFile(resolve(folder, file), 'utf8'),
-    ) as ModelEntry;
-    const info = await stat(resolve(folder, file));
-    result.push({
-      ...entry,
-      sourceAvailable: await stat(entry.path)
-        .then((value) => value.isFile())
-        .catch(() => false),
-      created: entry.created ?? info.birthtime.toISOString(),
-      updated: entry.updated ?? info.mtime.toISOString(),
-    });
-  }
+  const files = (await readdir(folder).catch(() => [] as string[])).filter((file) =>
+    /^[a-f0-9]{64}\.json$/.test(file),
+  );
+  const result = await Promise.all(
+    files.map(async (file) => {
+      const path = resolve(folder, file);
+      const entry = JSON.parse(await readFile(path, 'utf8')) as ModelEntry;
+      const info = await stat(path);
+      return {
+        ...entry,
+        sourceAvailable: await stat(entry.path)
+          .then((value) => value.isFile())
+          .catch(() => false),
+        created: entry.created ?? info.birthtime.toISOString(),
+        updated: entry.updated ?? info.mtime.toISOString(),
+      };
+    }),
+  );
   return result.sort((a, b) => b.updated.localeCompare(a.updated));
 }
