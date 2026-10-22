@@ -1,41 +1,17 @@
 import type { BedrockGeometryFile } from "../src/bedrock-types";
 import type { PersonaRecipe } from "../src/persona-recipe";
+import type {
+  ActivePack,
+  LibraryPack,
+  SkinOrigin,
+} from "../src/pack-types";
 
-export type PackMeta = {
-  template?: "image";
-  importWarnings?: string[];
-  versionName?: string;
-  modelId?: string;
-  materialWeights?: Record<string, number>;
-  source?: string;
-  binding?: string;
-  ratio?: number;
-  maxError?: number;
-  height?: number;
-  excluded?: string[];
-  profile?: unknown;
-};
-
-export type PackStats = {
-  triangles: number;
-  vertices: number;
-  bones: number;
-  texture: { width: number; height: number } | null;
-  bytes: number;
-};
-
-export type LibraryPack = {
-  id: string;
-  revision: string;
-  name: string;
-  skins: number;
-  imported: string;
-  warnings: string[];
-  removed?: boolean;
-  draft?: boolean;
-  meta?: PackMeta;
-  stats?: PackStats;
-};
+export type {
+  LibraryPack,
+  PackMeta,
+  PackStats,
+  SkinOrigin,
+} from "../src/pack-types";
 
 export type SlotStatus = {
   slot: string;
@@ -44,7 +20,7 @@ export type SlotStatus = {
   exists: boolean;
   managed: boolean;
   skins: number | null;
-  active: { id: string; revision: string; skins?: number[] }[];
+  active: ActivePack[];
   presetSources?: string[];
   changedOutsideManager: boolean | null;
   pending: unknown;
@@ -75,13 +51,7 @@ export type Scene = {
 };
 
 export type SkinItem = {
-  origin?: {
-    packId: string;
-    skinIndex: number;
-    modelId?: string;
-    template?: "image";
-    source?: string;
-  } | null;
+  origin?: SkinOrigin | null;
   index: number;
   name: string;
   geometry: string;

@@ -6,6 +6,7 @@ import { resolve, relative, isAbsolute, join, dirname } from 'node:path';
 import { readSkinPack, validateSkinPackFiles, zipSkinPack } from './skin-pack.ts';
 import type { SkinPackFiles } from './skin-pack.ts';
 import { isPaddedTriangle } from './geometry-validator.ts';
+import type { ActivePack, LibraryPack, PackHashes, PackMeta, PackStats, SkinOrigin } from './pack-types.ts';
 import sharp from 'sharp';
 
 export interface ManagerConfig {
@@ -15,8 +16,8 @@ export interface ManagerConfig {
   stateDir: string;
   slots: Record<string, { manifestFormat: 1 | 2 }>;
 }
-type Hashes = Record<string, string>;
-type Active = { id: string; revision: string; skins?: number[] }[];
+type Hashes = PackHashes;
+type Active = ActivePack[];
 interface Tree { files: SkinPackFiles; directories: string[] }
 interface SlotEdits { name?: string; skins: Record<string, { name?: string; removed?: boolean }> }
 interface Snapshot { edits?: SlotEdits; id: string; slot: string; target: string; created: string; hashes: Hashes; directories: string[]; active: Active }
@@ -28,33 +29,6 @@ interface TargetState {
   installedSignature?: Record<string, string>;
   headerUUID: string; moduleUUID: string; generation: number;
   pending?: { backup: string; planned: Hashes };
-}
-interface LibraryPack { draft?: boolean; id: string; revision: string; name: string; skins: number; hashes: Hashes; imported: string; warnings: string[]; removed?: boolean; meta?: PackMeta; stats?: PackStats }
-export interface PackStats {
-  triangles: number;
-  vertices: number;
-  bones: number;
-  texture: { width: number; height: number } | null;
-  bytes: number;
-}
-/** Project metadata kept beside the pack; not part of the installable pack files. */
-export interface SkinOrigin { packId: string; skinIndex: number; modelId?: string | undefined; template?: "image" | undefined; source?: string | undefined }
-export interface PackMeta {
-  skinOrigins?: (SkinOrigin | null)[];
-  template?: "image";
-  sourceMime?: string;
-  importWarnings?: string[];
-  versionName?: string;
-  modelId?: string;
-  materialWeights?: Record<string, number>;
-  source?: string;
-  binding?: string;
-  ratio?: number;
-  maxError?: number;
-  height?: number;
-  excluded?: string[];
-  profile?: unknown;
-  note?: string;
 }
 function skinOrigin(pack: LibraryPack, index: number): SkinOrigin | null {
   if (pack.meta?.skinOrigins) return pack.meta.skinOrigins[index] ?? null;

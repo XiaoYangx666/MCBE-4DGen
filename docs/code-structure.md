@@ -26,6 +26,7 @@ Importer -> IntermediateModel -> Optimizer -> BoneMapper -> BedrockExporter -> S
 - `bone-mapper.ts`、`humanoid.ts`、`auto-profile.ts`：Static 与六部位人形绑定。
 - `bedrock-exporter.ts`、`bedrock-types.ts`、`geometry-validator.ts`：Bedrock 1.8.0 poly_mesh 导出与校验。
 - `skin-pack.ts`、`pack-manager.ts`、`import-skin-pack.ts`：ZIP、皮肤包校验、不可变库与可恢复部署。
+- `pack-types.ts`：服务端、管理器和前端共用的皮肤包领域类型。
 - `workspace-storage.ts`：统一数据目录、旧缓存迁移与路径边界检查。
 
 核心模块不依赖 HTTP、React 或 Electron；新增格式或算法应尽量留在此层。
@@ -75,7 +76,8 @@ bun run test:node
 - `LibraryPage.tsx`、`PackPage.tsx`、`TemplatesPage.tsx`、`SettingsPage.tsx`：主要页面。
 - `AboutDialog.tsx`：版本、运行环境与数据目录弹窗，可由设置页或桌面菜单打开。
 - `PackPreview.tsx`、`pack-types.ts`：皮肤包预览与共享类型。
-- `Viewer.tsx`、`MaterialPanel.tsx`、`SettingsPanel.tsx`、`OutputPanels.tsx`、`SaveSkinDialog.tsx`、`WorkflowStrip.tsx`：工作台组件。
+- `pack-state.ts`：皮肤包启用状态、单皮肤安装与更新判断的纯函数。
+- `Viewer.tsx`、`MaterialPanel.tsx`、`SettingsPanel.tsx`、`OutputPanels.tsx`、`SaveSkinDialog.tsx`、`ContextMenu.tsx`、`InlineName.tsx`：工作台与皮肤包共用组件。
 - `appearance.ts`、`theme.css`、`style.css`、`workflow.css`：主题、配色与布局。
 - `api.ts`：统一的同源 JSON 请求。
 
