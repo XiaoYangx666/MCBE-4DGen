@@ -1350,6 +1350,52 @@ button.danger-button { color:var(--danger); border-color:var(--danger); backgrou
 .model-sources .source-format-hint { padding-top:10px; border-top:1px solid var(--line); color:var(--muted)!important; font-size:10px!important; line-height:1.7!important; }
 @media(max-width:900px) { .source-grid { grid-template-columns:1fr; } }
 @media(max-width:760px) { .page-content .pick-box.model-sources { width:calc(100vw - 16px); max-height:90vh; } .source-tabs { flex-wrap:nowrap; overflow-x:auto; padding-bottom:4px; } .source-tabs button { flex:none; } }
+.pack-manager-page { display:flex; flex-direction:column; overflow:hidden; padding:20px 28px; }
+.pack-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-shrink:0; }
+.pack-toolbar>div { flex-shrink:0; margin-right:18px; }
+.pack-toolbar h1 { display:inline; font-size:20px; font-weight:550; margin:0 14px 0 0; }
+.pack-toolbar>div>span { color:var(--accent); font-size:11px; }
+.pack-toolbar>input { flex:1 1 320px; width:auto!important; }
+.button-link { padding:9px 13px; border:1px solid var(--line); border-radius:6px; white-space:nowrap; background:var(--selected); }
+.game-slots-compact { display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap; flex-shrink:0; }
+.slot-section-label { font-size:11px; color:var(--accent); padding-right:5px; }
+.game-slot-item { display:flex; align-items:center; gap:12px; padding:8px 12px; border:1px solid var(--line); border-radius:7px; background:var(--surface); min-width:0; }
+.game-slot-item>b { font-size:11px; color:var(--accent); white-space:nowrap; }
+.game-slot-item>span { max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:var(--accent); }
+.game-slot-item button { font-size:10px; padding:5px 8px; background:transparent; }
+.pack-browser { display:grid; grid-template-columns:260px minmax(0,1fr); gap:18px; flex:1; min-height:0; }
+.pack-list-pane { overflow:auto; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.pane-caption { padding:9px 10px 14px; color:var(--accent); font-size:11px; }
+.pack-library-row { display:flex; align-items:center; gap:12px; width:100%; padding:13px 10px; text-align:left; background:transparent; border:1px solid transparent; margin-bottom:5px; min-width:0; }
+.pack-library-row.selected { background:var(--selected); border-color:var(--line); }
+.pack-library-row>span { flex:1; min-width:0; }
+.pack-library-row b { display:block; white-space:normal; overflow-wrap:anywhere; font-weight:550; line-height:1.6; }
+.pack-library-row small { display:block; margin-top:6px; color:var(--accent); font-size:11px; }
+.pack-content-pane { display:flex; flex-direction:column; min-width:0; min-height:0; overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.pack-detail-bar { display:flex; align-items:center; justify-content:space-between; gap:15px; padding:18px 22px; border-bottom:1px solid var(--line); flex-shrink:0; }
+.pack-detail-bar h2 { font-size:19px; margin:0 0 7px; overflow-wrap:anywhere; }
+.pack-detail-bar span { color:var(--accent); font-size:11px; }
+.skin-content-layout { display:grid; grid-template-columns:180px minmax(0,1fr); flex:1; min-height:0; }
+.skin-list-pane { overflow:auto; padding:10px; border-right:1px solid var(--line); }
+.skin-item { display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:10px 7px; background:transparent; border:1px solid transparent; margin-bottom:6px; }
+.skin-item.selected { background:var(--selected); border-color:var(--line); }
+.skin-item img { width:38px; height:46px; object-fit:contain; background:var(--selected); image-rendering:pixelated; border-radius:4px; flex-shrink:0; }
+.skin-item>span { min-width:0; }
+.skin-item b { display:block; white-space:normal; overflow-wrap:anywhere; font-size:12px; font-weight:500; line-height:1.6; }
+.skin-item small { display:block; margin-top:6px; font-size:10px; color:var(--accent); }
+.skin-detail-pane { min-width:0; overflow:auto; display:flex; flex-direction:column; }
+.skin-title { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 18px; }
+.skin-title h3 { margin:0; font-size:15px; font-weight:500; overflow-wrap:anywhere; }
+.skin-title button { padding:6px 10px; font-size:11px; }
+.skin-detail-pane .packs-preview { height:auto; flex:1 0 340px; min-height:300px; }
+.skin-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:15px 18px 8px; }
+.skin-actions>span { color:var(--accent); font-size:11px; }
+.skin-action-group { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.skin-action-group button { font-size:11px; padding:8px 11px; }
+.enabled-label { color:var(--accent); font-size:11px; }
+.game-write-note { margin:4px 18px 14px; color:var(--accent); font-size:10px; line-height:1.8; }
+.pack-manager-page>.connection-details { flex-shrink:0; padding:12px 0 0; font-size:11px; }
+@media(max-width:1100px) { .pack-browser { grid-template-columns:220px minmax(0,1fr); }.skin-content-layout { grid-template-columns:145px minmax(0,1fr); }.pack-toolbar { flex-wrap:wrap; }.pack-toolbar>div { width:100%; }.pack-toolbar>input { min-width:160px; } }
 @media(max-width:760px) { .library-toolbar>input { flex:1 1 100%!important; }.library-toolbar>select { flex:1 1 120px!important; width:auto!important; max-width:none; }.model-page-actions { margin-bottom:16px; }.pack-manager-page { overflow:auto; padding:18px 14px; }.pack-toolbar>input { flex-basis:100%; }.pack-toolbar>.button-link { margin-left:auto; }.game-slots-compact { display:block; }.game-slot-item { margin-top:8px; }.game-slot-item>span { flex:1; max-width:none; }.pack-browser { display:flex; flex-direction:column; flex:none; }.pack-list-pane { max-height:230px; flex-shrink:0; }.skin-content-layout { display:flex; flex-direction:column; }.skin-list-pane { display:flex; overflow:auto; border-right:0; border-bottom:1px solid var(--line); }.skin-list-pane .pane-caption { display:none; }.skin-item { min-width:140px; width:auto; flex-shrink:0; }.skin-detail-pane .packs-preview { height:340px; flex:none; }.pack-detail-bar { padding:15px; }.game-slot-item>span { max-width:140px; } }
 /* Keep selected skin and actions visible together at desktop heights. */
 .skin-detail-pane { overflow:hidden; }
