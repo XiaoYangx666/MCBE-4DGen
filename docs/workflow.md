@@ -182,4 +182,4 @@ binding:preview 的彩色图是骨骼归属图，蓝色躯干、黄色头、红/
 
 早期 Windows Bun 1.4.3 的原生 Assimp 测试曾发生模块加载崩溃；现在运行时为 Node 24+，PMX 使用 WASM 入口，GLB/VRM 直接导入不再预加载原生 Assimp。相关流程已验证，不把未跑通的原生格式或完整测试套件声称为通过。具体证据见 `windows-client-test.md`；实验脚本在 `scripts/experiments/`，不再作为日常操作入口。
 
-当前验证：`bun run check`、`bun run check:web` 通过，`bun run test:workflow` 共 70 项通过，完整 `bun run test` 为 24 个文件 / 125 项通过。受限沙箱中 CLI 子进程可能返回 EPERM，测试需要在允许启动子进程的正常终端运行。
+当前验证：`bun run check`、`bun run check:web` 通过；完整回归使用 `bun run test`（29 个测试文件），日常快速回归用 `bun run test:workflow`。受限沙箱中 CLI 子进程或临时目录可能返回 EPERM，测试需要在允许启动子进程的正常终端运行。
