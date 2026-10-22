@@ -4,6 +4,7 @@ import { convertRoutes } from './routes/convert.ts';
 import { modelRoutes } from './routes/models.ts';
 import { packRoutes } from './routes/packs/index.ts';
 import { settingsRoutes } from './routes/settings.ts';
+import { sourceRoutes } from './routes/source-icons.ts';
 import { serveStatic } from './routes/static.ts';
 import { templateRoutes } from './routes/templates.ts';
 import { uploadRoutes } from './routes/uploads.ts';
@@ -12,6 +13,7 @@ import type { Studio } from './studio.ts';
 const dispatch = createRouteMatcher([
   ...settingsRoutes,
   ...templateRoutes,
+  ...sourceRoutes,
   ...modelRoutes,
   ...uploadRoutes,
   ...convertRoutes,
