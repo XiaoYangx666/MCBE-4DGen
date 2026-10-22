@@ -36,7 +36,7 @@ bun run test:desktop     # 桌面冒烟检查
 
 ## 运行验证
 
-运行时统一使用 Node 24+；Bun 仅用于安装依赖和锁定版本。Windows 可运行 `bun run test:workflow` 检查本流程，完整测试用 `bun run test`（Vitest，24 个文件 / 125 项）。工作台与桌面版另有 `bun run test:studio`、`bun run test:desktop`。
+运行时统一使用 Node 24+；Bun 仅用于安装依赖和锁定版本。Windows 可运行 `bun run test:workflow` 检查本流程，完整测试用 `bun run test`（Vitest，29 个测试文件）。工作台与桌面版另有 `bun run test:studio`、`bun run test:desktop`。
 
 ```sh
 bun install --frozen-lockfile
