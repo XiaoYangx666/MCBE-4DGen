@@ -18,7 +18,8 @@ import type { HumanoidProfile, PreparedHumanoid } from '../src/humanoid.ts';
 import { importModel } from '../src/importer.ts';
 import type { IntermediateModel } from '../src/model.ts';
 import { PackManager } from '../src/pack-manager.ts';
-import type { ManagerConfig, PackMeta } from '../src/pack-manager.ts';
+import type { ManagerConfig } from '../src/pack-manager.ts';
+import type { PackMeta } from '../src/pack-types.ts';
 import type { PreparedOptimization } from '../src/optimizer.ts';
 import { buildPersonaRecipe } from '../src/persona-recipe.ts';
 import {

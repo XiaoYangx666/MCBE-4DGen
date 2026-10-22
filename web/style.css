@@ -546,13 +546,6 @@ input[type="number"] {
   color: var(--accent);
   margin: 9px 0;
 }
-.range-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 9px;
-  color: var(--muted);
-  margin-top: 2px;
-}
 .subheading {
   border-top: 1px solid var(--line);
   padding-top: 20px;
@@ -1142,8 +1135,6 @@ button.packs-chip:hover:not(:disabled) { background: var(--selected); }
   color: var(--accent);
   margin-top: 5px;
 }
-.face-estimate.over-budget { border-color: var(--danger); background: var(--danger-bg); }
-.budget-warning { color: var(--danger); font-size: 11px; line-height: 1.7; margin: 8px 0; }
 
 .drop-overlay {
   position: fixed;

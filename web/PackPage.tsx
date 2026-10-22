@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { api, post } from "./api";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { GameSkinsPanel } from "./GameSkinsPanel";
+import { InlineName } from "./InlineName";
+import {
+  findActivePack,
+  isPackFullyInstalled,
+  isPackOutdated,
+  isSkinInstalled,
+} from "./pack-state";
 import { PackPreview } from "./PackPreview";
 import type { PersonaProfileRecipe } from "../src/persona-recipe";
 import type { Contents, LibraryPack, Packs, SkinItem } from "./pack-types";
@@ -29,13 +36,12 @@ type MenuState = {
 };
 
 type InlineEdit =
-  | { kind: "pack"; pack: PackRow; scope: "list" | "detail"; value: string }
+  | { kind: "pack"; pack: PackRow; scope: "list" | "detail" }
   | {
       kind: "skin";
       pack: PackRow;
       skin: SkinItem;
       scope: "list" | "detail";
-      value: string;
     };
 
 export function PackPage() {
@@ -85,8 +91,6 @@ export function PackPage() {
   const [recipePath, setRecipePath] = useState("");
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [editing, setEditing] = useState<InlineEdit | null>(null);
-  const skipCommit = useRef(false);
-  const committing = useRef("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   async function refresh() {
@@ -173,20 +177,14 @@ export function PackPage() {
     !gameState?.pending &&
     !gameState?.changedOutsideManager;
   const activeEntry = (packId: string) =>
-    gameState?.active.find((entry) => entry.id === packId);
-  const skinInstalled = (packId: string, index: number) => {
-    const entry = activeEntry(packId);
-    return !!entry && (!entry.skins || entry.skins.includes(index));
-  };
+    findActivePack(gameState?.active, packId);
+  const skinInstalled = (packId: string, index: number) =>
+    isSkinInstalled(activeEntry(packId), index);
   const packActive = (packId: string) => !!activeEntry(packId);
-  const packOutdated = (pack: PackRow) => {
-    const entry = activeEntry(pack.id);
-    return !!entry && entry.revision !== pack.revision;
-  };
-  const packFullyInstalled = (pack: PackRow) => {
-    const entry = activeEntry(pack.id);
-    return !!entry && (!entry.skins || entry.skins.length >= pack.skins);
-  };
+  const packOutdated = (pack: PackRow) =>
+    isPackOutdated(activeEntry(pack.id), pack.revision);
+  const packFullyInstalled = (pack: PackRow) =>
+    isPackFullyInstalled(activeEntry(pack.id), pack.skins);
 
   useEffect(() => {
     if (!row || row.gameSkins) {
@@ -297,8 +295,6 @@ export function PackPage() {
   }
   function beginEdit(edit: InlineEdit) {
     if (busy) return;
-    skipCommit.current = false;
-    committing.current = "";
     setSelected(edit.pack.key);
     if (edit.kind === "skin") setSkinIndex(edit.skin.index);
     setMenu(null);
@@ -306,24 +302,14 @@ export function PackPage() {
     setEditing(edit);
   }
   function editPack(pack: PackRow, scope: "list" | "detail") {
-    beginEdit({ kind: "pack", pack, scope, value: pack.name });
+    beginEdit({ kind: "pack", pack, scope });
   }
   function editSkin(pack: PackRow, skin: SkinItem, scope: "list" | "detail") {
-    beginEdit({ kind: "skin", pack, skin, scope, value: skin.name });
+    beginEdit({ kind: "skin", pack, skin, scope });
   }
-  function commitEdit(edit: InlineEdit) {
-    if (skipCommit.current) {
-      skipCommit.current = false;
-      return;
-    }
-    const editKey =
-      edit.kind === "pack"
-        ? "pack:" + edit.pack.key
-        : "skin:" + edit.pack.key + ":" + edit.skin.index;
-    if (committing.current === editKey) return;
-    committing.current = editKey;
+  function commitEdit(edit: InlineEdit, raw: string) {
     setEditing(null);
-    const name = edit.value.trim();
+    const name = raw.trim();
     if (!name) {
       setError("名称不能为空");
       return;
@@ -360,29 +346,14 @@ export function PackPage() {
       "名称已保存",
     );
   }
-  function inlineName(edit: InlineEdit, className = "") {
+  function inlineEditor(edit: InlineEdit, className = "") {
+    const initial = edit.kind === "pack" ? edit.pack.name : edit.skin.name;
     return (
-      <input
-        className={"inline-name " + className}
-        autoFocus
-        maxLength={120}
-        size={Math.max(6, Math.min(60, edit.value.length))}
-        value={edit.value}
-        onFocus={(e) => e.currentTarget.select()}
-        onChange={(e) => setEditing({ ...edit, value: e.target.value })}
-        onBlur={() => commitEdit(edit)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            e.currentTarget.blur();
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            skipCommit.current = true;
-            setEditing(null);
-          }
-        }}
-        onClick={(e) => e.stopPropagation()}
-        onDoubleClick={(e) => e.stopPropagation()}
+      <InlineName
+        initial={initial}
+        className={className}
+        onCommit={(value) => commitEdit(edit, value)}
+        onCancel={() => setEditing(null)}
       />
     );
   }
@@ -636,7 +607,7 @@ export function PackPage() {
           {editing?.kind === "pack" &&
           editing.pack.key === p.key &&
           editing.scope === "list" ? (
-            inlineName(editing, "inline-pack")
+            inlineEditor(editing, "inline-pack")
           ) : (
             <b>{p.name}</b>
           )}
@@ -791,7 +762,7 @@ export function PackPage() {
                         {editing?.kind === "pack" &&
                         editing.pack.key === row.key &&
                         editing.scope === "detail" ? (
-                          inlineName(editing, "inline-title")
+                          inlineEditor(editing, "inline-title")
                         ) : (
                           <>
                             {row.name}
@@ -901,7 +872,7 @@ export function PackPage() {
                                 editing.pack.key === row.key &&
                                 editing.skin.index === s.index &&
                                 editing.scope === "list" ? (
-                                  inlineName(editing, "inline-skin")
+                                  inlineEditor(editing, "inline-skin")
                                 ) : (
                                   <b>{s.name}</b>
                                 )}
@@ -975,7 +946,7 @@ export function PackPage() {
                               editing.pack.key === row.key &&
                               editing.skin.index === skin.index &&
                               editing.scope === "detail" ? (
-                                inlineName(editing, "inline-title")
+                                inlineEditor(editing, "inline-title")
                               ) : (
                                 skin.name
                               )}
