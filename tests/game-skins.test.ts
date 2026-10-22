@@ -33,7 +33,7 @@ async function writeUd(user: string, skinColor: string) {
     Synchronized: {
       personaProfile: {
         personaCollection: {
-          universalApp: [{ lastUsedPersonaSlot: 'persona_profile_reference-b' }],
+          universalApp: [{ lastUsedPersonaSlot: 'persona_profile_persona2' }],
         },
       },
       personaProfile1: {
@@ -89,7 +89,7 @@ describe('compact game skin backups', () => {
         userDir: 'C:/user',
         ud: 'C:/user/ud1.dat',
         modified: '2026-01-01T00:00:00.000Z',
-        lastUsedPersonaSlot: 'persona_profile_reference-b',
+        lastUsedPersonaSlot: 'persona_profile_persona2',
       },
       profiles: [
         {
@@ -126,7 +126,7 @@ describe('compact game skin backups', () => {
     const compact = compactPersonaRecipe(recipe);
     expect(compact).toEqual({
       version: 1,
-      lastUsedPersonaSlot: 'persona_profile_reference-b',
+      lastUsedPersonaSlot: 'persona_profile_persona2',
       profiles: [
         {
           slot: 'personaProfile1',
@@ -163,7 +163,7 @@ describe('compact game skin backups', () => {
       version: 1,
       kind: 'auto',
       reason: 'custom:enable',
-      lastUsedPersonaSlot: 'persona_profile_reference-b',
+      lastUsedPersonaSlot: 'persona_profile_persona2',
     });
     expect(first.profiles).toHaveLength(2);
     expect(first.profiles[0]?.pieces).toEqual([
@@ -190,7 +190,7 @@ describe('compact game skin backups', () => {
     expect(await listGameSkinBackups(f.dataDir)).toHaveLength(1);
   });
 
-  it('keeps the newest 30 automatic backups and retains manual backups', async () => {
+  it('keeps the newest 10 backups in total', async () => {
     const f = await fixture();
     await writeUd(f.user, '#aaaaaaa1');
     const manual = await createGameSkinBackup(
@@ -202,7 +202,7 @@ describe('compact game skin backups', () => {
     );
 
     const created: string[] = [];
-    for (let index = 0; index < 32; index++) {
+    for (let index = 0; index < 12; index++) {
       await writeUd(f.user, `#ff0000${index.toString(16).padStart(2, '0')}`);
       const backup = await createGameSkinBackup(
         backupOptions(f, {
@@ -215,14 +215,12 @@ describe('compact game skin backups', () => {
     }
 
     const list = await listGameSkinBackups(f.dataDir);
-    expect(list).toHaveLength(31);
-    expect(list.filter((item) => item.kind === 'auto')).toHaveLength(30);
-    expect(list.map((item) => item.id)).toEqual([
-      ...created.slice(2).reverse(),
-      manual.id,
-    ]);
+    expect(list).toHaveLength(10);
+    expect(list.filter((item) => item.kind === 'auto')).toHaveLength(10);
+    expect(list.map((item) => item.id)).toEqual(created.slice(2).reverse());
+    expect(list.some((item) => item.id === manual.id)).toBe(false);
     const files = await readdir(gameSkinBackupRoot(f.dataDir));
-    expect(files).toHaveLength(31);
+    expect(files).toHaveLength(10);
   });
 
   it('lists newest first, reads and deletes backups', async () => {

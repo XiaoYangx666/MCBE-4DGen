@@ -1,18 +1,18 @@
 # 文档索引
 
-日常操作从「使用与流程」开始；阶段文档是实现历史记录，不是当前接口说明。
+日常操作从「使用与流程」开始；阶段文档是实现历史记录，不是当前接口说明。部分阶段文档的验证环境为 Bun 1.4.3，当前统一使用 Node 24+ 与 npm。
 
 ## 使用与流程
 
 - [完整工作流程](workflow.md)：转换、校验、预览、皮肤包入库、备份与恢复。
-- [本地网页工作台](local-web.md)：`bun run dev`（Node 服务端）、材质筛选、姿势预览、减面与图集参数。
+- [本地网页工作台](local-web.md)：`npm run dev`（Node 服务端）、材质筛选、姿势预览、减面与图集参数。
 - [桌面版使用与打包](desktop.md)：Electron 开发版、Windows 便携版、启动检查与验证限制。
-- [样本 A与样本 B PMX 转换记录](pmx-model-tests.md)：实际模型、profile、产物与已知问题。
-- [Windows 客户端验收记录](windows-client-test.md)：Shino、贴图尺寸与绑定结果。
+- [命令行与皮肤包管理](cli.md)：批量转换、参数、启停与恢复命令（普通用户可跳过）。
+- [PMX 转换记录](pmx-model-tests.md)：两个 PMX 样本的 profile、产物、减面与图集实验。
+- [Windows 客户端测试记录](windows-client-test.md)：贴图尺寸、人形绑定与仍未验证的显示问题。
 
 ## 当前问题与规划
 
-- [交接说明](HANDOFF.md)：当前仓库状态、验证结果、部署内容与后续任务。
 - [静态表情与图集预算调查](investigation-static-expressions.md)：表情遮挡审计、面积预算对照。
 - [自动化路线图](automation-roadmap.md)：只写规划，不接入主流程。
 
@@ -32,5 +32,9 @@
 
 - [代码结构](code-structure.md)：入口、转换核心、服务端路由与前端模块职责。
 - [依赖、版本与许可证](dependencies.md)
-
 - [Minecraft 原版皮肤与角色创建器研究](skin-state.md)
+
+## 参与与许可
+
+- [开发与测试](development.md)：环境、检查命令、桌面版打包与仓库约定
+- [GPL-3.0 许可证](../LICENSE)

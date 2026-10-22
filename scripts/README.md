@@ -1,6 +1,6 @@
 # 脚本目录
 
-脚本按职责分组，共享代码放在 `lib/`，一次性调查与历史证据与稳定入口分开。日常操作优先使用 `package.json` 中的 npm script（`bun run <name>` 或 `npm run <name>`），运行时为 Node 24+。
+脚本按职责分组，共享代码放在 `lib/`，一次性调查与历史证据与稳定入口分开。日常操作优先使用 `package.json` 中的 npm script（`npm run <name>`），运行时为 Node 24+。
 
 ## 目录结构
 
@@ -20,19 +20,19 @@ scripts/
 
 | 命令 | 实现 | 用途 |
 | --- | --- | --- |
-| `bun run check` | `tsc --noEmit` | 全仓库（含 `scripts/`）类型检查。 |
-| `bun run check:web` | `tsc -p tsconfig.web.json` | 网页与服务端类型检查。 |
-| `bun run test:workflow` | `vitest run` | 转换主链路回归。 |
-| `bun run probe` | `checks/probe.ts` | 依赖后端探测：Assimp native/WASM、meshoptimizer、sharp、JSZip。 |
-| `bun run test:node` | `checks/check-node.ts` | 用 Node 直接启动服务端，验证脱离 Bun 的运行时与隔离数据目录。 |
-| `bun run test:studio` | `checks/check-studio.ts` | 工作台存储、图片模板、转换与包管理的独立 HTTP 冒烟检查。 |
-| `bun run test:desktop` | `checks/check-desktop.ts` | Electron 开发版/便携版冒烟检查；会启动 Electron。 |
-| `bun run workflow -- <workflow.json> [--deploy]` | `workflow/workflow.ts` | 读取 `workflows/*.json`，执行转换、校验、预览并入库；只有显式 `--deploy` 才写游戏目录。 |
-| `bun run desktop` | `desktop/desktop.ts` | 启动 Electron 开发版。 |
-| `bun run desktop:package` | `desktop/package-desktop.ts` | 构建 Windows 便携版；`--out` 或 `FOURDGEN_RELEASE_DIR` 可覆盖输出目录。 |
-| `bun run binding:inspect` | `diagnostics/inspect-avatar-binding.ts` | 保存源模型骨骼/材质归属报告。 |
-| `bun run binding:preview` | `diagnostics/preview-binding.ts` | 生成彩色归属图与示意摆臂摆腿预览。 |
-| `bun run sample:fetch` / `sample:check` / `sample:prepare` / `sample:export` | `samples/*.ts` | CC0 样本下载、导入检查、准备与导出。 |
+| `npm run check` | `tsc --noEmit` | 全仓库（含 `scripts/`）类型检查。 |
+| `npm run check:web` | `tsc -p tsconfig.web.json` | 网页与服务端类型检查。 |
+| `npm run test:workflow` | `vitest run` | 转换主链路回归。 |
+| `npm run probe` | `checks/probe.ts` | 依赖后端探测：Assimp native/WASM、meshoptimizer、sharp、JSZip。 |
+| `npm run test:node` | `checks/check-node.ts` | 用 Node 直接启动服务端，验证独立于 Electron 的 Node 运行时与隔离数据目录。 |
+| `npm run test:studio` | `checks/check-studio.ts` | 工作台存储、图片模板、转换与包管理的独立 HTTP 冒烟检查。 |
+| `npm run test:desktop` | `checks/check-desktop.ts` | Electron 开发版/便携版冒烟检查；会启动 Electron。 |
+| `node scripts/workflow/workflow.ts <workflow.json> [--deploy]` | `workflow/workflow.ts` | 读取 `workflows/*.json`，执行转换、校验、预览并入库；只有显式 `--deploy` 才写游戏目录。 |
+| `npm run desktop` | `desktop/desktop.ts` | 启动 Electron 开发版。 |
+| `npm run desktop:package` | `desktop/package-desktop.ts` | 构建 Windows 便携版；`--out` 或 `FOURDGEN_RELEASE_DIR` 可覆盖输出目录。 |
+| `npm run binding:inspect` | `diagnostics/inspect-avatar-binding.ts` | 保存源模型骨骼/材质归属报告。 |
+| `npm run binding:preview` | `diagnostics/preview-binding.ts` | 生成彩色归属图与示意摆臂摆腿预览。 |
+| `npm run sample:fetch` / `sample:check` / `sample:prepare` / `sample:export` | `samples/*.ts` | CC0 样本下载、导入检查、准备与导出。 |
 
 `checks/check-web.ts` 没有 npm script，在本地工作台已启动时直接运行：
 
@@ -67,7 +67,7 @@ node scripts/checks/check-web.ts
 
 ## client/
 
-- `client-test.py`：旧版客户端部署/恢复工具，写入脚本内固定路径的真实 `skin_packs`。只在用户明确要求且游戏已退出时使用；优先使用 `bun run packs` 的新管理器。`--sample` 指向 `outputs/<sample>` 中已生成的皮肤包。
+- `client-test.py`：旧版客户端部署/恢复工具，写入脚本内固定路径的真实 `skin_packs`。仅用于历史复现，日常操作优先使用 `npm run packs` 的新管理器；`--sample` 指向 `outputs/<sample>` 中已生成的皮肤包。
 - `skin-state.ts`：只读检查（`inspect`）以及快照/对比/恢复 Windows 客户端皮肤状态。快照写入忽略的 `.cache/skin-state/`；快照和恢复前会检查游戏是否运行。
 
 ## samples/
@@ -103,16 +103,16 @@ CC0 免费样本的复现链路：`fetch-sample.ts` 下载并校验 SHA256，`ch
 
 ## experiments/
 
-历史实验（客户端控制、早期元数据试验），保留作证据，不再作为日常入口。其中的脚本可能包含固定本地环境路径和旧备份时间戳。
+历史实验（客户端控制、早期元数据试验），保留作证据，不再作为日常入口。其中的脚本默认使用通用示例路径，可用 `SKIN_PACKS_ROOT` 覆盖，并保留旧备份时间戳。
 
 ## 本地忽略目录
 
-以下目录被 Git 忽略，只放本地环境数据：
+以下目录被 Git 忽略，只放本地数据：
 
 - `outputs/`：仅生成产物（转换结果、诊断输出）。基准/诊断源码在 `scripts/diagnostics/bench/`，不要放回 `outputs/`。
 - `.cache/`：下载样本、构建缓存、桌面测试与客户端备份。
 - `4dgen-data/`：统一数据目录（源模型、会话、生成结果等）。
 - `release/`：便携版构建输出。
-- `profile/`：本地环境浏览器/运行时配置。
+- `profile/`：本地浏览器/运行时配置。
 
 `skin-manager.local.json` 与 `.skin-pack-manager/` 也被忽略，但后者是皮肤包管理器的持久备份，不是缓存，清理时不要删除。

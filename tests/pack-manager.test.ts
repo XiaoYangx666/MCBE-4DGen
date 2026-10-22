@@ -11,7 +11,7 @@ async function fixture() {
   await mkdir('.cache/manager-tests', { recursive: true });
   const dir = await mkdtemp(resolve('.cache/manager-tests/case-'));
   const root = join(dir, 'skin_packs'), state = join(dir, 'state');
-  for (const slot of ['custom', 'persona', 'reference-a']) {
+  for (const slot of ['custom', 'persona', 'custom2']) {
     await mkdir(join(root, slot, 'empty'), { recursive: true });
     await writeFile(join(root, slot, 'skins.json'), '{"skins":[],"serialize_name":"Original"}');
     await writeFile(join(root, slot, 'manifest.json'), '{"original":true}');
@@ -59,7 +59,7 @@ test('library merges colliding IDs, disables individual packs, and restores exac
     await f.manager.disable('custom', 'second');
     assert.equal(await readFile(join(f.root, 'custom/manifest.json'), 'utf8'), '{"original":true}');
     assert.ok((await readdir(join(f.root, 'custom'))).includes('empty'));
-    assert.equal(await readFile(join(f.root, 'reference-a/manifest.json'), 'utf8'), '{"original":true}');
+    assert.equal(await readFile(join(f.root, 'custom2/manifest.json'), 'utf8'), '{"original":true}');
     await f.manager.restore('custom', second.backup);
     assert.equal((await validateSkinPackPath(join(f.root, 'custom'))).skins, 1);
     assert.equal((await f.manager.status()).find((s) => s.slot === 'custom')!.changedOutsideManager, false);
@@ -148,7 +148,7 @@ test('manager rejects external target edits and library tampering before overwri
     await writeFile(join(f.state, 'library/first', pack.revision, 'skin0.png'), 'tampered');
     await assert.rejects(f.manager.enable('custom', 'first'), /hash mismatch/);
     assert.equal(await readFile(join(f.root, 'custom/manifest.json'), 'utf8'), '{"original":true}');
-    await assert.rejects(f.manager.enable('../reference-a', 'first'), /not configured/);
+    await assert.rejects(f.manager.enable('../custom2', 'first'), /not configured/);
   } finally { await cleanup(f.dir); }
 });
 
@@ -385,13 +385,13 @@ test('game edits identify individual skins even when they share a PNG',async()=>
   data.skins.push({...data.skins[0],localization_name:'variant'});files['skins.json']=new TextEncoder().encode(JSON.stringify(data));
   await f.manager.importFiles('variants',files);await f.manager.enable('custom','variants');
   // Simulate an existing external game pack that references the same PNG twice.
-  const unmanaged=join(f.root,'reference-a');
+  const unmanaged=join(f.root,'custom2');
   for(const [name,bytes] of Object.entries(files)){await mkdir(dirname(join(unmanaged,name)),{recursive:true});await writeFile(join(unmanaged,name),bytes);}
-  const manager=new PackManager({...f.manager.config,slots:{reference-a:{manifestFormat:2}}});
-  await manager.editInstalled('reference-a',{skinIndex:1,skinName:'另一个皮肤'});
-  assert.notEqual((await manager.presetContents('reference-a')).skins[0]?.name,'另一个皮肤');
-  await manager.editInstalled('reference-a',{skinIndex:1,remove:true});
-  const contents=await manager.presetContents('reference-a');assert.equal(contents.skins.length,1);
+  const manager=new PackManager({...f.manager.config,slots:{custom2:{manifestFormat:2}}});
+  await manager.editInstalled('custom2',{skinIndex:1,skinName:'另一个皮肤'});
+  assert.notEqual((await manager.presetContents('custom2')).skins[0]?.name,'另一个皮肤');
+  await manager.editInstalled('custom2',{skinIndex:1,remove:true});
+  const contents=await manager.presetContents('custom2');assert.equal(contents.skins.length,1);
   assert.ok((await readFile(join(unmanaged,contents.skins[0]!.texture))).length);
  }finally{await cleanup(f.dir);}
 });

@@ -226,7 +226,7 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
       )}
       <footer>
         <span>4DGen / 本地模型工作台</span>
-        <span>文件在本地环境处理 · 启用皮肤包时会写入游戏目录</span>
+        <span>文件在本机处理 · 启用皮肤包时会写入游戏目录</span>
       </footer>
     </>
   );

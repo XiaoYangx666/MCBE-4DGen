@@ -79,10 +79,7 @@ export async function importModel(input: string, options: ImportOptions = {}): P
   options.onStage?.('正在转换模型格式…');
   if (!direct) {
     // Direct glTF/VRM inputs must not load the optional native Assimp addon.
-    const windowsBun = process.platform === 'win32' && !!process.versions.bun;
-    if (windowsBun && options.backend === 'native') throw new Error('Native Assimp is unstable on Windows Bun; use --backend wasm');
-    const assimpEntry = windowsBun ? new URL('./dist/index.mjs', import.meta.resolve('libassimp/package.json')).href : 'libassimp';
-    const { createAssimp } = await import(assimpEntry) as typeof import('libassimp');
+    const { createAssimp } = await import('libassimp');
     const assimp = await createAssimp({ backend: options.backend ?? 'auto', onLog: (log) => {
       if (log.level !== 'info') warn(log.message);
     } });

@@ -88,14 +88,14 @@
   },
   "Shino": {
     "description": "Sendagaya Shino VRoid VRM 0.x avatar",
-    "entry": "sample.vrm",
+    "entry": "Sendagaya_Shino.vrm",
     "license": "CC0 (embedded VRM meta.licenseName)",
     "credit": "VRoid Studio sample model Sendagaya Shino / pixiv",
     "source": "https://github.com/madjin/vrm-samples",
     "files": [
       {
-        "path": "sample.vrm",
-        "url": "https://raw.githubusercontent.com/madjin/vrm-samples/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/beta/sample.vrm",
+        "path": "Sendagaya_Shino.vrm",
+        "url": "https://raw.githubusercontent.com/madjin/vrm-samples/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/beta/Sendagaya_Shino.vrm",
         "bytes": 15074328,
         "sha256": "1e177c1a7b14f783a9c48395831db8616260d3bddd4154cb2784b779adca49b5"
       }

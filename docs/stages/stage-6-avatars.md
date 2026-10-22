@@ -32,11 +32,11 @@ VRM 的几何、基础蒙皮与初始 Morph 仍使用 glTF 原始数据。VRM 0 
 ## 运行
 
 ```sh
-bun run convert ./角色/模型.pmx --out ./pmx-pack
-bun run convert ./avatar.vrm --out ./vrm-pack
-bun run preview ./pmx-pack.mcpack --out ./pmx-preview.png --unlit
-bun run scripts/samples/fetch-avatar-sample.ts GeneLight
-bun run scripts/samples/fetch-avatar-sample.ts Shino
+node src/cli.ts convert ./角色/模型.pmx --out ./pmx-pack
+node src/cli.ts convert ./avatar.vrm --out ./vrm-pack
+node src/cli.ts preview ./pmx-pack.mcpack --out ./pmx-preview.png --unlit
+node scripts/samples/fetch-avatar-sample.ts GeneLight
+node scripts/samples/fetch-avatar-sample.ts Shino
 ```
 
 下载清单 scripts/samples/avatar-samples.json 固定上游修订、每个文件大小及 SHA256，缓存存在时也复核，拒绝被改动的文件。样本和导出二进制不进入代码仓库。
@@ -53,7 +53,7 @@ CG-CA Gene (c) 2023 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avata
 
 ### Sendagaya Shino / VRM 0.x
 
-来源：[madjin/vrm-samples](https://github.com/madjin/vrm-samples)，修订 e16eb187100149a315ad92c3c9968f1d5baa6c7d，vroid/beta/sample.vrm。实际文件的 VRM meta 中 title 为 Sendagaya Shino，licenseName 为 CC0；不是依据仓库总许可推断所有模型均为 CC0。真实样本含31,211个三角形。
+来源：[madjin/vrm-samples](https://github.com/madjin/vrm-samples)，修订 e16eb187100149a315ad92c3c9968f1d5baa6c7d，vroid/beta/Sendagaya_Shino.vrm。实际文件的 VRM meta 中 title 为 Sendagaya Shino，licenseName 为 CC0；不是依据仓库总许可推断所有模型均为 CC0。真实样本含31,211个三角形。
 
 ### 导出结果
 

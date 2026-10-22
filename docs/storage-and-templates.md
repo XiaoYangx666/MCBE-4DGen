@@ -21,7 +21,7 @@
 
 也可用 `FOURDGEN_DATA_DIR` 覆盖目录；此时网页不修改路径。通过环境变量自行换位置时，请先整体复制数据并保留 `storage.local.json` 的迁移流程，或直接使用网页搬家。不要直接只修改路径指向空目录并删除旧数据。
 
-启动时复制旧的 `.cache/model-library`、`.cache/web-uploads` 与配置中的皮肤包管理目录，保留原件。旧的外部模型引用会把模型及相关贴图复制进 `sources/local/`，保留模型 ID、配置和版本关联。源文件已经丢失的条目仍可重新定位，重新打开后归档。新导入的本地环境模型会复制所选模型及目录内贴图/资源；不复制其他模型、符号链接、`.git`、`node_modules`、`.cache`。文件上限为 2000 个、256 MB，建议模型放在独立目录中。
+启动时复制旧的 `.cache/model-library`、`.cache/web-uploads` 与配置中的皮肤包管理目录，保留原件。旧的外部模型引用会把模型及相关贴图复制进 `sources/local/`，保留模型 ID、配置和版本关联。源文件已经丢失的条目仍可重新定位，重新打开后归档。新导入的本地模型会复制所选模型及目录内贴图/资源；不复制其他模型、符号链接、`.git`、`node_modules`、`.cache`。文件上限为 2000 个、256 MB，建议模型放在独立目录中。
 
 本地皮肤包保存、整理与导出不要求配置 Minecraft。配置游戏目录后，同一份本地收藏可加入游戏，无需重新导入。重启程序后再更改游戏安装配置。
 
@@ -38,10 +38,10 @@
 ## 验证
 
 ```sh
-bun run check
-bun run check:web
-bun run test
-bun run test:studio
+npm run check
+npm run check:web
+npm run test
+npm run test:studio
 ```
 
 `test:studio` 使用临时数据目录和未配置游戏的本地收藏，验证图片模板、源模型归档、命名保存、源图保存、ZIP 下载及游戏写入阻止，结束后删除测试数据。

@@ -2,6 +2,27 @@
   "name": "bedrock-poly-skin-converter",
   "version": "0.0.1",
   "private": true,
+  "description": "把 PMX/VRM/GLB/OBJ 等模型转换为 Minecraft Bedrock 4D 皮肤包，并提供本地工作台与可恢复的皮肤包管理。",
+  "license": "GPL-3.0-only",
+  "author": "XiaoYangx666",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/XiaoYangx666/MCBE-4DGen.git"
+  },
+  "homepage": "https://github.com/XiaoYangx666/MCBE-4DGen#readme",
+  "bugs": {
+    "url": "https://github.com/XiaoYangx666/MCBE-4DGen/issues"
+  },
+  "keywords": [
+    "minecraft",
+    "bedrock",
+    "skin-pack",
+    "poly-mesh",
+    "pmx",
+    "vrm",
+    "gltf",
+    "electron"
+  ],
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
@@ -55,7 +76,6 @@
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
   },
-  "packageManager": "bun@1.4.3",
   "main": "desktop/main.cjs",
   "productName": "4DGen"
 }

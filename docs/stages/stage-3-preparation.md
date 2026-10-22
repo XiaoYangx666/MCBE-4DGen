@@ -1,6 +1,6 @@
 # 第 3C 阶段：初始姿态与模型变换
 
-当前统一使用 Bun 1.4.3。脚本、CLI 子进程和自动化测试均不启动 Node；历史阶段的 Node 验证记录保留作历史证据。
+当前统一使用 Node 24+ 与 npm。历史阶段的 Bun 验证记录保留作历史证据。
 
 ## 实现
 
@@ -51,11 +51,11 @@
 真实模型经静态准备→减面→定高→图集→GLB 写出→重新导入，检查高度、最低 Y、面数、图集及无 Skin。目标高度设为 32；ToyCar 读回高度约 31.9999994，误差约 0.0000006，最低 Y 约 0.0000006。
 
 ```sh
-bun install --frozen-lockfile
-bun run check
-bun test
-bun run scripts/samples/prepare-sample.ts ToyCar 32
-bun run scripts/samples/prepare-sample.ts Avocado 32
+npm ci
+npm run check
+npm run test
+node scripts/samples/prepare-sample.ts ToyCar 32
+node scripts/samples/prepare-sample.ts Avocado 32
 ```
 
 样本脚本写出 `*-prepared.glb`、`*-prepared-atlas.png` 和 `*-prepared-report.json` 到忽略的缓存目录。CLI convert 尚未接入，此脚本用于当前阶段复现。

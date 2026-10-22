@@ -246,7 +246,7 @@ export class PackManager {
     const warnings: string[] = [];
     for (const [name, bytes] of Object.entries(files)) if (name.endsWith('.png') && name !== 'pack_icon.png') {
       const image = await sharp(bytes).metadata();
-      if (image.width! > 128 || image.height! > 128) warnings.push(`${name}: ${image.width}x${image.height} exceeds the 128px size verified in this client; reconvert to 128 before enabling`);
+      if (image.width! > 128 || image.height! > 128) warnings.push(`${name}: ${image.width}x${image.height} exceeds the 128x128 size displayed by this client; reconvert to 128 before enabling`);
     }
     const revision = randomUUID();
     await writeTree(this.revisionPath(id, revision), { files, directories });
