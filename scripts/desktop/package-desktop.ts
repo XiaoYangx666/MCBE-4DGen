@@ -44,7 +44,7 @@ try{
  await build({root:join(root,'web'),configFile:false,logLevel:'warn',build:{outDir:join(payload,'web-dist'),emptyOutDir:true}});
  console.log('Installing production dependencies…');
  const npmBinary=process.env.NPM_BINARY??(process.platform==='win32'?'npm.cmd':'npm');
- const install=spawn(npmBinary,['ci','--omit=dev','--ignore-scripts'],{cwd:payload,stdio:'inherit'});
+ const install=spawn(npmBinary,['ci','--omit=dev','--ignore-scripts'],{cwd:payload,stdio:'inherit',shell:process.platform==='win32'});
  if(await waitForExit(install)!==0)throw Error('生产依赖安装失败');
  const svg=await readFile(join(root,'desktop/icon.svg'));
  const png=await sharp(svg).resize(256,256).png().toBuffer();
