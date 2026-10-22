@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   PersonaProfileRecipe,
   PersonaRecipe,
-} from "../src/persona-recipe";
-import { api, post } from "./api";
+} from "../../src/persona-recipe";
+import { api, post } from "../lib/api";
 import type {
   GameSkinBackup,
   GameSkinBackupReason,

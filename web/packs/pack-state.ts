@@ -1,4 +1,4 @@
-import type { ActivePack } from "../src/pack-types.ts";
+import type { ActivePack } from "../../src/pack-types.ts";
 
 export function findActivePack(
   active: ActivePack[] | undefined,

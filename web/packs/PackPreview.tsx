@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { decodeGeometryTriangles } from "../src/geometry-validator";
-import { createDemandRender } from "./demand-render";
+import { decodeGeometryTriangles } from "../../src/geometry-validator";
+import { createDemandRender } from "../workbench/demand-render";
 import type { Scene } from "./pack-types";
-import { bindViewportAppearance } from "./viewport-appearance";
+import { bindViewportAppearance } from "../workbench/viewport-appearance";
 
 /** Full-size rotatable preview of a library pack's first skin. */
 export function PackPreview({

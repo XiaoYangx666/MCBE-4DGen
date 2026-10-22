@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, post } from "./api";
+import { api, post } from "../lib/api";
 import { ModelSources } from "./ModelSources";
-import { Viewer } from "./Viewer";
-import { PackPreview } from "./PackPreview";
-import type { LibraryPack, Packs } from "./pack-types";
-import type { Session } from "./types";
+import { Viewer } from "../workbench/Viewer";
+import { PackPreview } from "../packs/PackPreview";
+import type { LibraryPack, Packs } from "../packs/pack-types";
+import type { Session } from "../workbench/types";
 
 type Model = {
   sourceAvailable?: boolean;

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { pages, type PageKey } from "./navigation";
+import { pages, type PageKey } from "../lib/navigation";
 
 export function WebNav({
   page,

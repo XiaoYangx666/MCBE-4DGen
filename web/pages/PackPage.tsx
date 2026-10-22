@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { api, post } from "./api";
-import { ContextMenu, type MenuItem } from "./ContextMenu";
-import { GameSkinsPanel } from "./GameSkinsPanel";
-import { InlineName } from "./InlineName";
+import { api, post } from "../lib/api";
+import { ContextMenu, type MenuItem } from "../ui/ContextMenu";
+import { GameSkinsPanel } from "../packs/GameSkinsPanel";
+import { InlineName } from "../ui/InlineName";
 import {
   findActivePack,
   isPackFullyInstalled,
   isPackOutdated,
   isSkinInstalled,
-} from "./pack-state";
-import { PackPreview } from "./PackPreview";
-import type { PersonaProfileRecipe } from "../src/persona-recipe";
-import type { Contents, LibraryPack, Packs, SkinItem } from "./pack-types";
+} from "../packs/pack-state";
+import { PackPreview } from "../packs/PackPreview";
+import type { PersonaProfileRecipe } from "../../src/persona-recipe";
+import type { Contents, LibraryPack, Packs, SkinItem } from "../packs/pack-types";
 
 const gameSlotName = "custom";
 

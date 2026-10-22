@@ -6,7 +6,7 @@ import {
   isPackFullyInstalled,
   isPackOutdated,
   isSkinInstalled,
-} from "../web/pack-state.ts";
+} from "../web/packs/pack-state.ts";
 
 test("active pack helpers distinguish whole-pack and selected-skin installs", () => {
   const active = [

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
-import { PackPreview } from "./PackPreview";
-import { SaveSkinDialog } from "./SaveSkinDialog";
+import { api } from "../lib/api";
+import { PackPreview } from "../packs/PackPreview";
+import { SaveSkinDialog } from "../packs/SaveSkinDialog";
 
 type TemplateKey = "image";
 

@@ -1,4 +1,4 @@
-import type { GameSkinBackup } from "../src/game-skins";
+import type { GameSkinBackup } from "../../src/game-skins";
 
 export type {
   CompactGameSkin,
@@ -8,7 +8,7 @@ export type {
   GameSkinBackup,
   GameSkinBackupKind,
   GameSkinBackupReason,
-} from "../src/game-skins";
+} from "../../src/game-skins";
 
 export type GameSkinBackupsResponse = {
   backups: GameSkinBackup[];

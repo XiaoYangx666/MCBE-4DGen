@@ -1,4 +1,4 @@
-import type { PersonaProfileRecipe } from "../src/persona-recipe";
+import type { PersonaProfileRecipe } from "../../src/persona-recipe";
 
 function kindLabel(kind: PersonaProfileRecipe["kind"]) {
   if (kind === "classic") return "经典皮肤";
