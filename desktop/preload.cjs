@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('desktop',Object.freeze({
   palette:value=>ipcRenderer.invoke('desktop:palette',value),
   appearance:value=>ipcRenderer.invoke('desktop:appearance',value),
   restart:()=>ipcRenderer.invoke('desktop:restart'),
+  copyText:text=>ipcRenderer.invoke('desktop:copy-text',String(text)),
 }));

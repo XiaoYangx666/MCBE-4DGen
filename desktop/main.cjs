@@ -1,4 +1,4 @@
-const {app,BrowserWindow,dialog,ipcMain,shell,Menu,nativeTheme,screen}=require('electron');
+const {app,BrowserWindow,clipboard,dialog,ipcMain,shell,Menu,nativeTheme,screen}=require('electron');
 const {spawn}=require('node:child_process');
 const {join,resolve}=require('node:path');
 const {randomBytes}=require('node:crypto');
@@ -19,7 +19,7 @@ if(!gotLock)app.quit();
 app.on('second-instance',()=>{if(window){if(window.isMinimized())window.restore();window.show();window.focus();}});
 function trusted(event){if(!window||event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame||!origin||new URL(event.senderFrame.url).origin!==origin)throw Error('Untrusted desktop request');}
 function stopBackend(){if(backend&&!backend.killed)backend.kill();}
-function external(url){try{const target=new URL(url);if(['https:','http:'].includes(target.protocol))void shell.openExternal(target.href);}catch{}}
+async function external(url){try{const target=new URL(url);if(!['https:','http:'].includes(target.protocol))return;try{await shell.openExternal(target.href);}catch{clipboard.writeText(target.href);if(window)dialog.showMessageBox(window,{type:'warning',message:'无法打开浏览器',detail:'链接已复制到剪贴板，请手动粘贴到浏览器：\n'+target.href});}}catch{}}
 async function start(){
   const appRoot=app.getAppPath();
   const root=packaged?join(resourceRoot,'payload'):resolve(appRoot);
@@ -96,6 +96,7 @@ async function start(){
     const result=await dialog.showOpenDialog(window,{title:value.kind==='game'?'选择 Minecraft skin_packs 目录':'选择数据目录',defaultPath:value.initial||app.getPath('documents'),properties:['openDirectory','createDirectory'],buttonLabel:'选择此文件夹'});
     return {path:result.canceled?null:result.filePaths[0]??null};
   });
+  ipcMain.handle('desktop:copy-text',(event,text)=>{trusted(event);clipboard.writeText(String(text).slice(0,4096));return true;});
   ipcMain.handle('desktop:restart',event=>{trusted(event);setImmediate(()=>{app.relaunch();app.quit();});return true;});
   const template=[{label:'4DGen',submenu:[{label:'关于 4DGen',click:()=>window.webContents.send('desktop:about')},{type:'separator'},{label:'设置',click:()=>void window.loadURL(origin+'/#/settings')},{label:'重新启动',click:()=>{app.relaunch();app.quit();}},{type:'separator'},{role:'quit',label:'退出'}]},{label:'视图',submenu:[{role:'reload',label:'刷新界面'},{role:'togglefullscreen',label:'全屏'},{role:'resetzoom',label:'实际大小'},{role:'zoomin',label:'放大'},{role:'zoomout',label:'缩小'},...(!packaged?[{role:'toggleDevTools',label:'开发者工具'}]:[])]}];
   Menu.setApplicationMenu(null);
