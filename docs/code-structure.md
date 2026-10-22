@@ -59,7 +59,12 @@ bun run test:node
   - `models.ts`：模型库、打开/重新定位、示例与预览。
   - `uploads.ts`：ZIP/文件夹上传与包内模型选择。
   - `convert.ts`：转换任务与结果资源。
-  - `packs.ts`：皮肤包库、预设槽位、导入导出和部署操作。
+  - `packs/`：皮肤包与角色相关的路由，按域拆分并由 `index.ts` 组合。
+    - `index.ts`：保持原有匹配顺序，导出 `handlePacks`。
+    - `shared.ts`：游戏目录守卫集合与自定义槽位的自动备份。
+    - `persona.ts`：角色/预设图标、角色导出与备份。
+    - `library.ts`：本地皮肤包库、预设槽位、导入导出、预览、安装与删除。
+    - `game.ts`：游戏槽位的启用、停用、恢复、修复与已安装皮肤编辑。
   - `templates.ts`：图片皮肤模板。
   - `static.ts`：构建后的前端静态文件。
 - `model-library.ts`：模型库条目的增删改查与编辑配置校验。
