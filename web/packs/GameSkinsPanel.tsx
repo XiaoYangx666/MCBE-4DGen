@@ -221,6 +221,9 @@ export function GameSkinsPanel({
 
         <div className="game-skins-backups">
           <div className="pane-caption">备份记录（{backups.length}）</div>
+          <p className="pack-warn">
+            自动备份保留最近 30 个，手动备份保留最近 100 个。
+          </p>
           {backups.length ? (
             <table>
               <thead>
