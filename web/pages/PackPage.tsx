@@ -49,6 +49,7 @@ export function PackPage() {
     skin,
     sourceModel,
     gameReady,
+    gamePending,
     skinInstalled,
     packOutdated,
     isGameActive,
@@ -70,6 +71,7 @@ export function PackPage() {
     deletePack,
     addSkins,
     installSkin,
+    recoverGame,
     menuActions,
     menuItemsFor,
     openPack,
@@ -190,6 +192,18 @@ export function PackPage() {
                 />
               ) : (
                 <>
+                  {gamePending && (
+                    <div className="pack-message error">
+                      上次写入游戏未完成，已暂停新的安装和更新。
+                      <button
+                        type="button"
+                        disabled={!!busy}
+                        onClick={recoverGame}
+                      >
+                        恢复中断的操作
+                      </button>
+                    </div>
+                  )}
                   <PackHeader
                     pack={{ row, contents }}
                     runtime={{ busy, locked, editing }}
