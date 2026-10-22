@@ -150,6 +150,7 @@ export function usePackPage() {
     gameState?.exists !== false &&
     !gameState?.pending &&
     !gameState?.changedOutsideManager;
+  const gamePending = !!gameState?.pending;
   const activeEntry = (packId: string) =>
     findActivePack(gameState?.active, packId);
   const skinInstalled = (packId: string, index: number) =>
@@ -453,6 +454,13 @@ export function usePackPage() {
       "已安装到游戏",
     );
   }
+  function recoverGame() {
+    void run(
+      "正在恢复…",
+      () => post("/api/packs/recover", { slot: gameSlotName }),
+      "已恢复中断的操作",
+    );
+  }
 
   const menuActions: PackMenuActions = {
     renamePack: editPack,
@@ -592,6 +600,7 @@ export function usePackPage() {
     skin,
     sourceModel,
     gameReady,
+    gamePending,
     skinInstalled,
     packOutdated,
     isGameActive,
@@ -613,6 +622,7 @@ export function usePackPage() {
     deletePack,
     addSkins,
     installSkin,
+    recoverGame,
     menuActions,
     menuItemsFor,
     openPack,

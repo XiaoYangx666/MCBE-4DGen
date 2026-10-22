@@ -755,6 +755,7 @@ button.packs-chip:hover:not(:disabled) { background: var(--selected); }
   overflow-wrap: anywhere;
 }
 .pack-message.error { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
+.pack-message button { margin-left:10px; padding:4px 8px; border:1px solid currentColor; border-radius:4px; background:transparent; color:inherit; font-size:10px; }
 .packs-main {
   flex: 1;
   min-height: 0;
