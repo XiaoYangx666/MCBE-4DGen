@@ -8,6 +8,7 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { decodeGeometryTriangles } from "../../src/geometry-validator";
 import type { BedrockGeometryFile } from "../../src/bedrock-types";
 import { createPosePreview } from "./pose-preview";
+import type { HumanoidProfile } from "../../src/humanoid";
 import type { Result, Session } from "./types";
 import { api } from "../lib/api";
 import { preparePreviewMaterial } from "./preview-material";
@@ -40,7 +41,7 @@ export function Viewer({
   unlit: boolean;
   focus: string;
   solo: string | null;
-  profile: any;
+  profile: HumanoidProfile;
   height: number;
   binding: string;
   onSelect: (name: string) => void;

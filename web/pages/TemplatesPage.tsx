@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import type { LibraryPack } from "../packs/pack-types";
 import { PackPreview } from "../packs/PackPreview";
 import { SaveSkinDialog } from "../packs/SaveSkinDialog";
 
@@ -44,7 +45,7 @@ export function TemplatesPage() {
     setBusy(true);
     void (async () => {
       const packs = await api("/api/packs"),
-        pack = packs.library?.find((p: any) => p.id === id);
+        pack = packs.library?.find((pack: LibraryPack) => pack.id === id);
       if (!pack || pack.meta?.template !== "image")
         throw Error("找不到图片模板的源文件");
       const response = await fetch(

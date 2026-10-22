@@ -1,159 +1,112 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, post } from "../lib/api";
 import { ModelSources } from "./ModelSources";
-import { Modal } from "../ui/Modal";
-import { findActivePack } from "../packs/pack-state";
-import { Viewer } from "../workbench/Viewer";
 import { PackPreview } from "../packs/PackPreview";
+import { Viewer } from "../workbench/Viewer";
+import { findActivePack } from "../packs/pack-state";
 import type { LibraryPack, Packs } from "../packs/pack-types";
+import type { EditSettings } from "../../src/api-types";
 import type { Session } from "../workbench/types";
-
-type Model = {
-  sourceAvailable?: boolean;
-  id: string;
-  name: string;
-  path: string;
-  created: string;
-  updated: string;
-  previewKey?: string;
-  settings?: any;
-  profile?: any;
-  packIds?: string[];
-  stats?: { triangles: number; materials: number; bytes: number };
-};
-type Row = {
-  id: string;
-  name: string;
-  model: Model | null;
-  packs: LibraryPack[];
-};
-const when = (v: string) =>
-  new Date(v).toLocaleString("zh-CN", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-const num = (v?: number) => (v === undefined ? "—" : v.toLocaleString("zh-CN"));
-
-/** Show the backend's current import stage plus elapsed time. */
-function BusyStatus({ label }: { label: string }) {
-  const [activity, setActivity] = useState<{
-    label: string;
-    startedAt: number;
-  } | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    let cancelled = false;
-    const poll = () =>
-      api("/api/activity")
-        .then((value) => {
-          if (!cancelled) setActivity(value.activity ?? null);
-        })
-        .catch(() => {});
-    void poll();
-    const poller = setInterval(poll, 600);
-    const ticker = setInterval(() => setNow(Date.now()), 500);
-    return () => {
-      cancelled = true;
-      clearInterval(poller);
-      clearInterval(ticker);
-    };
-  }, [label]);
-  const stage = activity?.label ?? label;
-  const seconds = activity
-    ? Math.max(0, Math.round((now - activity.startedAt) / 1000))
-    : 0;
-  return (
-    <p role="status">
-      {stage}
-      {seconds >= 1 ? `（${seconds} 秒）` : ""}
-    </p>
-  );
-}
+import { DeleteModelDialog } from "../library/DeleteModelDialog";
+import { ImportModelDialog } from "../library/ImportModelDialog";
+import { ModelListPane } from "../library/ModelListPane";
+import { RelinkModelDialog } from "../library/RelinkModelDialog";
+import { RenameModelDialog } from "../library/RenameModelDialog";
+import {
+  errorMessage,
+  num,
+  when,
+  type Model,
+  type Row,
+} from "../library/model-types";
 
 export function LibraryPage({
   onOpen,
 }: {
-  onOpen: (s: Session, settings?: any) => void;
+  onOpen: (session: Session, settings?: Partial<EditSettings>) => void;
 }) {
-  const [models, setModels] = useState<Model[]>([]),
-    [packs, setPacks] = useState<Packs | null>(null);
-  const [loading, setLoading] = useState(true),
-    [busy, setBusy] = useState(""),
-    [error, setError] = useState(""),
-    [notice, setNotice] = useState("");
-  const [query, setQuery] = useState(""),
-    [sort, setSort] = useState("recent"),
-    [filter, setFilter] = useState("all");
+  const [models, setModels] = useState<Model[]>([]);
+  const [packs, setPacks] = useState<Packs | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("recent");
+  const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState(
     new URLSearchParams(location.hash.split("?")[1]).get("model") ?? "",
   );
-  const [tab, setTab] = useState("source"),
-    [version, setVersion] = useState("");
-  const [rename, setRename] = useState<string | null>(null),
-    [name, setName] = useState("");
-  const [deleting, setDeleting] = useState<Row | null>(null),
-    [removeVersion, setRemoveVersion] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false),
-    [path, setPath] = useState(""),
-    [candidates, setCandidates] = useState<string[]>([]),
-    [main, setMain] = useState(""),
-    [pending, setPending] = useState("");
+  const [tab, setTab] = useState("source");
+  const [version, setVersion] = useState("");
   const [linkTarget, setLinkTarget] = useState("");
-  const [deleteSource, setDeleteSource] = useState(true);
   const [sources, setSources] = useState(false);
-  const [relink, setRelink] = useState(false),
-    [sourcePath, setSourcePath] = useState("");
-  const files = useRef<HTMLInputElement>(null),
-    folder = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [rename, setRename] = useState<Model | null>(null);
+  const [deleting, setDeleting] = useState<Model | null>(null);
+  const [removeVersion, setRemoveVersion] = useState<string | null>(null);
+  const [relink, setRelink] = useState<Model | null>(null);
+
   async function refresh() {
-    const [m, p] = await Promise.all([
-      api("/api/models"),
-      api("/api/packs").catch((e) => ({ configured: false, error: String(e) })),
+    const [modelList, packList] = await Promise.all([
+      api<Model[]>("/api/models"),
+      api<Packs>("/api/packs").catch((reason) => ({
+        configured: false,
+        error: String(reason),
+      })),
     ]);
-    setModels(m);
-    setPacks(p);
+    setModels(modelList);
+    setPacks(packList);
     setLoading(false);
   }
+
   useEffect(() => {
-    void refresh().catch((e) => {
-      setError(String(e));
+    void refresh().catch((reason) => {
+      setError(String(reason));
       setLoading(false);
     });
   }, []);
+
   const rows = useMemo(() => {
     const byId = new Map(
-      models.map((m) => [
-        m.id,
-        { id: m.id, name: m.name, model: m, packs: [] as LibraryPack[] },
+      models.map((model) => [
+        model.id,
+        {
+          id: model.id,
+          name: model.name,
+          model,
+          packs: [] as LibraryPack[],
+        },
       ]),
     );
-    for (const p of packs?.library ?? []) {
-      if (p.removed || p.draft) continue;
-      const explicit = models.find((m) => m.packIds?.includes(p.id));
-      let row = byId.get(explicit?.id ?? p.meta?.modelId ?? "");
-      if (!row && !p.meta?.modelId) {
-        const matches = models.filter((m) =>
-          [m.name, m.path.split(/[\\/]/).pop()].includes(p.meta?.source ?? ""),
+    for (const pack of packs?.library ?? []) {
+      if (pack.removed || pack.draft) continue;
+      const explicit = models.find((model) => model.packIds?.includes(pack.id));
+      let row = byId.get(explicit?.id ?? pack.meta?.modelId ?? "");
+      if (!row && !pack.meta?.modelId) {
+        const matches = models.filter((model) =>
+          [model.name, model.path.split(/[\\/]/).pop()].includes(
+            pack.meta?.source ?? "",
+          ),
         );
-        if (matches.length === 1) row = byId.get(matches[0].id);
+        if (matches.length === 1) row = byId.get(matches[0]!.id);
       }
-      if (row) row.packs.push(p);
+      if (row) row.packs.push(pack);
     }
     return [...byId.values()];
   }, [models, packs]);
+
   const visible = useMemo(
     () =>
       rows
         .filter(
-          (r) =>
+          (row) =>
             (!query ||
-              `${r.name} ${r.model?.path ?? ""} ${r.packs.map((p) => p.id).join(" ")}`
+              `${row.name} ${row.model?.path ?? ""} ${row.packs.map((pack) => pack.id).join(" ")}`
                 .toLowerCase()
                 .includes(query.toLowerCase())) &&
-            (filter !== "source" || !r.packs.length) &&
-            (filter !== "skin" || r.packs.length),
+            (filter !== "source" || !row.packs.length) &&
+            (filter !== "skin" || row.packs.length),
         )
         .sort((a, b) =>
           sort === "name"
@@ -164,8 +117,10 @@ export function LibraryPage({
         ),
     [rows, query, sort, filter],
   );
-  const row = visible.find((r) => r.id === selected) ?? visible[0] ?? null;
-  const pack = row?.packs.find((p) => p.id === version) ?? row?.packs[0];
+  const row = visible.find((item) => item.id === selected) ?? visible[0] ?? null;
+  const pack =
+    row?.packs.find((item) => item.id === version) ?? row?.packs[0];
+
   useEffect(() => {
     setTab(
       new URLSearchParams(location.hash.split("?")[1]).get("tab") === "skins"
@@ -175,53 +130,35 @@ export function LibraryPage({
           : "skins",
     );
     setVersion("");
-    setName(row?.name ?? "");
   }, [row?.id]);
-  async function run(label: string, fn: () => Promise<void>) {
+
+  async function run(label: string, action: () => Promise<void>) {
     setBusy(label);
     setError("");
     setNotice("");
     try {
-      await fn();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      await action();
+    } catch (reason) {
+      setError(errorMessage(reason));
     } finally {
       setBusy("");
     }
   }
-  async function open(m: Model, settings?: any) {
+
+  async function open(model: Model, settings?: Partial<EditSettings>) {
     await run("正在打开模型…", async () => {
-      onOpen(await post("/api/models/open", { id: m.id }), settings);
+      onOpen(await post<Session>("/api/models/open", { id: model.id }), settings);
     });
   }
-  function acceptImport(data: any) {
-    if (data.pending || data.local) {
-      setCandidates(data.candidates);
-      setMain(
-        data.candidates.find((c: string) => !/(weapon|闭眼)/i.test(c)) ??
-          data.candidates[0],
-      );
-      setPending(data.pending ?? "");
-    } else {
-      setImporting(false);
-      onOpen(data);
-    }
+
+  function active(packId: string) {
+    return (
+      packs?.status
+        ?.filter((status) => findActivePack(status.active, packId))
+        .map((status) => status.slot) ?? []
+    );
   }
-  async function upload(list: FileList | null) {
-    if (!list?.length) return;
-    await run("正在导入文件…", async () => {
-      const form = new FormData();
-      for (const f of Array.from(list)) {
-        form.append("files", f);
-        form.append("paths", f.webkitRelativePath || f.name);
-      }
-      acceptImport(await api("/api/upload", { method: "POST", body: form }));
-    });
-  }
-  const active = (id: string) =>
-    packs?.status
-      ?.filter((status) => findActivePack(status.active, id))
-      .map((status) => status.slot) ?? [];
+
   useEffect(() => {
     const change = () => {
       const params = new URLSearchParams(location.hash.split("?")[1]);
@@ -231,29 +168,33 @@ export function LibraryPage({
     window.addEventListener("hashchange", change);
     return () => window.removeEventListener("hashchange", change);
   }, []);
-  const choose = (r: Row) => {
-    setSelected(r.id);
-    location.hash = "#/models?model=" + encodeURIComponent(r.id);
-  };
+
+  function choose(next: Row) {
+    setSelected(next.id);
+    location.hash = "#/models?model=" + encodeURIComponent(next.id);
+  }
+
+  async function refreshAfterDelete() {
+    setDeleting(null);
+    setRemoveVersion(null);
+    setSelected("");
+    try {
+      await refresh();
+      setNotice("已删除");
+    } catch (reason) {
+      setError(errorMessage(reason));
+    }
+  }
+
   return (
     <div className="page-content library-page">
       <div className="page-heading actions-only">
         <div className="button-row">
-          <button
-            disabled={!!busy}
-            onClick={() => void run("刷新中…", refresh)}
-          >
+          <button disabled={!!busy} onClick={() => void run("刷新中…", refresh)}>
             刷新
           </button>
           <button onClick={() => setSources(true)}>获取模型 ↗</button>
-          <button
-            className="primary"
-            onClick={() => {
-              setImporting(true);
-              setCandidates([]);
-              setPending("");
-            }}
-          >
+          <button className="primary" onClick={() => setImporting(true)}>
             ＋ 导入模型
           </button>
         </div>
@@ -277,692 +218,386 @@ export function LibraryPage({
       {loading ? (
         <div className="empty-state">正在读取本地模型…</div>
       ) : (
-        <>
-          <div className="model-browser">
-            <aside className="model-list">
-              <div className="model-list-tools">
-                <div className="library-toolbar">
-                  <input
-                    aria-label="搜索模型"
-                    placeholder="搜索模型名称、路径或皮肤版本…"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                  <select
-                    aria-label="筛选模型"
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                  >
-                    <option value="all">全部源模型</option>
-                    <option value="source">未生成皮肤版本</option>
-                    <option value="skin">有皮肤版本</option>
-                  </select>
-                  <select
-                    aria-label="模型排序"
-                    value={sort}
-                    onChange={(e) => setSort(e.target.value)}
-                  >
-                    <option value="recent">最近编辑</option>
-                    <option value="name">名称排序</option>
-                  </select>
-                  <span>{visible.length} 项</span>
-                </div>
-              </div>
-              <div className="model-list-scroll">
-                {visible.map((r) => (
-                  <button
-                    className={
-                      "model-row" + (r.id === row?.id ? " selected" : "")
-                    }
-                    key={r.id}
-                    onClick={() => choose(r)}
-                  >
-                    <span className="model-avatar small">
-                      {r.name.replace(/[【】]/g, "").slice(0, 1)}
-                    </span>
-                    <span className="model-row-copy">
-                      <b>{r.name}</b>
-                      <small>
-                        {r.model
-                          ? `${num(r.model.stats?.triangles)} 面`
-                          : "待关联源模型"}{" "}
-                        · {r.packs.length} 版本
-                        {r.model?.sourceAvailable === false
-                          ? " · 源文件丢失"
-                          : ""}
-                      </small>
-                    </span>
-                    {r.packs.some((p) => active(p.id).length > 0) && (
-                      <span className="status-dot" title="已启用" />
-                    )}
-                  </button>
-                ))}
-                {!visible.length && (
-                  <div className="empty-state">
-                    <h3>{rows.length ? "没有匹配的模型" : "模型库为空"}</h3>
+        <div className="model-browser">
+          <ModelListPane
+            rows={rows}
+            visible={visible}
+            selectedId={row?.id}
+            query={query}
+            filter={filter}
+            sort={sort}
+            onQueryChange={setQuery}
+            onFilterChange={setFilter}
+            onSortChange={setSort}
+            onChoose={choose}
+            activeSlots={active}
+          />
+          <section className="model-detail">
+            {row ? (
+              <>
+                <div className="detail-heading">
+                  <div>
+                    <h2>{row.name}</h2>
                     <p>
-                      {rows.length
-                        ? "试试其他名称或筛选条件。"
-                        : "导入模型后会显示在这里。"}
+                      {row.model
+                        ? `最近编辑 ${when(row.model.updated)}`
+                        : "历史皮肤版本 · 可关联源模型"}
                     </p>
                   </div>
+                  <div className="button-row">
+                    {row.model && (
+                      <>
+                        <button
+                          disabled={!!busy}
+                          onClick={() => setRename(row.model)}
+                        >
+                          重命名
+                        </button>
+                        <button
+                          className="danger-button"
+                          disabled={!!busy}
+                          onClick={() => setDeleting(row.model)}
+                        >
+                          删除模型
+                        </button>
+                        <button
+                          className="primary"
+                          disabled={!!busy}
+                          onClick={() => void open(row.model!)}
+                        >
+                          继续编辑 →
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {row.model?.sourceAvailable === false && (
+                  <div className="pack-message error">
+                    源文件已移动或删除。重新定位文件后可以继续编辑，已生成的皮肤仍可使用。
+                    <button
+                      disabled={!!busy}
+                      onClick={() => setRelink(row.model!)}
+                    >
+                      重新定位源文件
+                    </button>
+                  </div>
                 )}
-              </div>
-            </aside>
-            <section className="model-detail">
-              {row ? (
-                <>
-                  <div className="detail-heading">
-                    <div>
-                      <h2>{row.name}</h2>
-                      <p>
-                        {row.model
-                          ? `最近编辑 ${when(row.model.updated)}`
-                          : "历史皮肤版本 · 可关联源模型"}
-                      </p>
-                    </div>
-                    <div className="button-row">
-                      {row.model && (
-                        <>
-                          <button
-                            disabled={!!busy}
-                            onClick={() => {
-                              setName(row.name);
-                              setRename(row.id);
-                            }}
-                          >
-                            重命名
+                <div className="detail-tabs">
+                  <button
+                    className={tab === "source" ? "active" : ""}
+                    disabled={!row.model}
+                    onClick={() => setTab("source")}
+                  >
+                    源模型
+                  </button>
+                  <button
+                    className={tab === "skins" ? "active" : ""}
+                    onClick={() => setTab("skins")}
+                  >
+                    皮肤版本 <span>{row.packs.length}</span>
+                  </button>
+                  <button
+                    className={tab === "info" ? "active" : ""}
+                    onClick={() => setTab("info")}
+                  >
+                    模型信息
+                  </button>
+                </div>
+                {tab === "source" && row.model && (
+                  <>
+                    <div className="library-preview">
+                      {row.model.previewKey ? (
+                        <Viewer
+                          session={{
+                            id: row.id,
+                            name: row.name,
+                            profile: null,
+                            materials: [],
+                            warnings: [],
+                          }}
+                          previewUrl={"/api/models/" + row.id + "/preview"}
+                          result={null}
+                          mode="source"
+                          excluded={[]}
+                          wire={false}
+                          unlit={true}
+                          focus="all"
+                          solo={null}
+                          profile={
+                            row.model.settings?.profile ?? row.model.profile ?? {}
+                          }
+                          height={32}
+                          binding="static"
+                          onSelect={() => {}}
+                        />
+                      ) : (
+                        <div className="empty-state">
+                          <p>打开工作台后即可生成模型预览。</p>
+                          <button onClick={() => void open(row.model!)}>
+                            打开模型
                           </button>
-                          <button
-                            className="danger-button"
-                            disabled={!!busy}
-                            onClick={() => {
-                              setDeleteSource(true);
-                              setDeleting(row);
-                            }}
-                          >
-                            删除模型
-                          </button>
-                          <button
-                            className="primary"
-                            disabled={!!busy}
-                            onClick={() => void open(row.model!)}
-                          >
-                            继续编辑 →
-                          </button>
-                        </>
+                        </div>
                       )}
                     </div>
+                    <div className="detail-stats">
+                      <div>
+                        <b>{num(row.model.stats?.triangles)}</b>
+                        <small>源三角面</small>
+                      </div>
+                      <div>
+                        <b>{num(row.model.stats?.materials)}</b>
+                        <small>材质</small>
+                      </div>
+                      <div>
+                        <b>{row.packs.length}</b>
+                        <small>皮肤版本</small>
+                      </div>
+                      <div>
+                        <b>{row.model.settings ? "已保存" : "未调整"}</b>
+                        <small>编辑配置</small>
+                      </div>
+                    </div>
+                  </>
+                )}
+                {tab === "skins" && (
+                  <div className="versions-panel">
+                    {!!row.packs.length ? (
+                      <>
+                        <div className="version-picker">
+                          {row.packs.map((item) => (
+                            <button
+                              className={item.id === pack?.id ? "active" : ""}
+                              key={item.id}
+                              onClick={() => setVersion(item.id)}
+                            >
+                              <b>{item.meta?.versionName ?? item.id}</b>
+                              <small>
+                                {when(item.imported)}
+                                {active(item.id).length ? " · 已启用" : ""}
+                              </small>
+                            </button>
+                          ))}
+                        </div>
+                        {pack && (
+                          <>
+                            <PackPreview packId={pack.id} />
+                            <div className="detail-stats">
+                              <div>
+                                <b>{num(pack.stats?.triangles)}</b>
+                                <small>输出三角面</small>
+                              </div>
+                              <div>
+                                <b>
+                                  {pack.stats?.texture
+                                    ? `${pack.stats.texture.width}×${pack.stats.texture.height}`
+                                    : "—"}
+                                </b>
+                                <small>贴图</small>
+                              </div>
+                              <div>
+                                <b>
+                                  {pack.meta?.ratio
+                                    ? `${Math.round(pack.meta.ratio * 100)}%`
+                                    : "—"}
+                                </b>
+                                <small>保留面数比例</small>
+                              </div>
+                            </div>
+                            <div className="version-actions">
+                              <a
+                                className="button-link"
+                                href={
+                                  "#/packs?pack=" + encodeURIComponent(pack.id)
+                                }
+                              >
+                                在皮肤包管理中查看 →
+                              </a>
+                              {row.model && pack.meta && (
+                                <button
+                                  disabled={!!busy}
+                                  onClick={() =>
+                                    void open(row.model!, {
+                                      ...row.model?.settings,
+                                      ...pack.meta,
+                                    })
+                                  }
+                                >
+                                  以此版本配置编辑
+                                </button>
+                              )}
+                              <button
+                                className="danger-button"
+                                disabled={
+                                  !!busy || active(pack.id).length > 0
+                                }
+                                onClick={() => setRemoveVersion(pack.id)}
+                              >
+                                {active(pack.id).length
+                                  ? "先停用才能删除"
+                                  : "删除此版本"}
+                              </button>
+                            </div>
+                            {!row.model && (
+                              <div className="associate">
+                                <label>
+                                  关联到源模型
+                                  <select
+                                    aria-label="关联源模型"
+                                    value={linkTarget}
+                                    onChange={(event) =>
+                                      setLinkTarget(event.target.value)
+                                    }
+                                  >
+                                    <option value="">选择模型</option>
+                                    {models.map((model) => (
+                                      <option key={model.id} value={model.id}>
+                                        {model.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <button
+                                  disabled={!linkTarget || !!busy}
+                                  onClick={() =>
+                                    void run("正在关联…", async () => {
+                                      await post("/api/models/update", {
+                                        id: linkTarget,
+                                        packId: pack.id,
+                                      });
+                                      setSelected(linkTarget);
+                                      await refresh();
+                                      setNotice("皮肤版本已关联");
+                                    })
+                                  }
+                                >
+                                  确认关联
+                                </button>
+                              </div>
+                            )}
+                            {pack.warnings.map((warning) => (
+                              <p key={warning} className="inline-note">
+                                {warning}
+                              </p>
+                            ))}
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <div className="empty-state">
+                        <h3>还没有皮肤版本</h3>
+                        <p>在工作台生成皮肤后，将结果保存到当前模型。</p>
+                        {row.model && (
+                          <button onClick={() => void open(row.model!)}>
+                            前往工作台
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {row.model?.sourceAvailable === false && (
-                    <div className="pack-message error">
-                      源文件已移动或删除。重新定位文件后可以继续编辑，已生成的皮肤仍可使用。
+                )}
+                {tab === "info" && (
+                  <div className="model-information">
+                    <dl>
+                      <dt>源文件位置</dt>
+                      <dd>{row.model?.path ?? "没有关联源模型"}</dd>
+                      <dt>保存方式</dt>
+                      <dd>
+                        导入时将源模型与贴图复制到统一数据目录，原始下载文件可独立管理。
+                      </dd>
+                      <dt>导入时间</dt>
+                      <dd>
+                        {row.model ? when(row.model.created) : "历史导入"}
+                      </dd>
+                      <dt>模型 ID</dt>
+                      <dd>{row.id}</dd>
+                    </dl>
+                    {row.model?.settings && (
+                      <details>
+                        <summary>已保存的编辑配置</summary>
+                        <pre>{JSON.stringify(row.model.settings, null, 2)}</pre>
+                      </details>
+                    )}
+                    {row.model && (
                       <button
                         disabled={!!busy}
-                        onClick={() => {
-                          setSourcePath(row.model!.path);
-                          setRelink(true);
-                        }}
+                        onClick={() => setRelink(row.model!)}
                       >
                         重新定位源文件
                       </button>
-                    </div>
-                  )}
-                  <div className="detail-tabs">
-                    <button
-                      className={tab === "source" ? "active" : ""}
-                      disabled={!row.model}
-                      onClick={() => setTab("source")}
-                    >
-                      源模型
-                    </button>
-                    <button
-                      className={tab === "skins" ? "active" : ""}
-                      onClick={() => setTab("skins")}
-                    >
-                      皮肤版本 <span>{row.packs.length}</span>
-                    </button>
-                    <button
-                      className={tab === "info" ? "active" : ""}
-                      onClick={() => setTab("info")}
-                    >
-                      模型信息
-                    </button>
-                  </div>
-                  {tab === "source" && row.model && (
-                    <>
-                      <div className="library-preview">
-                        {row.model.previewKey ? (
-                          <Viewer
-                            session={{
-                              id: row.id,
-                              name: row.name,
-                              profile: null,
-                              materials: [],
-                              warnings: [],
-                            }}
-                            previewUrl={"/api/models/" + row.id + "/preview"}
-                            result={null}
-                            mode="source"
-                            excluded={[]}
-                            wire={false}
-                            unlit={true}
-                            focus="all"
-                            solo={null}
-                            profile={
-                              row.model.settings?.profile ??
-                              row.model.profile ??
-                              {}
-                            }
-                            height={32}
-                            binding="static"
-                            onSelect={() => {}}
-                          />
-                        ) : (
-                          <div className="empty-state">
-                            <p>打开工作台后即可生成模型预览。</p>
-                            <button onClick={() => void open(row.model!)}>
-                              打开模型
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      <div className="detail-stats">
-                        <div>
-                          <b>{num(row.model.stats?.triangles)}</b>
-                          <small>源三角面</small>
-                        </div>
-                        <div>
-                          <b>{num(row.model.stats?.materials)}</b>
-                          <small>材质</small>
-                        </div>
-                        <div>
-                          <b>{row.packs.length}</b>
-                          <small>皮肤版本</small>
-                        </div>
-                        <div>
-                          <b>{row.model.settings ? "已保存" : "未调整"}</b>
-                          <small>编辑配置</small>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                  {tab === "skins" && (
-                    <div className="versions-panel">
-                      {!!row.packs.length ? (
-                        <>
-                          <div className="version-picker">
-                            {row.packs.map((p) => (
-                              <button
-                                className={p.id === pack?.id ? "active" : ""}
-                                key={p.id}
-                                onClick={() => setVersion(p.id)}
-                              >
-                                <b>{p.meta?.versionName ?? p.id}</b>
-                                <small>
-                                  {when(p.imported)}
-                                  {active(p.id).length ? " · 已启用" : ""}
-                                </small>
-                              </button>
-                            ))}
-                          </div>
-                          {pack && (
-                            <>
-                              <PackPreview packId={pack.id} />
-                              <div className="detail-stats">
-                                <div>
-                                  <b>{num(pack.stats?.triangles)}</b>
-                                  <small>输出三角面</small>
-                                </div>
-                                <div>
-                                  <b>
-                                    {pack.stats?.texture
-                                      ? `${pack.stats.texture.width}×${pack.stats.texture.height}`
-                                      : "—"}
-                                  </b>
-                                  <small>贴图</small>
-                                </div>
-                                <div>
-                                  <b>
-                                    {pack.meta?.ratio
-                                      ? `${Math.round(pack.meta.ratio * 100)}%`
-                                      : "—"}
-                                  </b>
-                                  <small>保留面数比例</small>
-                                </div>
-                              </div>
-                              <div className="version-actions">
-                                <a
-                                  className="button-link"
-                                  href={
-                                    "#/packs?pack=" +
-                                    encodeURIComponent(pack.id)
-                                  }
-                                >
-                                  在皮肤包管理中查看 →
-                                </a>
-                                {row.model && pack.meta && (
-                                  <button
-                                    disabled={!!busy}
-                                    onClick={() =>
-                                      void open(row.model!, {
-                                        ...row.model?.settings,
-                                        ...pack.meta,
-                                      })
-                                    }
-                                  >
-                                    以此版本配置编辑
-                                  </button>
-                                )}
-                                <button
-                                  className="danger-button"
-                                  disabled={
-                                    !!busy || active(pack.id).length > 0
-                                  }
-                                  onClick={() => setRemoveVersion(pack.id)}
-                                >
-                                  {active(pack.id).length
-                                    ? "先停用才能删除"
-                                    : "删除此版本"}
-                                </button>
-                              </div>
-                              {!row.model && (
-                                <div className="associate">
-                                  <label>
-                                    关联到源模型
-                                    <select
-                                      aria-label="关联源模型"
-                                      value={linkTarget}
-                                      onChange={(e) =>
-                                        setLinkTarget(e.target.value)
-                                      }
-                                    >
-                                      <option value="">选择模型</option>
-                                      {models.map((m) => (
-                                        <option key={m.id} value={m.id}>
-                                          {m.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </label>
-                                  <button
-                                    disabled={!linkTarget || !!busy}
-                                    onClick={() =>
-                                      void run("正在关联…", async () => {
-                                        await post("/api/models/update", {
-                                          id: linkTarget,
-                                          packId: pack.id,
-                                        });
-                                        setSelected(linkTarget);
-                                        await refresh();
-                                        setNotice("皮肤版本已关联");
-                                      })
-                                    }
-                                  >
-                                    确认关联
-                                  </button>
-                                </div>
-                              )}
-                              {pack.warnings.map((w) => (
-                                <p key={w} className="inline-note">
-                                  {w}
-                                </p>
-                              ))}
-                            </>
-                          )}
-                        </>
-                      ) : (
-                        <div className="empty-state">
-                          <h3>还没有皮肤版本</h3>
-                          <p>在工作台生成皮肤后，将结果保存到当前模型。</p>
-                          {row.model && (
-                            <button onClick={() => void open(row.model!)}>
-                              前往工作台
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {tab === "info" && (
-                    <div className="model-information">
-                      <dl>
-                        <dt>源文件位置</dt>
-                        <dd>{row.model?.path ?? "没有关联源模型"}</dd>
-                        <dt>保存方式</dt>
-                        <dd>
-                          导入时将源模型与贴图复制到统一数据目录，原始下载文件可独立管理。
-                        </dd>
-                        <dt>导入时间</dt>
-                        <dd>
-                          {row.model ? when(row.model.created) : "历史导入"}
-                        </dd>
-                        <dt>模型 ID</dt>
-                        <dd>{row.id}</dd>
-                      </dl>
-                      {row.model?.settings && (
-                        <details>
-                          <summary>已保存的编辑配置</summary>
-                          <pre>
-                            {JSON.stringify(row.model.settings, null, 2)}
-                          </pre>
-                        </details>
-                      )}
-                      {row.model && (
+                    )}
+                    {row.model && (
+                      <div className="danger-zone">
+                        <p>
+                          删除模型管理记录，可同时删除程序归档的源文件。已生成皮肤版本保留。
+                        </p>
                         <button
-                          disabled={!!busy}
-                          onClick={() => {
-                            setSourcePath(row.model!.path);
-                            setRelink(true);
-                          }}
+                          className="danger-button"
+                          onClick={() => setDeleting(row.model)}
                         >
-                          重新定位源文件
+                          删除模型
                         </button>
-                      )}
-                      {row.model && (
-                        <div className="danger-zone">
-                          <p>
-                            删除模型管理记录，可同时删除程序归档的源文件。已生成皮肤版本保留。
-                          </p>
-                          <button
-                            className="danger-button"
-                            onClick={() => {
-                              setDeleteSource(true);
-                              setDeleting(row);
-                            }}
-                          >
-                            删除模型
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="empty-state">
-                  选择一个模型查看预览和编辑记录。
-                </div>
-              )}
-            </section>
-          </div>
-        </>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="empty-state">
+                选择一个模型查看预览和编辑记录。
+              </div>
+            )}
+          </section>
+        </div>
       )}
       {!packs?.configured && !loading && (
         <p className="inline-note">
           源模型可以正常管理。皮肤包路径配置完成前，可在工作台下载生成结果。
         </p>
       )}
-      {relink && row?.model && (
-        <Modal
-          title="重新定位源文件"
-          label="重新定位源文件"
-          busy={!!busy}
-          onClose={() => setRelink(false)}
-        >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run("正在更新源文件路径…", async () => {
-                await post("/api/models/relink", {
-                  id: row.id,
-                  path: sourcePath.trim(),
-                });
-                setRelink(false);
-                await refresh();
-                setNotice("源文件位置已更新，打开工作台检查模型和贴图");
-              });
-            }}
-          >
-            <p>
-              选择同一个模型的新位置，编辑配置和历史版本会保留。贴图需随模型一起移动。
-            </p>
-            <label>
-              模型文件绝对路径
-              <input
-                autoFocus
-                value={sourcePath}
-                onChange={(e) => setSourcePath(e.target.value)}
-              />
-            </label>
-            <div className="pick-actions">
-              <button
-                type="button"
-                disabled={!!busy}
-                onClick={() => setRelink(false)}
-              >
-                取消
-              </button>
-              <button
-                className="primary"
-                disabled={!!busy || !sourcePath.trim()}
-              >
-                更新位置
-              </button>
-            </div>
-            {error && (
-              <p role="alert" className="error">
-                {error}
-              </p>
-            )}
-          </form>
-        </Modal>
-      )}
-      {sources && <ModelSources onClose={() => setSources(false)} />}
       {importing && (
-        <Modal
-          title="导入模型"
-          label="导入模型"
-          className="import-dialog"
-          busy={!!busy}
-          closeLabel="关闭导入"
+        <ImportModelDialog
           onClose={() => setImporting(false)}
-        >
-            <p>
-              将模型与贴图一起复制到数据目录。支持本地环境路径、ZIP
-              或完整模型文件夹。
-            </p>
-            <label>
-              本地 ZIP / 模型 / 文件夹路径
-              <input
-                aria-label="本地模型路径"
-                value={path}
-                onChange={(e) => {
-                  setPath(e.target.value);
-                  setCandidates([]);
-                  setPending("");
-                }}
-                placeholder="E:\\下载\\角色.zip"
-              />
-            </label>
-            <div className="button-row">
-              <button
-                disabled={!!busy || !path.trim()}
-                onClick={() =>
-                  void run("本地服务器正在导入…", async () =>
-                    acceptImport(
-                      await post("/api/local-import", { path: path.trim() }),
-                    ),
-                  )
-                }
-              >
-                读取本地路径
-              </button>
-              <button disabled={!!busy} onClick={() => files.current?.click()}>
-                选择文件
-              </button>
-              <button disabled={!!busy} onClick={() => folder.current?.click()}>
-                选择文件夹
-              </button>
-            </div>
-            <input
-              hidden
-              multiple
-              ref={files}
-              type="file"
-              accept=".zip,.pmx,.vrm,.glb,.gltf,.obj,.fbx,.dae,.stl,.ply,.png,.jpg,.tga,.bin,.mtl"
-              onChange={(e) => {
-                void upload(e.target.files);
-                e.target.value = "";
-              }}
-            />
-            <input
-              hidden
-              multiple
-              ref={folder}
-              type="file"
-              {...{ webkitdirectory: "" }}
-              onChange={(e) => {
-                void upload(e.target.files);
-                e.target.value = "";
-              }}
-            />
-            {!!candidates.length && (
-              <>
-                <h3>选择包内模型</h3>
-                <div className="pick-list">
-                  {candidates.map((c) => (
-                    <label key={c}>
-                      <input
-                        type="radio"
-                        checked={main === c}
-                        onChange={() => setMain(c)}
-                      />
-                      <span>{c}</span>
-                    </label>
-                  ))}
-                </div>
-                <button
-                  className="primary"
-                  disabled={!!busy || !main}
-                  onClick={() =>
-                    void run("正在导入所选模型…", async () =>
-                      acceptImport(
-                        await post(
-                          pending ? "/api/upload/select" : "/api/local-import",
-                          pending
-                            ? { pending, main }
-                            : { path: path.trim(), main },
-                        ),
-                      ),
-                    )
-                  }
-                >
-                  导入所选模型
-                </button>
-              </>
-            )}
-            {busy && <BusyStatus label={busy} />}
-            {error && (
-              <p role="alert" className="error">
-                {error}
-              </p>
-            )}
-          </Modal>
+          onImported={(session) => {
+            setImporting(false);
+            onOpen(session);
+          }}
+        />
       )}
       {rename && (
-        <Modal
-          title="重命名模型"
-          label="重命名模型"
-          busy={!!busy}
+        <RenameModelDialog
+          model={rename}
           onClose={() => setRename(null)}
-        >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void run("正在保存名称…", async () => {
-                await post("/api/models/update", { id: rename, name });
-                setRename(null);
-                await refresh();
-                setNotice("名称已更新");
-              });
-            }}
-          >
-            <input
-              autoFocus
-              aria-label="模型名称"
-              maxLength={120}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <div className="pick-actions">
-              <button
-                type="button"
-                disabled={!!busy}
-                onClick={() => setRename(null)}
-              >
-                取消
-              </button>
-              <button className="primary" disabled={!!busy || !name.trim()}>
-                保存名称
-              </button>
-            </div>
-            {error && <p className="error">{error}</p>}
-          </form>
-        </Modal>
+          onSaved={async () => {
+            await refresh();
+            setNotice("名称已更新");
+          }}
+        />
+      )}
+      {relink && (
+        <RelinkModelDialog
+          model={relink}
+          onClose={() => setRelink(null)}
+          onSaved={async () => {
+            await refresh();
+            setNotice("源文件位置已更新，打开工作台检查模型和贴图");
+          }}
+        />
       )}
       {(deleting || removeVersion) && (
-        <Modal
-          title={deleting ? "删除源模型？" : "删除皮肤版本？"}
-          label="确认删除"
-          busy={!!busy}
+        <DeleteModelDialog
+          target={
+            deleting
+              ? { kind: "model", model: deleting }
+              : { kind: "version", id: removeVersion! }
+          }
           onClose={() => {
             setDeleting(null);
             setRemoveVersion(null);
           }}
-        >
-            <p>
-              {deleting
-                ? `删除「${deleting.name}」的模型管理记录和编辑配置，已生成的皮肤包保留。`
-                : "此皮肤版本将从本地存储中永久删除。"}
-            </p>
-            <div>
-              {deleting && (
-                <label className="delete-source-choice">
-                  <input
-                    type="checkbox"
-                    checked={deleteSource}
-                    onChange={(e) => setDeleteSource(e.target.checked)}
-                  />
-                  同时删除程序归档的源文件与独占贴图（原始下载文件保留）
-                </label>
-              )}
-            </div>
-            <div className="pick-actions">
-              <button
-                disabled={!!busy}
-                onClick={() => {
-                  setDeleting(null);
-                  setRemoveVersion(null);
-                }}
-              >
-                取消
-              </button>
-              <button
-                className="danger-button"
-                disabled={!!busy}
-                onClick={() =>
-                  void run("正在删除…", async () => {
-                    await post(
-                      deleting ? "/api/models/delete" : "/api/packs/delete",
-                      {
-                        id: deleting?.id ?? removeVersion,
-                        deleteSource: !!deleting && deleteSource,
-                      },
-                    );
-                    setDeleting(null);
-                    setRemoveVersion(null);
-                    setSelected("");
-                    await refresh();
-                    setNotice("已删除");
-                  })
-                }
-              >
-                确认删除
-              </button>
-            </div>
-            {error && <p className="error">{error}</p>}
-        </Modal>
+          onDeleted={refreshAfterDelete}
+        />
       )}
+      {sources && <ModelSources onClose={() => setSources(false)} />}
     </div>
   );
 }

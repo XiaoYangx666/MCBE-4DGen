@@ -113,7 +113,7 @@ export function MaterialPanel({
     changed();
   }
   const coverage = result?.details?.texture?.materials?.find(
-    (m: any) => m.name === selected,
+    (measurement) => measurement.name === selected,
   );
   const weightSum = activeMaterials.reduce((sum, m) => sum + weight(m.name), 0);
 
