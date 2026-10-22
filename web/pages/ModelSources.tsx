@@ -7,7 +7,7 @@ import {
 } from "../../src/source-sites";
 import { Modal } from "../ui/Modal";
 
-type View = "home" | "all" | SourceCategoryKey;
+type View = "all" | SourceCategoryKey;
 
 const SORTED_SITES = [...SOURCE_SITES].sort((a, b) => a.rank - b.rank);
 const CATEGORY_LABELS = new Map(
@@ -38,10 +38,10 @@ function SiteIcon({ site }: { site: SourceSite }) {
   );
 }
 
-function SiteCard({ site, featured = false }: { site: SourceSite; featured?: boolean }) {
+function SiteCard({ site }: { site: SourceSite }) {
   return (
     <a
-      className={"source-card" + (featured ? " featured" : "")}
+      className="source-card"
       href={site.url}
       target="_blank"
       rel="noopener noreferrer"
@@ -87,12 +87,10 @@ function SiteSection({
   title,
   hint,
   sites,
-  featured = false,
 }: {
   title: string;
   hint?: string;
   sites: SourceSite[];
-  featured?: boolean;
 }) {
   if (!sites.length) return null;
   return (
@@ -103,7 +101,7 @@ function SiteSection({
       </div>
       <div className="source-grid">
         {sites.map((site) => (
-          <SiteCard key={site.id} site={site} featured={featured} />
+          <SiteCard key={site.id} site={site} />
         ))}
       </div>
     </section>
@@ -111,7 +109,7 @@ function SiteSection({
 }
 
 export function ModelSources({ onClose }: { onClose: () => void }) {
-  const [view, setView] = useState<View>("home");
+  const [view, setView] = useState<View>("all");
   const [query, setQuery] = useState("");
 
   const categoryCounts = useMemo(
@@ -148,12 +146,10 @@ export function ModelSources({ onClose }: { onClose: () => void }) {
   }, [query]);
 
   const categorySites = useMemo(() => {
-    if (view === "home" || view === "all") return null;
+    if (view === "all") return null;
     return SORTED_SITES.filter((site) => site.categories.includes(view));
   }, [view]);
 
-  const tierOne = SORTED_SITES.filter((site) => site.tier === 1);
-  const tierTwo = SORTED_SITES.filter((site) => site.tier === 2);
   const activeCategory = SOURCE_CATEGORIES.find(
     (category) => category.key === view,
   );
@@ -190,17 +186,6 @@ export function ModelSources({ onClose }: { onClose: () => void }) {
         <nav className="source-tabs" aria-label="模型网站分类">
           <button
             type="button"
-            className={view === "home" && !query ? "active" : ""}
-            aria-pressed={view === "home" && !query}
-            onClick={() => {
-              setView("home");
-              setQuery("");
-            }}
-          >
-            首页
-          </button>
-          <button
-            type="button"
             className={view === "all" && !query ? "active" : ""}
             aria-pressed={view === "all" && !query}
             onClick={() => {
@@ -234,54 +219,12 @@ export function ModelSources({ onClose }: { onClose: () => void }) {
             title={`搜索结果 · ${matches.length}`}
             hint={`关键词「${query.trim()}」`}
             sites={matches}
-            featured
           />
-        ) : view === "home" ? (
-          <>
-            <SiteSection
-              title="常用推荐"
-              sites={tierOne}
-              featured
-            />
-            <div className="source-jump">
-              <div className="source-section-head">
-                <h3>按类型找</h3>
-                <span>不确定去哪找时，从模型类型进入</span>
-              </div>
-              <div className="source-jump-grid">
-                {SOURCE_CATEGORIES.map((category) => (
-                  <button
-                    type="button"
-                    key={category.key}
-                    onClick={() => setView(category.key)}
-                  >
-                    <b>{category.label}</b>
-                    <span>{category.hint}</span>
-                    <small>{categoryCounts[category.key]} 个站点 →</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <SiteSection
-              title="更多值得收藏"
-              hint="第二梯队：题材更专或需要注册/订阅"
-              sites={tierTwo}
-            />
-            <div className="source-all-link">
-              <button type="button" onClick={() => setView("all")}>
-                查看全部 {SORTED_SITES.length} 个网站 →
-              </button>
-            </div>
-          </>
         ) : (
           <SiteSection
             title={activeCategory?.label ?? "全部网站"}
-            hint={
-              activeCategory?.hint ??
-              "按常用程度排序；点击卡片在新标签页打开"
-            }
+            hint={activeCategory?.hint}
             sites={categorySites ?? SORTED_SITES}
-            featured={view === "all"}
           />
         )}
         <p className="source-format-hint">
