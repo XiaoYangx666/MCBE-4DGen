@@ -4,7 +4,7 @@ import {cp,mkdir,copyFile,writeFile,readFile,rm,stat,readdir} from 'node:fs/prom
 import {dirname,resolve,join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import sharp from 'sharp';
-import {waitForExit} from './process.ts';
+import {waitForExit} from '../lib/process.ts';
 if(process.platform!=='win32')throw Error('Windows 便携版请在 Windows 构建');
 const keepLocales=new Set(['en-US.pak','zh-CN.pak','zh-TW.pak']);
 async function pruneRuntime(dir:string):Promise<void>{
@@ -31,7 +31,7 @@ async function directorySize(dir:string):Promise<number>{
   }
   return total;
 }
-const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),stage=join(root,'.cache/desktop-package-'+crypto.randomUUID()),payload=join(stage,'payload');
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..'),stage=join(root,'.cache/desktop-package-'+crypto.randomUUID()),payload=join(stage,'payload');
 const outFlag=process.argv.indexOf('--out'),outValue=outFlag>=0?process.argv[outFlag+1]:process.argv.find(arg=>arg.startsWith('--out='))?.slice(6);
 const outDir=resolve(root,outValue??process.env.FOURDGEN_RELEASE_DIR??'release');
 await mkdir(payload,{recursive:true});
@@ -56,7 +56,7 @@ try{
  const options={dir:stage,out:outDir,name:'4DGen',executableName:'4DGen',platform:'win32',arch:'x64',electronVersion,...(hasElectronZip?{electronZipDir}:{}),asar:true,extraResource:[payload],overwrite:true,prune:false};
  const optionsPath=join(root,'.cache/desktop-package-options-'+crypto.randomUUID()+'.json');
  await writeFile(optionsPath,JSON.stringify(options));
- try {const child=spawn(process.execPath,[join(root,'scripts/package-electron.mjs'),optionsPath],{stdio:'inherit'});if(await waitForExit(child)!==0)throw Error('Electron packaging failed');} finally {await rm(optionsPath,{force:true});}
+ try {const child=spawn(process.execPath,[join(root,'scripts/desktop/package-electron.mjs'),optionsPath],{stdio:'inherit'});if(await waitForExit(child)!==0)throw Error('Electron packaging failed');} finally {await rm(optionsPath,{force:true});}
   const appDir=join(outDir,'4DGen-win32-x64');
   // electron-packager still rewrites the executable for its default metadata.
   // Keep the known-good upstream PE so the portable build starts reliably.

@@ -7,12 +7,12 @@
  * diff and restore them. The desktop UI can call the same functions later.
  *
  * Usage:
- *   node scripts/skin-state.ts inspect
- *   node scripts/skin-state.ts snapshot --label before-create
- *   node scripts/skin-state.ts list
- *   node scripts/skin-state.ts show <id>
- *   node scripts/skin-state.ts diff <a> <b>
- *   node scripts/skin-state.ts restore <id> [--profile] [--options] [--packs] [--all]
+ *   node scripts/client/skin-state.ts inspect
+ *   node scripts/client/skin-state.ts snapshot --label before-create
+ *   node scripts/client/skin-state.ts list
+ *   node scripts/client/skin-state.ts show <id>
+ *   node scripts/client/skin-state.ts diff <a> <b>
+ *   node scripts/client/skin-state.ts restore <id> [--profile] [--options] [--packs] [--all]
  *                                        [--slot personaProfile2]
  */
 import { createHash, randomUUID } from 'node:crypto';
@@ -32,7 +32,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const appRoot = resolve(here, '..');
+const appRoot = resolve(here, '../..');
 const configPath =
   process.env.SKIN_MANAGER_CONFIG ?? resolve(appRoot, 'skin-manager.local.json');
 const snapshotRoot = resolve(
@@ -560,12 +560,12 @@ async function restore(id: string, options: { profile: boolean; options: boolean
 
 function usage() {
   log(`用法:
-  node scripts/skin-state.ts inspect
-  node scripts/skin-state.ts snapshot --label before-create
-  node scripts/skin-state.ts list
-  node scripts/skin-state.ts show <id>
-  node scripts/skin-state.ts diff <a> <b>
-  node scripts/skin-state.ts restore <id> [--profile] [--options] [--packs] [--all]
+  node scripts/client/skin-state.ts inspect
+  node scripts/client/skin-state.ts snapshot --label before-create
+  node scripts/client/skin-state.ts list
+  node scripts/client/skin-state.ts show <id>
+  node scripts/client/skin-state.ts diff <a> <b>
+  node scripts/client/skin-state.ts restore <id> [--profile] [--options] [--packs] [--all]
                                        [--slot personaProfile2]`);
 }
 

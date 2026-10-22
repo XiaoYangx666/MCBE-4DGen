@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 PACKS = Path(r'<skin-packs>')
 def digest(p):
     return hashlib.sha256(p.read_bytes()).hexdigest()

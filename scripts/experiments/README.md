@@ -4,4 +4,4 @@
 
 日常流程使用仓库根目录的 `bun run workflow`、`bun run packs` 与 [使用文档](../../docs/workflow.md)。
 
-旧 `scripts/client-test.py` 暂留原路径，兼容已有收据的恢复命令。新管理器已接入本次原始空包备份；迁移之后优先用 `packs restore`，混用旧部署脚本会被新管理器识别为外部修改。
+旧 `scripts/client/client-test.py` 保留在新客户端目录，兼容已有收据的恢复命令。新管理器已接入本次原始空包备份；迁移之后优先用 `packs restore`，混用旧部署脚本会被新管理器识别为外部修改。

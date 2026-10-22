@@ -20,7 +20,7 @@
 | 预览与报告 | 实际输出预览；骨骼归属示意；workflow 报告 | 报告每项自动判断的证据、置信度及待确认项 |
 | 包管理 | 可配置路径、导入/导出、多包启停、备份/恢复 | 直接复用，不再建立另一套部署逻辑 |
 
-参考实现：`src/importer.ts`、`src/humanoid.ts`、`src/pack-manager.ts`、`scripts/workflow.ts`。本次真实样本记录见 `pmx-model-tests.md` 与 `windows-client-test.md`。
+参考实现：`src/importer.ts`、`src/humanoid.ts`、`src/pack-manager.ts`、`scripts/workflow/workflow.ts`。本次真实样本记录见 `pmx-model-tests.md` 与 `windows-client-test.md`。
 
 ## 期望的使用方式
 

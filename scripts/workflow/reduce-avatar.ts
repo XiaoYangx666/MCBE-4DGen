@@ -1,13 +1,13 @@
 import { readFile, writeFile, mkdir, lstat } from 'node:fs/promises';
 import { resolve, dirname, basename, extname } from 'node:path';
-import { importModel } from '../src/importer.ts';
-import { exportHumanoid } from '../src/humanoid.ts';
-import type { HumanoidProfile } from '../src/humanoid.ts';
-import { buildSkinPack, validateSkinPackPath, zipSkinPack } from '../src/skin-pack.ts';
+import { importModel } from '../../src/importer.ts';
+import { exportHumanoid } from '../../src/humanoid.ts';
+import type { HumanoidProfile } from '../../src/humanoid.ts';
+import { buildSkinPack, validateSkinPackPath, zipSkinPack } from '../../src/skin-pack.ts';
 
 async function main() {
   const [source, profilePath, destination, ratio = '0.2', maxError = '0.03'] = process.argv.slice(2);
-  if (!source || !profilePath || !destination) throw new Error('Usage: node scripts/reduce-avatar.ts <model> <profile.json> <new-output> [ratio] [max-error] [pack-name]');
+  if (!source || !profilePath || !destination) throw new Error('Usage: node scripts/workflow/reduce-avatar.ts <model> <profile.json> <new-output> [ratio] [max-error] [pack-name]');
   const out = resolve(destination);
   for (const path of [out, out + '.zip', out + '-reduction.json']) {
     try { await lstat(path); throw new Error('Refusing existing output: ' + path); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }

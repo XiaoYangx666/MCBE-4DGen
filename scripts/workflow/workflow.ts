@@ -1,14 +1,14 @@
-import { resolveManagerConfig } from "../src/workspace-storage.ts";
+import { resolveManagerConfig } from "../../src/workspace-storage.ts";
 import { readFile, writeFile, mkdir, lstat } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { validateSkinPackPath } from '../src/skin-pack.ts';
-import { previewOutput } from '../src/preview.ts';
-import { PackManager } from '../src/pack-manager.ts';
-import type { ManagerConfig } from '../src/pack-manager.ts';
-import { waitForExit } from './process.ts';
+import { validateSkinPackPath } from '../../src/skin-pack.ts';
+import { previewOutput } from '../../src/preview.ts';
+import { PackManager } from '../../src/pack-manager.ts';
+import type { ManagerConfig } from '../../src/pack-manager.ts';
+import { waitForExit } from '../lib/process.ts';
 
 interface Workflow {
   version: 1; model: string; output: string; name: string;
@@ -17,7 +17,7 @@ interface Workflow {
 }
 async function main() {
   const args = process.argv.slice(2), configArgument = args.shift();
-  if (!configArgument || args.some((s) => s !== '--deploy') || args.length > 1) throw new Error('Usage: node scripts/workflow.ts <workflow.json> [--deploy]');
+  if (!configArgument || args.some((s) => s !== '--deploy') || args.length > 1) throw new Error('Usage: node scripts/workflow/workflow.ts <workflow.json> [--deploy]');
   const configPath = resolve(configArgument), base = dirname(configPath);
   const config = JSON.parse(await readFile(configPath, 'utf8')) as Workflow;
   if (config.version !== 1 || !config.model || !config.output || !config.name ||
@@ -38,7 +38,7 @@ async function main() {
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
   await mkdir(dirname(output), { recursive: true });
-  const command = [process.execPath, resolve(dirname(fileURLToPath(import.meta.url)), '../src/cli.ts'), 'convert', model,
+  const command = [process.execPath, resolve(dirname(fileURLToPath(import.meta.url)), '../../src/cli.ts'), 'convert', model,
     '--out', output, '--name', config.name, '--binding', config.binding ?? 'static'];
   if (profile) command.push('--humanoid-profile', profile);
   if (config.height !== undefined) command.push('--height', String(config.height));

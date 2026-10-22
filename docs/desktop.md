@@ -36,7 +36,7 @@ bun run desktop:package --out C:\path\to\4DGen-portable
 # 或
 $env:FOURDGEN_RELEASE_DIR = 'C:\path\to\4DGen-portable'
 bun run desktop:package
-node scripts/check-desktop.ts C:\path\to\4DGen-portable\4DGen-win32-x64\4DGen.exe
+node scripts/checks/check-desktop.ts C:\path\to\4DGen-portable\4DGen-win32-x64\4DGen.exe
 ```
 
 ### 工作区完整性限制
@@ -64,7 +64,7 @@ bun run desktop:package --out C:\path\to\4DGen-portable
 ```powershell
 bun run test:desktop
 # 已打包的便携版（按实际输出位置替换）：
-node scripts/check-desktop.ts C:\path\to\4DGen-portable\4DGen-win32-x64\4DGen.exe
+node scripts/checks/check-desktop.ts C:\path\to\4DGen-portable\4DGen-win32-x64\4DGen.exe
 ```
 
 检查使用独立临时数据和配置，验证原生桥接、自定义顶栏、最大化与还原、带纹理模型预览、转换与 ZIP 下载、渲染进程隔离、后台认证与退出清理。`bun run dev` 仍可启动浏览器版；浏览器模式可输入目录路径，系统选择按钮仅在桌面版可用。

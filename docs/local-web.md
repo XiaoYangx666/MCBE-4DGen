@@ -58,7 +58,7 @@ bun run check
 bun run check:web
 bun run test:workflow
 # 已启动工作台时，执行真实 API 冒烟检查：
-node scripts/check-web.ts
+node scripts/checks/check-web.ts
 ```
 
 API 检查覆盖页面可访问、跨来源拒绝、OBJ 上传/源预览、静态转换、皮肤包管理状态、目录穿越拒绝。

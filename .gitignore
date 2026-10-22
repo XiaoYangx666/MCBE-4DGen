@@ -1,7 +1,10 @@
 node_modules/
+# Local scratch only: generated artifacts and caches. Reusable benchmark and
+# diagnostic sources live in scripts/diagnostics/bench/, never in outputs/.
 outputs/
 .cache/
 skin-manager.local.json
+# Persistent skin-pack manager backups; not a cache, do not delete while cleaning.
 .skin-pack-manager/
 debug.log
 
