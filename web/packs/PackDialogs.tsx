@@ -1,4 +1,5 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { Modal } from "../ui/Modal";
 import type { Contents, LibraryPack, SkinItem } from "./pack-types";
 import type { PackDialogKind, PackRow } from "./pack-ui";
 
@@ -61,20 +62,14 @@ export function PackDialogs({
 }) {
   if (!dialog) return null;
   return (
-    <div
-      className="pick-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label={titles[dialog]}
+    <Modal
+      title={titles[dialog]}
+      label={titles[dialog]}
+      className="pack-operation-dialog"
+      busy={!!busy}
+      onClose={onClose}
     >
-      <div className="pick-box pack-operation-dialog">
-        <div className="card-top">
-          <h2>{titles[dialog]}</h2>
-          <button disabled={!!busy} aria-label="关闭弹窗" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        {dialog === "create" && (
+      {dialog === "create" && (
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -252,7 +247,6 @@ export function PackDialogs({
             {error}
           </p>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }
