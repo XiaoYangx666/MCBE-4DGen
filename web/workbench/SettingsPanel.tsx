@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import type { HumanoidProfile } from "../../src/humanoid";
 import type { Result, Session } from "./types";
 import { FACE_GREEN_MAX, FACE_YELLOW_MAX, triangleBudget } from "./estimate";
 
@@ -19,11 +20,11 @@ type SettingsPanelProps = {
   height: number;
   setHeight: Dispatch<SetStateAction<number>>;
   setMode: Dispatch<SetStateAction<string>>;
-  profile: any;
+  profile: HumanoidProfile;
   updateProfile: (key: string, value: number) => void;
   profileText: string;
   setProfileText: Dispatch<SetStateAction<string>>;
-  setProfile: Dispatch<SetStateAction<any>>;
+  setProfile: Dispatch<SetStateAction<HumanoidProfile>>;
   setError: Dispatch<SetStateAction<string>>;
   convert: () => void;
   error: string;
@@ -38,7 +39,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
     updateProfile, profileText, setProfileText, setProfile, setError, convert,
     error, message, elapsed, openPacks } = props;
   const budget = triangleBudget(estimate.target);
-  const actual = result && !stale ? result.report.triangles : null;
+  const actual = result && !stale ? (result.report.triangles ?? null) : null;
   const [heightText, setHeightText] = useState(String(height));
   useEffect(() => setHeightText(String(height)), [height]);
   const heightValue = Number(heightText);

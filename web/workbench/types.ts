@@ -1,28 +1,23 @@
-export type MaterialRow = {
-  name: string;
-  triangles: number;
-  alpha: number;
-  doubleSided: boolean;
-  transparent: boolean;
-};
+import type {
+  ConversionResult,
+  EditSettings,
+  MaterialSummary,
+} from "../../src/api-types";
+import type { HumanoidProfile } from "../../src/humanoid";
+
+export type MaterialRow = MaterialSummary;
 
 export type Session = {
   modelId?: string;
-  settings?: any;
+  settings?: Partial<EditSettings> | null;
   id: string;
   name: string;
-  profile: any;
+  profile: HumanoidProfile | null;
   materials: MaterialRow[];
   warnings: string[];
 };
 
-export type Result = {
+export type Result = ConversionResult & {
   id: string;
-  report: any;
-  details: any;
-  excluded: string[];
-  conversionMs?: number;
   cached?: boolean;
-  textureOnly?: boolean;
-  settings?: any;
 };

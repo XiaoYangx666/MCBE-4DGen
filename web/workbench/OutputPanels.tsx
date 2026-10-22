@@ -1,3 +1,4 @@
+import type { TextureMaterialUsage } from "../../src/api-types";
 import type { Result, Session } from "./types";
 
 export function OutputPanels({
@@ -16,8 +17,11 @@ export function OutputPanels({
   const texture = result?.details?.texture;
   const total =
     (texture?.atlas?.width ?? 128) * (texture?.atlas?.height ?? 128);
-  const measurements = new Map<string, any>(
-    (texture?.materials ?? []).map((m: any) => [m.name, m]),
+  const measurements = new Map<string, TextureMaterialUsage>(
+    (texture?.materials ?? []).map((measurement) => [
+      measurement.name,
+      measurement,
+    ]),
   );
   const materials = (session?.materials ?? [])
     .map((m) => ({
@@ -151,10 +155,9 @@ export function OutputPanels({
                   {(result.details?.texture?.regions ?? [])
                     .slice()
                     .sort(
-                      (a: any, b: any) =>
-                        b.width * b.height - a.width * a.height,
+                      (a, b) => b.width * b.height - a.width * a.height,
                     )
-                    .map((region: any) => (
+                    .map((region) => (
                       <tr key={region.id}>
                         <td>{region.material}</td>
                         <td>
