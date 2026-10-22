@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { api, post } from "./api";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { GameSkinsPanel } from "./GameSkinsPanel";
 import { PackPreview } from "./PackPreview";
 import type { PersonaProfileRecipe } from "../src/persona-recipe";
 import type { Contents, LibraryPack, Packs, SkinItem } from "./pack-types";
 
-const gameSlot = (slot: string) =>
-  ({ custom: "自定义皮肤", persona: "角色创建器（游戏管理）" })[slot] ?? slot;
+const gameSlotName = "custom";
 
 type PackRow = {
   key: string;
@@ -20,6 +20,24 @@ type PackRow = {
   gameSkins?: true;
 };
 
+type MenuState = {
+  x: number;
+  y: number;
+  pack: PackRow;
+  skin?: SkinItem;
+  scope: "list" | "detail";
+};
+
+type InlineEdit =
+  | { kind: "pack"; pack: PackRow; scope: "list" | "detail"; value: string }
+  | {
+      kind: "skin";
+      pack: PackRow;
+      skin: SkinItem;
+      scope: "list" | "detail";
+      value: string;
+    };
+
 export function PackPage() {
   const [view, setView] = useState(
     location.hash.startsWith("#/game") ? "game" : "library",
@@ -28,6 +46,7 @@ export function PackPage() {
     const change = () => {
       const game = location.hash.startsWith("#/game");
       setView(game ? "game" : "library");
+      setMenu(null);
       const pack = new URLSearchParams(location.hash.split("?")[1]).get("pack");
       setSelected(pack ?? (game ? "@custom" : ""));
     };
@@ -53,8 +72,6 @@ export function PackPage() {
     | "create"
     | "import"
     | "delete"
-    | "rename-pack"
-    | "rename-skin"
     | "remove-skin"
     | "add"
     | null
@@ -66,6 +83,10 @@ export function PackPage() {
   const [indices, setIndices] = useState<number[]>([]);
   const [recipeBusy, setRecipeBusy] = useState(false);
   const [recipePath, setRecipePath] = useState("");
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [editing, setEditing] = useState<InlineEdit | null>(null);
+  const skipCommit = useRef(false);
+  const committing = useRef("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   async function refresh() {
@@ -88,7 +109,7 @@ export function PackPage() {
       return {
         key: "@" + id,
         id,
-        name: state?.name ?? gameSlot(id),
+        name: state?.name ?? "游戏皮肤",
         preset: true,
         skins: state?.skins ?? 0,
         revision: JSON.stringify(state?.active) + state?.changedOutsideManager,
@@ -134,9 +155,6 @@ export function PackPage() {
     row && !row.gameSkins
       ? `/api/${row.preset ? "preset-packs" : "packs"}/${row.id}`
       : "";
-  const enabled = (id: string) =>
-    data?.status?.filter((s) => (s.active ?? []).some((p) => p.id === id)) ??
-    [];
   const state = row?.preset
     ? data?.status?.find((s) => s.slot === row.id)
     : undefined;
@@ -148,6 +166,27 @@ export function PackPage() {
   const sourceModel = skin?.origin?.modelId
     ? models.find((m) => m.id === skin.origin?.modelId)
     : undefined;
+  const gameState = data?.status?.find((s) => s.slot === gameSlotName);
+  const gameReady =
+    !!data?.gameConfigured &&
+    gameState?.exists !== false &&
+    !gameState?.pending &&
+    !gameState?.changedOutsideManager;
+  const activeEntry = (packId: string) =>
+    gameState?.active.find((entry) => entry.id === packId);
+  const skinInstalled = (packId: string, index: number) => {
+    const entry = activeEntry(packId);
+    return !!entry && (!entry.skins || entry.skins.includes(index));
+  };
+  const packActive = (packId: string) => !!activeEntry(packId);
+  const packOutdated = (pack: PackRow) => {
+    const entry = activeEntry(pack.id);
+    return !!entry && entry.revision !== pack.revision;
+  };
+  const packFullyInstalled = (pack: PackRow) => {
+    const entry = activeEntry(pack.id);
+    return !!entry && (!entry.skins || entry.skins.length >= pack.skins);
+  };
 
   useEffect(() => {
     if (!row || row.gameSkins) {
@@ -253,15 +292,284 @@ export function PackPage() {
   function show(kind: NonNullable<typeof dialog>) {
     setDialog(kind);
     setError("");
-    setName(
-      kind === "rename-pack"
-        ? (row?.name ?? "")
-        : kind === "rename-skin"
-          ? (skin?.name ?? "")
-          : "",
-    );
+    setName("");
     if (kind === "add") setSourceId("");
   }
+  function beginEdit(edit: InlineEdit) {
+    if (busy) return;
+    skipCommit.current = false;
+    committing.current = "";
+    setSelected(edit.pack.key);
+    if (edit.kind === "skin") setSkinIndex(edit.skin.index);
+    setMenu(null);
+    setError("");
+    setEditing(edit);
+  }
+  function editPack(pack: PackRow, scope: "list" | "detail") {
+    beginEdit({ kind: "pack", pack, scope, value: pack.name });
+  }
+  function editSkin(pack: PackRow, skin: SkinItem, scope: "list" | "detail") {
+    beginEdit({ kind: "skin", pack, skin, scope, value: skin.name });
+  }
+  function commitEdit(edit: InlineEdit) {
+    if (skipCommit.current) {
+      skipCommit.current = false;
+      return;
+    }
+    const editKey =
+      edit.kind === "pack"
+        ? "pack:" + edit.pack.key
+        : "skin:" + edit.pack.key + ":" + edit.skin.index;
+    if (committing.current === editKey) return;
+    committing.current = editKey;
+    setEditing(null);
+    const name = edit.value.trim();
+    if (!name) {
+      setError("名称不能为空");
+      return;
+    }
+    if (name.length > 120) {
+      setError("名称需为 1–120 个字符");
+      return;
+    }
+    const original = edit.kind === "pack" ? edit.pack.name : edit.skin.name;
+    if (name === original) return;
+    const preset = edit.pack.preset;
+    void run(
+      "正在保存名称…",
+      () =>
+        post(
+          preset ? "/api/packs/edit-installed" : "/api/packs/rename",
+          preset
+            ? edit.kind === "pack"
+              ? { slot: edit.pack.id, name, revision: contents?.revision }
+              : {
+                  slot: edit.pack.id,
+                  skinIndex: edit.skin.index,
+                  skinName: name,
+                  revision: contents?.revision,
+                }
+            : edit.kind === "pack"
+              ? { id: edit.pack.id, name }
+              : {
+                  id: edit.pack.id,
+                  skinIndex: edit.skin.index,
+                  skinName: name,
+                },
+        ),
+      "名称已保存",
+    );
+  }
+  function inlineName(edit: InlineEdit, className = "") {
+    return (
+      <input
+        className={"inline-name " + className}
+        autoFocus
+        maxLength={120}
+        size={Math.max(6, Math.min(60, edit.value.length))}
+        value={edit.value}
+        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => setEditing({ ...edit, value: e.target.value })}
+        onBlur={() => commitEdit(edit)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            skipCommit.current = true;
+            setEditing(null);
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+      />
+    );
+  }
+  function menuItemsFor({ pack, skin: target, scope }: MenuState): MenuItem[] {
+    const items: MenuItem[] = [];
+    if (target) {
+      items.push({
+        label: "重命名",
+        onSelect: () => editSkin(pack, target, scope),
+      });
+      if (pack.preset) {
+        items.push({
+          label: "从游戏中移除",
+          danger: true,
+          separate: true,
+          disabled: !!busy || locked,
+          onSelect: () => {
+            setSelected(pack.key);
+            setSkinIndex(target.index);
+            show("remove-skin");
+          },
+        });
+        return items;
+      }
+      const installed = skinInstalled(pack.id, target.index);
+      if (!installed) {
+        items.push({
+          label: "安装到游戏",
+          disabled: !!busy || !gameReady,
+          onSelect: () =>
+            void run(
+              "正在安装…",
+              () =>
+                post("/api/packs/enable", {
+                  slot: gameSlotName,
+                  id: pack.id,
+                  skins: [target.index],
+                }),
+              "已安装到游戏",
+            ),
+        });
+      } else {
+        if (packOutdated(pack)) {
+          items.push({
+            label: "更新到游戏",
+            disabled: !!busy || !gameReady,
+            onSelect: () =>
+              void run(
+                "正在更新…",
+                () =>
+                  post("/api/packs/apply-update", {
+                    slot: gameSlotName,
+                    id: pack.id,
+                  }),
+                "已更新到游戏",
+              ),
+          });
+        }
+        items.push({
+          label: "从游戏中移除",
+          disabled: !!busy || !gameReady,
+          onSelect: () =>
+            void run(
+              "正在移除…",
+              () =>
+                post("/api/packs/disable", {
+                  slot: gameSlotName,
+                  id: pack.id,
+                  skinIndex: target.index,
+                }),
+              "已从游戏中移除",
+            ),
+        });
+      }
+      items.push({
+        label: "移出此包",
+        danger: true,
+        separate: true,
+        disabled: !!busy || locked,
+        onSelect: () => {
+          setSelected(pack.key);
+          setSkinIndex(target.index);
+          show("remove-skin");
+        },
+      });
+      return items;
+    }
+
+    items.push({
+      label: "重命名皮肤包",
+      onSelect: () => editPack(pack, scope),
+    });
+    if (pack.preset) {
+      if (state?.pending) {
+        items.push({
+          label: "恢复中断的操作",
+          disabled: !!busy,
+          onSelect: () =>
+            void run("正在恢复…", () =>
+              post("/api/packs/recover", { slot: pack.id }),
+            ),
+        });
+      } else {
+        items.push({
+          label: "恢复初始皮肤包",
+          disabled:
+            !!busy || !state?.managed || !state.active?.length || locked,
+          onSelect: () =>
+            void run(
+              "正在恢复…",
+              () => post("/api/packs/restore", { slot: pack.id }),
+              "已恢复初始皮肤包",
+            ),
+        });
+      }
+      return items;
+    }
+
+    if (!packFullyInstalled(pack)) {
+      items.push({
+        label: "整包安装到游戏",
+        disabled: !!busy || !gameReady || !pack.skins,
+        onSelect: () =>
+          void run(
+            "正在安装…",
+            () =>
+              post("/api/packs/enable", {
+                slot: gameSlotName,
+                id: pack.id,
+              }),
+            "已整包安装到游戏",
+          ),
+      });
+    }
+    if (packActive(pack.id) && packOutdated(pack)) {
+      items.push({
+        label: "更新到游戏",
+        disabled: !!busy || !gameReady || !pack.skins || !!pack.pack?.draft,
+        onSelect: () =>
+          void run(
+            "正在更新…",
+            () =>
+              post("/api/packs/apply-update", {
+                slot: gameSlotName,
+                id: pack.id,
+              }),
+            "已更新到游戏",
+          ),
+      });
+    }
+    if (packActive(pack.id)) {
+      items.push({
+        label: "从游戏中移除",
+        disabled: !!busy || !gameReady,
+        onSelect: () =>
+          void run(
+            "正在移除…",
+            () =>
+              post("/api/packs/disable", {
+                slot: gameSlotName,
+                id: pack.id,
+              }),
+            "已从游戏中移除，本地包保留",
+          ),
+      });
+    }
+    items.push({
+      label: "导出 .zip",
+      separate: true,
+      disabled: !pack.skins,
+      onSelect: () => {
+        location.href = `/api/packs/${encodeURIComponent(pack.id)}/download`;
+      },
+    });
+    items.push({
+      label: "删除皮肤包",
+      danger: true,
+      disabled: !!busy || packActive(pack.id),
+      hint: packActive(pack.id) ? "先从游戏中移除，才能删除本地包" : undefined,
+      onSelect: () => {
+        setSelected(pack.key);
+        show("delete");
+      },
+    });
+    return items;
+  }
+
   async function importFile(file?: File) {
     if (!file) return;
     await run(
@@ -288,57 +596,79 @@ export function PackPage() {
       ? true
       : p.preset
         ? data?.status?.find((s) => s.slot === p.id)?.exists
-        : enabled(p.id).length > 0;
+        : packActive(p.id);
     const personaInUse = personaProfiles.some((profile) => profile.lastUsed);
+    const select = () => {
+      setSelected(p.key);
+      setSkinIndex(0);
+      setNotice("");
+      setError("");
+    };
     return (
-      <button
+      <div
         key={p.key}
-        title={p.name}
+        role="button"
+        tabIndex={0}
+        title={p.gameSkins ? p.name : "双击重命名，右键更多操作"}
         className={
           "pack-library-row text-only" + (p.key === row?.key ? " selected" : "")
         }
-        onClick={() => {
-          setSelected(p.key);
-          setSkinIndex(0);
-          setNotice("");
-          setError("");
+        onClick={select}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            select();
+          }
+        }}
+        onDoubleClick={() => {
+          if (p.gameSkins) return;
+          editPack(p, "list");
+        }}
+        onContextMenu={(e) => {
+          if (p.gameSkins) return;
+          e.preventDefault();
+          select();
+          setMenu({ x: e.clientX, y: e.clientY, pack: p, scope: "list" });
         }}
       >
-        <span>
-          <b>{p.name}</b>
+        <span className="pack-row-copy">
+          {editing?.kind === "pack" &&
+          editing.pack.key === p.key &&
+          editing.scope === "list" ? (
+            inlineName(editing, "inline-pack")
+          ) : (
+            <b>{p.name}</b>
+          )}
           <small>
             {p.gameSkins ? `${p.skins} 个角色` : `${p.skins} 套皮肤`}
             {p.gameSkins
               ? " · 角色创建器"
               : p.preset
-                ? " · " + p.id
+                ? " · 游戏目录"
                 : p.pack?.draft
                   ? " · 空包"
                   : ""}
           </small>
         </span>
-        {game && (
-          <span className="pack-game-badge">
-            {p.gameSkins
-              ? personaInUse
-                ? "当前使用"
-                : "角色创建器"
-              : p.preset
-                ? "游戏中"
-                : "游戏中 · " +
-                  enabled(p.id)
-                    .map((s) => s.slot)
-                    .join(" / ")}
-          </span>
-        )}
-      </button>
+        <span className="pack-row-end">
+          {game && (
+            <span className="pack-game-badge">
+              {p.gameSkins
+                ? personaInUse
+                  ? "当前使用"
+                  : "角色创建器"
+                : "游戏中"}
+            </span>
+          )}
+        </span>
+      </div>
     );
   }
 
   return (
     <div className="page-content pack-manager-page">
       <div className="collection-workbar">
-        <h1>皮肤包</h1>
         <nav className="collection-tabs" aria-label="皮肤包范围">
           <a className={view === "library" ? "active" : ""} href="#/packs">
             本地包 <span>{local.length}</span>
@@ -448,10 +778,25 @@ export function PackPage() {
                 <>
                   <div className="pack-detail-bar">
                     <div>
-                      <h2 title={row.name}>
-                        {row.name}
-                        {row.preset && (
-                          <span className="preset-title-badge">游戏预制</span>
+                      <h2
+                        title={row.gameSkins ? row.name : "双击重命名"}
+                        onDoubleClick={() => {
+                          if (!row.gameSkins) editPack(row, "detail");
+                        }}
+                      >
+                        {editing?.kind === "pack" &&
+                        editing.pack.key === row.key &&
+                        editing.scope === "detail" ? (
+                          inlineName(editing, "inline-title")
+                        ) : (
+                          <>
+                            {row.name}
+                            {row.preset && (
+                              <span className="preset-title-badge">
+                                游戏目录
+                              </span>
+                            )}
+                          </>
                         )}
                       </h2>
                       <span>
@@ -466,86 +811,24 @@ export function PackPage() {
                       >
                         ＋ 添加皮肤
                       </button>
-                      {row.preset && (
-                        <button
-                          disabled={!!busy || locked}
-                          onClick={() => show("rename-pack")}
-                        >
-                          修改包名
-                        </button>
-                      )}
-                      {row.preset ? (
-                        <>
-                          <button
-                            disabled={
-                              !!busy ||
-                              !state?.managed ||
-                              !state.active?.length ||
-                              locked
-                            }
-                            onClick={() =>
-                              void run(
-                                "正在恢复…",
-                                () =>
-                                  post("/api/packs/restore", { slot: row.id }),
-                                "已恢复初始皮肤包",
-                              )
-                            }
-                          >
-                            恢复初始
-                          </button>
-                          {!!state?.pending && (
-                            <button
-                              disabled={!!busy}
-                              onClick={() =>
-                                void run("正在恢复…", () =>
-                                  post("/api/packs/recover", { slot: row.id }),
-                                )
-                              }
-                            >
-                              恢复中断
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <a
-                            className="button-link"
-                            href={
-                              row.skins
-                                ? `/api/packs/${encodeURIComponent(row.id)}/download`
-                                : undefined
-                            }
-                            aria-disabled={!row.skins}
-                            title={
-                              row.skins ? "下载完整皮肤包" : "先添加皮肤再导出"
-                            }
-                            download
-                          >
-                            导出 .zip
-                          </a>
-                          <button
-                            disabled={!!busy}
-                            onClick={() => show("rename-pack")}
-                          >
-                            修改包名
-                          </button>
-                          <button
-                            className="danger-button"
-                            disabled={!!busy || enabled(row.id).length > 0}
-                            title={
-                              enabled(row.id).length
-                                ? "先从游戏中移除，才能删除本地包"
-                                : ""
-                            }
-                            onClick={() => show("delete")}
-                          >
-                            {enabled(row.id).length
-                              ? "游戏中，暂不可删除"
-                              : "删除包"}
-                          </button>
-                        </>
-                      )}
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label="皮肤包操作"
+                        title="更多操作"
+                        disabled={!!busy}
+                        onClick={(e) => {
+                          const box = e.currentTarget.getBoundingClientRect();
+                          setMenu({
+                            x: box.left,
+                            y: box.bottom + 4,
+                            pack: row,
+                            scope: "detail",
+                          });
+                        }}
+                      >
+                        ⋯
+                      </button>
                     </div>
                   </div>
 
@@ -571,41 +854,158 @@ export function PackPage() {
                       {!contents ? (
                         <p className="muted">正在读取…</p>
                       ) : (
-                        contents.skins.map((s) => (
-                          <button
-                            className={
-                              "skin-item text-only" +
-                              (s.index === skinIndex ? " selected" : "")
-                            }
-                            key={s.index}
-                            onClick={() => setSkinIndex(s.index)}
-                          >
-                            <span className="skin-order">{s.index + 1}</span>
-                            <span>
-                              <b>{s.name}</b>
-                            </span>
-                          </button>
-                        ))
+                        contents.skins.map((s) => {
+                          const installed =
+                            !row.preset && skinInstalled(row.id, s.index);
+                          const outdated = installed && packOutdated(row);
+                          return (
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              className={
+                                "skin-item text-only" +
+                                (s.index === skinIndex ? " selected" : "")
+                              }
+                              key={s.index}
+                              onClick={() => setSkinIndex(s.index)}
+                              onKeyDown={(e) => {
+                                if (e.target !== e.currentTarget) return;
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setSkinIndex(s.index);
+                                }
+                              }}
+                              onDoubleClick={() => {
+                                setSkinIndex(s.index);
+                                editSkin(row, s, "list");
+                              }}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                setSkinIndex(s.index);
+                                setMenu({
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                  pack: row,
+                                  skin: s,
+                                  scope: "list",
+                                });
+                              }}
+                            >
+                              <span className="skin-order">{s.index + 1}</span>
+                              <span className="skin-item-copy">
+                                {editing?.kind === "skin" &&
+                                editing.pack.key === row.key &&
+                                editing.skin.index === s.index &&
+                                editing.scope === "list" ? (
+                                  inlineName(editing, "inline-skin")
+                                ) : (
+                                  <b>{s.name}</b>
+                                )}
+                              </span>
+                              {!row.preset && (
+                                <span className="skin-item-state">
+                                  {installed ? (
+                                    outdated ? (
+                                      <button
+                                        type="button"
+                                        className="mini-button"
+                                        disabled={!!busy || !gameReady}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          void run(
+                                            "正在更新…",
+                                            () =>
+                                              post("/api/packs/apply-update", {
+                                                slot: gameSlotName,
+                                                id: row.id,
+                                              }),
+                                            "已更新到游戏",
+                                          );
+                                        }}
+                                      >
+                                        更新
+                                      </button>
+                                    ) : (
+                                      <span className="skin-installed-badge">
+                                        游戏中
+                                      </span>
+                                    )
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="mini-button"
+                                      disabled={!!busy || !gameReady}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void run(
+                                          "正在安装…",
+                                          () =>
+                                            post("/api/packs/enable", {
+                                              slot: gameSlotName,
+                                              id: row.id,
+                                              skins: [s.index],
+                                            }),
+                                          "已安装到游戏",
+                                        );
+                                      }}
+                                    >
+                                      安装
+                                    </button>
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                     <div className="skin-detail-pane">
                       {skin ? (
                         <>
                           <div className="skin-title">
-                            <h3>{skin.name}</h3>
+                            <h3
+                              title="双击重命名"
+                              onDoubleClick={() => editSkin(row, skin, "detail")}
+                            >
+                              {editing?.kind === "skin" &&
+                              editing.pack.key === row.key &&
+                              editing.skin.index === skin.index &&
+                              editing.scope === "detail" ? (
+                                inlineName(editing, "inline-title")
+                              ) : (
+                                skin.name
+                              )}
+                            </h3>
                             <div className="selected-skin-actions">
                               <button
+                                type="button"
+                                className="icon-button"
+                                title="重命名皮肤"
+                                aria-label="重命名皮肤"
                                 disabled={!!busy || locked}
-                                onClick={() => show("rename-skin")}
+                                onClick={() => editSkin(row, skin, "detail")}
                               >
-                                重命名
+                                ✎
                               </button>
                               <button
-                                className="danger-button"
-                                disabled={!!busy || locked}
-                                onClick={() => show("remove-skin")}
+                                type="button"
+                                className="icon-button"
+                                title="皮肤操作"
+                                aria-label="皮肤操作"
+                                disabled={!!busy}
+                                onClick={(e) => {
+                                  const box =
+                                    e.currentTarget.getBoundingClientRect();
+                                  setMenu({
+                                    x: box.left,
+                                    y: box.bottom + 4,
+                                    pack: row,
+                                    skin,
+                                    scope: "detail",
+                                  });
+                                }}
                               >
-                                {row.preset ? "从游戏中移除" : "移出此包"}
+                                ⋯
                               </button>
                             </div>
                           </div>
@@ -665,83 +1065,56 @@ export function PackPage() {
                             </details>
                           ) : (
                             <div className="skin-actions">
-                              <span>整包安装</span>
-                              {presets.map((p) => {
-                                const slot = data.status?.find(
-                                  (s) => s.slot === p.id,
-                                );
-                                const active = slot?.active?.find(
-                                  (x) => x.id === row.id,
-                                );
-                                const pendingUpdate =
-                                  active && active.revision !== row.revision;
-                                const disabled =
-                                  !!busy ||
-                                  !!slot?.pending ||
-                                  !!slot?.changedOutsideManager;
-                                return (
-                                  <div key={p.id} className="skin-action-group">
-                                    {active ? (
-                                      <>
-                                        <span className="enabled-label">
-                                          游戏中 · {p.id}
-                                        </span>
-                                        {pendingUpdate && (
-                                          <button
-                                            disabled={disabled}
-                                            onClick={() =>
-                                              void run(
-                                                "正在更新…",
-                                                () =>
-                                                  post(
-                                                    "/api/packs/apply-update",
-                                                    { slot: p.id, id: row.id },
-                                                  ),
-                                                "已更新到游戏",
-                                              )
-                                            }
-                                          >
-                                            更新到游戏
-                                          </button>
-                                        )}
-                                        <button
-                                          disabled={disabled}
-                                          onClick={() =>
-                                            void run(
-                                              "正在移除…",
-                                              () =>
-                                                post("/api/packs/disable", {
-                                                  slot: p.id,
-                                                  id: row.id,
-                                                }),
-                                              "已从游戏中移除，本地包保留",
-                                            )
-                                          }
-                                        >
-                                          从 {p.id} 移除
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <button
-                                        disabled={disabled || !row.skins}
-                                        onClick={() =>
-                                          void run(
-                                            "正在加入游戏…",
-                                            () =>
-                                              post("/api/packs/enable", {
-                                                slot: p.id,
-                                                id: row.id,
-                                              }),
-                                            "已加入游戏",
-                                          )
-                                        }
-                                      >
-                                        加入 {p.id}
-                                      </button>
-                                    )}
-                                  </div>
-                                );
-                              })}
+                              <span
+                                className={
+                                  skinInstalled(row.id, skin.index)
+                                    ? "enabled-label"
+                                    : ""
+                                }
+                              >
+                                {skinInstalled(row.id, skin.index)
+                                  ? "游戏中"
+                                  : "未安装到游戏"}
+                              </span>
+                              {!skinInstalled(row.id, skin.index) ? (
+                                <button
+                                  className="primary"
+                                  disabled={!!busy || !gameReady}
+                                  onClick={() =>
+                                    void run(
+                                      "正在安装…",
+                                      () =>
+                                        post("/api/packs/enable", {
+                                          slot: gameSlotName,
+                                          id: row.id,
+                                          skins: [skin.index],
+                                        }),
+                                      "已安装到游戏",
+                                    )
+                                  }
+                                >
+                                  安装到游戏
+                                </button>
+                              ) : (
+                                packOutdated(row) && (
+                                  <button
+                                    disabled={!!busy || !gameReady}
+                                    onClick={() =>
+                                      void run(
+                                        "正在更新…",
+                                        () =>
+                                          post("/api/packs/apply-update", {
+                                            slot: gameSlotName,
+                                            id: row.id,
+                                          }),
+                                        "已更新到游戏",
+                                      )
+                                    }
+                                  >
+                                    更新到游戏
+                                  </button>
+                                )
+                              )}
                             </div>
                           )}
                           <p className="game-write-note">
@@ -802,7 +1175,7 @@ export function PackPage() {
                     ? "删除皮肤包"
                     : dialog === "add"
                       ? "添加皮肤"
-                      : "修改名称"
+                      : "皮肤包操作"
           }
         >
           <div className="pick-box pack-operation-dialog">
@@ -818,9 +1191,7 @@ export function PackPage() {
                         ? "删除皮肤包？"
                         : dialog === "add"
                           ? "添加皮肤"
-                          : dialog === "rename-pack"
-                            ? "修改包名"
-                            : "修改皮肤名"}
+                          : "皮肤包操作"}
               </h2>
               <button
                 disabled={!!busy}
@@ -830,42 +1201,19 @@ export function PackPage() {
                 ×
               </button>
             </div>
-            {["create", "rename-pack", "rename-skin"].includes(dialog) && (
+            {dialog === "create" && (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
                   void run(
                     "正在保存…",
                     async () => {
-                      if (dialog === "create") {
-                        const p = await post("/api/packs/create", { name });
-                        setQuery("");
-                        setSelected(p.id);
-                      } else if (row)
-                        await post(
-                          row.preset
-                            ? "/api/packs/edit-installed"
-                            : "/api/packs/rename",
-                          dialog === "rename-pack"
-                            ? {
-                                id: row.id,
-                                slot: row.id,
-                                name,
-                                revision: contents?.revision,
-                              }
-                            : {
-                                id: row.id,
-                                slot: row.id,
-                                skinIndex,
-                                skinName: name,
-                                revision: contents?.revision,
-                              },
-                        );
+                      const p = await post("/api/packs/create", { name });
+                      setQuery("");
+                      setSelected(p.id);
                       setDialog(null);
                     },
-                    dialog === "create"
-                      ? "皮肤包已创建，可以开始添加皮肤"
-                      : "名称已保存",
+                    "皮肤包已创建，可以开始添加皮肤",
                   );
                 }}
               >
@@ -879,9 +1227,7 @@ export function PackPage() {
                     onChange={(e) => setName(e.target.value)}
                   />
                 </label>
-                {dialog === "create" && (
-                  <p>先创建一个空包，再选择要放进去的皮肤。</p>
-                )}
+                <p>先创建一个空包，再选择要放进去的皮肤。</p>
                 <div className="pick-actions">
                   <button
                     type="button"
@@ -891,7 +1237,7 @@ export function PackPage() {
                     取消
                   </button>
                   <button className="primary" disabled={!!busy || !name.trim()}>
-                    {dialog === "create" ? "创建皮肤包" : "保存名称"}
+                    创建皮肤包
                   </button>
                 </div>
               </form>
@@ -1027,7 +1373,7 @@ export function PackPage() {
               <>
                 <p>
                   {row.preset
-                    ? `选择一个本地包，将其中全部皮肤加入 ${row.id}。写入前请退出游戏。`
+                    ? "选择一个本地包，勾选要安装到游戏的皮肤。写入前请退出游戏。"
                     : `从已有包中选择皮肤，复制到「${row.name}」。来源包保持不变。`}
                 </p>
                 <label>
@@ -1052,7 +1398,7 @@ export function PackPage() {
                         <input
                           type="checkbox"
                           checked={indices.includes(s.index)}
-                          disabled={row.preset || !!busy}
+                          disabled={!!busy}
                           onChange={(e) =>
                             setIndices((a) =>
                               e.target.checked
@@ -1087,7 +1433,11 @@ export function PackPage() {
                               ? "/api/packs/enable"
                               : "/api/packs/add-skins",
                             row.preset
-                              ? { slot: row.id, id: sourceId }
+                              ? {
+                                  slot: gameSlotName,
+                                  id: sourceId,
+                                  skins: indices,
+                                }
                               : { target: row.id, source: sourceId, indices },
                           );
                           setDialog(null);
@@ -1109,6 +1459,14 @@ export function PackPage() {
             )}
           </div>
         </div>
+      )}
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItemsFor(menu)}
+          onClose={() => setMenu(null)}
+        />
       )}
     </div>
   );

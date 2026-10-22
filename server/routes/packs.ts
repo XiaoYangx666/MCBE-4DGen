@@ -444,10 +444,41 @@ export async function handlePacks(
       label?: string;
       id?: string;
       slot?: string;
+      target?: string;
     };
     const job = studio.jobs.get(body.job ?? '');
     if (!job || job.status !== 'done' || !job.files)
       throw Error('转换结果不存在或尚未完成');
+    const label = String(body.label ?? '')
+      .trim()
+      .slice(0, 120);
+    const target = String(body.target ?? '').trim();
+    if (target) {
+      // Save directly into the chosen pack: stage the conversion as a hidden
+      // temporary pack, copy its only skin, then remove the staging pack so no
+      // extra collection entry is left behind.
+      const temp = 'pack-' + crypto.randomUUID();
+      let result: unknown;
+      try {
+        const staged = await manager.importFiles(temp, job.files, ['texts'], {
+          ...job.meta,
+          versionName: label || new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        });
+        if (label)
+          await manager.renameNames(staged.id, {
+            name: label,
+            skinIndex: 0,
+            skinName: label,
+          });
+        await manager.addSkins(target, temp, [0], { originPackId: target });
+        const pack = (await manager.list()).find((item) => item.id === target);
+        if (!pack) throw Error('目标皮肤包不存在');
+        result = { pack, enabled: false };
+      } finally {
+        await manager.remove(temp).catch(() => {});
+      }
+      return json(result);
+    }
     const pack = await manager.importFiles(
       String(
         body.id ?? 'skin-' + Date.now() + '-' + crypto.randomUUID().slice(0, 6),
@@ -457,17 +488,14 @@ export async function handlePacks(
       {
         ...job.meta,
         versionName:
-          String(body.label ?? '')
-            .trim()
-            .slice(0, 120) ||
-          new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+          label || new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
       },
     );
-    if (body.label?.trim())
+    if (label)
       await manager.renameNames(pack.id, {
-        name: body.label.trim().slice(0, 120),
+        name: label,
         skinIndex: 0,
-        skinName: body.label.trim().slice(0, 120),
+        skinName: label,
       });
     if (!body.slot || !studio.gameConfigured)
       return json({ pack, enabled: false });
@@ -505,20 +533,27 @@ export async function handlePacks(
   }
 
   if (url.pathname === '/api/packs/enable' && req.method === 'POST') {
-    const body = (await req.json()) as { slot?: string; id?: string };
+    const body = (await req.json()) as { slot?: string; id?: string; skins?: number[] };
     const manager = studio.requireManager();
     const slot = String(body.slot ?? '');
-    const result = await manager.enable(slot, String(body.id ?? ''));
+    const skins = Array.isArray(body.skins)
+      ? body.skins.filter((index) => Number.isInteger(index))
+      : [];
+    const result = skins.length
+      ? await manager.enableSkins(slot, String(body.id ?? ''), skins)
+      : await manager.enable(slot, String(body.id ?? ''));
     await manager.pruneBackups(slot).catch(() => {});
     if (slot === 'custom') await backupGameSkins(studio, 'custom:enable');
     return json(result);
   }
 
   if (url.pathname === '/api/packs/disable' && req.method === 'POST') {
-    const body = (await req.json()) as { slot?: string; id?: string };
+    const body = (await req.json()) as { slot?: string; id?: string; skinIndex?: number };
     const manager = studio.requireManager();
     const slot = String(body.slot ?? '');
-    const result = await manager.disable(slot, String(body.id ?? ''));
+    const result = Number.isInteger(body.skinIndex)
+      ? await manager.disableSkin(slot, String(body.id ?? ''), body.skinIndex!)
+      : await manager.disable(slot, String(body.id ?? ''));
     await manager.pruneBackups(slot).catch(() => {});
     if (slot === 'custom') await backupGameSkins(studio, 'custom:disable');
     return json(result);

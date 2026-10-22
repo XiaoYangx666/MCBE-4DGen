@@ -16,7 +16,7 @@ export interface ManagerConfig {
   slots: Record<string, { manifestFormat: 1 | 2 }>;
 }
 type Hashes = Record<string, string>;
-type Active = { id: string; revision: string }[];
+type Active = { id: string; revision: string; skins?: number[] }[];
 interface Tree { files: SkinPackFiles; directories: string[] }
 interface SlotEdits { name?: string; skins: Record<string, { name?: string; removed?: boolean }> }
 interface Snapshot { edits?: SlotEdits; id: string; slot: string; target: string; created: string; hashes: Hashes; directories: string[]; active: Active }
@@ -65,6 +65,9 @@ type InstalledSkin = {texture:string; geometry?:string; localization_name?:strin
 function skinIdentity(skin: InstalledSkin,index:number) {
   const name=skin.localization_name ?? `fourdgen_${index}_${createHash('sha256').update(skin.texture+'|'+(skin.geometry??'')).digest('hex').slice(0,12)}`;
   return {name,key:skin.texture+'::'+(skin.geometry??'')+'::'+name};
+}
+function entriesAt(value: Tree) {
+  return decode<{ skins: { texture: string }[] }>(value.files['skins.json']!).skins.map((entry, index) => ({ ...entry, index }));
 }
 const encode = (v: unknown) => new TextEncoder().encode(JSON.stringify(v, null, 2));
 const decode = <T>(bytes: Uint8Array): T => JSON.parse(new TextDecoder().decode(bytes)) as T;
@@ -379,7 +382,7 @@ export class PackManager {
     });
   }
   /** Copy chosen skins into a user pack, leaving source packs and game slots untouched. */
-  async addSkins(targetId: string, sourceId: string, indices: number[]) {
+  async addSkins(targetId: string, sourceId: string, indices: number[], options: { originPackId?: string } = {}) {
     return this.locked(async () => {
       if (targetId === sourceId) throw new Error('不能添加同一个包');
       const target = await json<LibraryPack>(this.libraryPath(targetId));
@@ -400,7 +403,17 @@ export class PackManager {
         composed.files[path] = new TextEncoder().encode([`skinpack.${key}=${target.name}`, ...lines].join('\n'));
       }
       if (!target.draft) await atomicJSON(this.revisionPath(targetId, target.revision) + '.json', target);
-      const result = await this.store(targetId, composed.files, composed.directories, { ...target.meta, skinOrigins: [...Array.from({length:target.skins}, (_,i) => skinOrigin(target,i)), ...Array.from({length:source.skins}, (_,i) => i).filter(i => indices.includes(i)).map(i => skinOrigin(source,i))] });
+      const selected = Array.from({length:source.skins}, (_,i) => i).filter(i => indices.includes(i));
+      const appended = selected.map((index, offset) => {
+        const origin = skinOrigin(source, index);
+        if (!origin) return null;
+        // When the source is a temporary staging pack, point the origin at the
+        // destination pack and its new index instead of the deleted staging ID.
+        return options.originPackId
+          ? { ...origin, packId: options.originPackId, skinIndex: target.skins + offset }
+          : origin;
+      });
+      const result = await this.store(targetId, composed.files, composed.directories, { ...target.meta, skinOrigins: [...Array.from({length:target.skins}, (_,i) => skinOrigin(target,i)), ...appended] });
       await atomicJSON(this.libraryPath(targetId), { ...result, imported: target.imported });
       return result;
     });
@@ -580,7 +593,12 @@ export class PackManager {
       if (pack.removed || pack.draft || !pack.skins || pack.warnings?.length) throw new Error('皮肤包不可启用，请先添加皮肤并检查兼容提示');
       const state = await this.state(slot);
       if (!state?.active.some(p => p.id === id)) throw new Error('皮肤包未启用');
-      const active = state.active.map(p => p.id === id ? { id, revision: pack.revision } : p);
+      const active: Active = state.active.flatMap((p) => {
+        if (p.id !== id) return [p];
+        if (!p.skins) return [{ id, revision: pack.revision }];
+        const skins = p.skins.filter((index) => index < pack.skins);
+        return skins.length ? [{ id, revision: pack.revision, skins }] : [];
+      });
       return this.apply(slot, state, await this.compose(slot, state, active), active);
     });
   }
@@ -774,14 +792,23 @@ export class PackManager {
       }
       const remap = new Map<string, string>();
       const sourceGeometry = content['geometry.json'] ? geometryEntries(content['geometry.json']) : [];
+      const wanted = packRef.skins
+        ? new Set(packRef.skins)
+        : selection?.id === pack.id
+          ? new Set(selection.indices)
+          : null;
+      const selected = sourceSkins
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ index }) => !wanted || wanted.has(index));
+      const usedGeometry = new Set(selected.map(({ entry }) => String(entry.geometry)));
       for (const { id, value } of sourceGeometry) {
+        if (!usedGeometry.has(id)) continue;
         const renamed = `geometry.fourdgen_${pack.id}_${remap.size}`; remap.set(id, renamed);
         geometryParts.push(new TextEncoder().encode(',' + JSON.stringify(renamed) + ':'));
         geometryParts.push(value);
         geometryCount++;
       }
-      for (const [index, entry] of sourceSkins.entries()) {
-        if (selection?.id === pack.id && !selection.indices.includes(index)) continue;
+      for (const { entry, index } of selected) {
         const texture = `${pack.id}_${index}.png`, name = `${pack.id}_${index}`;
         files[texture] = content[entry.texture as string]!;
         skins.push({ ...entry, localization_name: name, texture, geometry: remap.get(entry.geometry as string) ?? entry.geometry });
@@ -861,6 +888,22 @@ export class PackManager {
         edits.skins[texture] = {...edits.skins[texture],...(change.skinName!==undefined?{name:label(change.skinName)}:{}),...(change.remove?{removed:true}:{})};
       }
       if(change.name===undefined && change.skinName===undefined && !change.remove) throw Error('没有要修改的内容');
+      let active = state.active;
+      if (change.remove) {
+        const installed = entriesAt(current).find((entry) => entry.index === change.skinIndex);
+        const ref = installed && state.active.find((p) => installed.texture.startsWith(p.id + '_'));
+        if (ref) {
+          const latest = await json<LibraryPack>(this.libraryPath(ref.id));
+          const pack = latest.revision === ref.revision ? latest : await json<LibraryPack>(this.revisionPath(ref.id, ref.revision) + '.json').catch(() => latest);
+          const local = Number(installed!.texture.slice(ref.id.length + 1).replace(/\.png$/i, ''));
+          const localIndex = Number.isInteger(local) ? local : change.skinIndex!;
+          const all = Array.from({ length: pack.skins }, (_, i) => i);
+          const remaining = (ref.skins ?? all).filter((i) => i !== localIndex);
+          active = remaining.length
+            ? state.active.map((p) => p.id === ref.id ? { id: ref.id, revision: p.revision, skins: remaining } : p)
+            : state.active.filter((p) => p.id !== ref.id);
+        }
+      }
       const next = this.editTree(current,edits);
       const manifest=decode<{header:{version?:number[]};modules?:{version?:number[]}[]}>(next.files['manifest.json']!);
       const version=manifest.header.version ?? [1,0,0];
@@ -868,7 +911,7 @@ export class PackManager {
       manifest.header.version=nextVersion;
       for(const module of manifest.modules??[])module.version=nextVersion;
       next.files['manifest.json']=encode(manifest);
-      return this.apply(slot,state,next,state.active,edits);
+      return this.apply(slot,state,next,active,edits);
     });
   }
   private async apply(slot: string, state: TargetState, next: Tree, active: Active, edits: SlotEdits | null | undefined = state.edits) {
@@ -898,15 +941,60 @@ export class PackManager {
       const pack = await json<LibraryPack>(this.libraryPath(id)); if (pack.removed || pack.draft || !pack.skins) throw new Error('皮肤包为空或已归档，请先添加皮肤');
       if (pack.warnings?.length) throw new Error('Pack needs client compatibility adjustment: ' + pack.warnings.join('; '));
       const state = await this.state(slot) ?? await this.initialState(slot, await tree(this.target(slot)));
-      if (state.active.some((p) => p.id === id)) {
+      const existing = state.active.find((p) => p.id === id);
+      if (existing) {
         const edits = structuredClone(state.edits ?? {skins:{}});
         let restored = false;
+        // Reinstalling the whole pack restores skins that were removed one by one.
         for (const [texture,edit] of Object.entries(edits.skins)) if(texture.startsWith(id+'_')&&edit.removed) {delete edit.removed;restored=true;}
-        if (!restored) throw Error('该包的皮肤已全部在游戏中');
-        return this.apply(slot,state,await this.compose(slot,{...state,edits},state.active),state.active,edits);
+        if (!existing.skins && !restored) throw Error('该包的皮肤已全部在游戏中');
+        const active = state.active.map((p) => p.id === id ? { id, revision: pack.revision } : p);
+        return this.apply(slot,state,await this.compose(slot,{...state,edits},active),active,edits);
       }
       const active = [...state.active, { id, revision: pack.revision }];
-      return this.apply(slot, state, await this.compose(slot, state, active), active);
+      const edits = state.edits ? structuredClone(state.edits) : { skins: {} };
+      let restored = false;
+      // A pack may have been disabled after individual skins were removed.
+      // Reinstalling the whole pack clears those stale removals.
+      for (const [texture, edit] of Object.entries(edits.skins)) {
+        if (texture.startsWith(id + '_') && edit.removed) {
+          delete edit.removed;
+          restored = true;
+        }
+      }
+      return this.apply(slot, state, await this.compose(slot, restored ? { ...state, edits } : state, active), active, restored ? edits : state.edits);
+    });
+  }
+  /** Install only the chosen skins from one pack, merging with skins already installed. */
+  async enableSkins(slot: string, id: string, indices: number[]) {
+    this.requireGame();
+    return this.locked(async () => {
+      const pack = await json<LibraryPack>(this.libraryPath(id));
+      if (pack.removed || pack.draft || !pack.skins) throw new Error('皮肤包为空或已归档，请先添加皮肤');
+      if (pack.warnings?.length) throw new Error('Pack needs client compatibility adjustment: ' + pack.warnings.join('; '));
+      const wanted = [...new Set(indices)];
+      if (!wanted.length || wanted.some((index) => !Number.isInteger(index) || index < 0 || index >= pack.skins)) throw new Error('请选择有效皮肤');
+      const state = await this.state(slot) ?? await this.initialState(slot, await tree(this.target(slot)));
+      const existing = state.active.find((p) => p.id === id);
+      let active: Active;
+      if (!existing) {
+        active = [...state.active, { id, revision: pack.revision, skins: wanted.sort((a, b) => a - b) }];
+      } else {
+        if (!existing.skins) throw new Error('该包的皮肤已全部在游戏中');
+        const merged = [...new Set([...existing.skins, ...wanted])].sort((a, b) => a - b);
+        active = state.active.map((p) => p.id === id
+          ? { id, revision: pack.revision, skins: merged }
+          : p);
+      }
+      const edits = state.edits ? structuredClone(state.edits) : { skins: {} };
+      let restored = false;
+      for (const [key, edit] of Object.entries(edits.skins)) {
+        const match = key.match(/^(.*)_(\d+)\.png(?:::|$)/);
+        if (!match || match[1] !== id || !edit.removed || !wanted.includes(Number(match[2]))) continue;
+        delete edit.removed;
+        restored = true;
+      }
+      return this.apply(slot, state, await this.compose(slot, restored ? { ...state, edits } : state, active), active, restored ? edits : state.edits);
     });
   }
   async disable(slot: string, id: string) {
@@ -914,6 +1002,24 @@ export class PackManager {
     return this.locked(async () => {
       const state = await this.state(slot); if (!state || !state.active.some((p) => p.id === id)) throw new Error('Pack is not enabled in this slot');
       const active = state.active.filter((p) => p.id !== id);
+      return this.apply(slot, state, await this.compose(slot, state, active), active);
+    });
+  }
+  /** Remove one installed skin while keeping the rest of its pack in the game. */
+  async disableSkin(slot: string, id: string, index: number) {
+    this.requireGame();
+    return this.locked(async () => {
+      const state = await this.state(slot);
+      const entry = state?.active.find((p) => p.id === id);
+      if (!state || !entry) throw new Error('皮肤包未安装到游戏');
+      const latest = await json<LibraryPack>(this.libraryPath(id));
+      const pack = latest.revision === entry.revision ? latest : await json<LibraryPack>(this.revisionPath(id, entry.revision) + '.json');
+      const installed = entry.skins ?? Array.from({ length: pack.skins }, (_, i) => i);
+      if (!Number.isInteger(index) || !installed.includes(index)) throw new Error('这个皮肤没有安装到游戏');
+      const remaining = installed.filter((i) => i !== index);
+      const active = remaining.length
+        ? state.active.map((p) => p.id === id ? { id, revision: p.revision, skins: remaining } : p)
+        : state.active.filter((p) => p.id !== id);
       return this.apply(slot, state, await this.compose(slot, state, active), active);
     });
   }

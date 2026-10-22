@@ -50,7 +50,12 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
         <div className="card-top">
           <div>
             <span className="eyebrow">ABOUT</span>
-            <h2 id="about-title">关于 4DGen</h2>
+            <h2 id="about-title">
+              关于 4DGen
+              {data?.version && (
+                <span className="version-badge">v{data.version}</span>
+              )}
+            </h2>
           </div>
           <button type="button" aria-label="关闭" onClick={onClose}>
             ×
@@ -66,6 +71,10 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <dl className="about-facts">
+              <div>
+                <dt>作者</dt>
+                <dd>XiaoYangX666</dd>
+              </div>
               <div>
                 <dt>版本</dt>
                 <dd>{data.version}</dd>

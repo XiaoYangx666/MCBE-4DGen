@@ -19,7 +19,6 @@ export function SaveSkinDialog({
   const [packs, setPacks] = useState<Packs | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [savedId, setSavedId] = useState("");
   useEffect(() => {
     let active = true;
     api("/api/packs")
@@ -49,23 +48,12 @@ export function SaveSkinDialog({
     setBusy(true);
     setError("");
     try {
-      // Keep the first saved copy on retry if adding to a collection fails.
-      let id = savedId;
-      if (!id) {
-        const result = await post("/api/packs/install", {
-          job: jobId,
-          label: name.trim(),
-        });
-        id = result.pack.id;
-        setSavedId(id);
-      }
-      if (target)
-        await post("/api/packs/add-skins", {
-          target,
-          source: id,
-          indices: [0],
-        });
-      onSaved(target || id);
+      const result = await post("/api/packs/install", {
+        job: jobId,
+        label: name.trim(),
+        ...(target ? { target } : {}),
+      });
+      onSaved(result.pack.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -107,7 +95,7 @@ export function SaveSkinDialog({
             autoFocus
             maxLength={120}
             required
-            disabled={busy || !!savedId}
+            disabled={busy}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
@@ -129,7 +117,7 @@ export function SaveSkinDialog({
         </label>
         {target && (
           <p className="inline-note">
-            同时保留一份独立的转换版本，便于从源模型再次编辑。
+            直接保存到所选皮肤包，不会另外创建独立包。
           </p>
         )}
         {packs && !packs.configured && (
@@ -141,9 +129,6 @@ export function SaveSkinDialog({
           <p role="alert" className="error">
             {error}
           </p>
-        )}
-        {!!savedId && error && (
-          <p>独立版本已保存。可以重试添加，或关闭后到皮肤包中查看。</p>
         )}
         <div className="pick-actions">
           <a
