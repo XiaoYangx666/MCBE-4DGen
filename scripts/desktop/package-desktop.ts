@@ -38,12 +38,13 @@ await mkdir(payload,{recursive:true});
 try{
  await cp(join(root,'desktop'),join(stage,'desktop'),{recursive:true});
  for(const folder of ['server','src','profiles'])await cp(join(root,folder),join(payload,folder),{recursive:true});
- for(const name of ['package.json','bun.lock'])await copyFile(join(root,name),join(payload,name));
+ for(const name of ['package.json','package-lock.json'])await copyFile(join(root,name),join(payload,name));
  await writeFile(join(stage,'package.json'),JSON.stringify({name:'4dgen',productName:'4DGen',version:'0.0.1',main:'desktop/main.cjs',private:true}));
  console.log('Building desktop UI…');
  await build({root:join(root,'web'),configFile:false,logLevel:'warn',build:{outDir:join(payload,'web-dist'),emptyOutDir:true}});
  console.log('Installing production dependencies…');
- const install=spawn(process.env.BUN_BINARY??'bun',['install','--production','--frozen-lockfile','--ignore-scripts'],{cwd:payload,stdio:'inherit'});
+ const npmBinary=process.env.NPM_BINARY??(process.platform==='win32'?'npm.cmd':'npm');
+ const install=spawn(npmBinary,['ci','--omit=dev','--ignore-scripts'],{cwd:payload,stdio:'inherit'});
  if(await waitForExit(install)!==0)throw Error('生产依赖安装失败');
  const svg=await readFile(join(root,'desktop/icon.svg'));
  const png=await sharp(svg).resize(256,256).png().toBuffer();
@@ -64,7 +65,7 @@ try{
   const locales=join(appDir,'locales');
   for(const name of await readdir(locales).catch(()=>[] as string[]))if(!keepLocales.has(name))await rm(join(locales,name),{force:true});
   await pruneRuntime(join(appDir,'resources','payload','node_modules'));
-  await rm(join(appDir,'resources','payload','bun.lock'),{force:true});
+  await rm(join(appDir,'resources','payload','package-lock.json'),{force:true});
   console.log('便携版输出：'+outDir);
   console.log('便携版大小：'+(await directorySize(appDir)/1024/1024).toFixed(1)+' MB');
   console.log('如果双击 exe 没有窗口，请把整个目录复制到工作区外，或用 --out 指定普通可写目录。');

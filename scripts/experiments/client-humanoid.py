@@ -2,12 +2,13 @@
 import hashlib
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-TARGET = Path(r'D:\Minecraft\Content\data\skin_packs\persona')
-RECEIPT = ROOT / '.cache/client-backups/<timestamp>-persona/receipt.json'
+TARGET = Path(os.environ.get('SKIN_PACKS_ROOT', r'D:\Minecraft\Content\data\skin_packs')) / 'persona'
+RECEIPT = Path(os.environ.get('CLIENT_RECEIPT', str(ROOT / '.cache/client-backups/current-persona/receipt.json')))
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--sample', choices=['shino-humanoid', 'shino-tuned', 'shino-source-owned', 'shino-natural'], default='shino-humanoid')
 args = parser.parse_args()

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "./model.glb",
+  "output": "../outputs/example",
+  "name": "Example",
+  "binding": "humanoid",
+  "profile": "../profiles/humanoid.example.json",
+  "height": 32,
+  "managerConfig": "../skin-manager.example.json",
+  "libraryId": "example",
+  "slot": "custom"
+}

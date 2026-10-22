@@ -3,7 +3,7 @@
  * import (cached GLB or PMX through Assimp) -> humanoid export -> skin pack.
  *
  * Usage:
- *   node scripts/diagnostics/bench-convert.ts [--model sample-b|shino] [--runs 3]
+ *   node scripts/diagnostics/bench-convert.ts [--model sample-a|sample-b] [--runs 3]
  *
  * Reports per-phase timings plus end-to-end wall time. Read-only apart from
  * writing nothing: no skin pack is installed and no game directory is touched.
@@ -19,14 +19,14 @@ import { buildSkinPack } from "../../src/skin-pack.ts";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 const presets: Record<string, { source: string; cache: string; profile: string; excluded: string[] }> = {
-  sample-b: {
-    source: ".cache/models/sample-b/样本 Bfashion2/样本 Bfasion2.pmx",
+  'sample-b': {
+    source: process.env.SAMPLE_B_PMX ?? ".cache/models/sample-b/source.pmx",
     cache: ".cache/models/sample-b/diagnostic-source.glb",
     profile: "profiles/sample-b.json",
     excluded: ["表情"],
   },
-  sample-a: {
-    source: ".cache/models/sample-a/样本 A.pmx",
+  'sample-a': {
+    source: process.env.SAMPLE_A_PMX ?? ".cache/models/sample-a/source.pmx",
     cache: ".cache/models/sample-a/diagnostic-source.glb",
     profile: "profiles/sample-a.json",
     excluded: [],

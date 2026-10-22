@@ -67,8 +67,7 @@ export interface GameSkinBackupOptions {
   userDir?: string;
   now?: Date;
 }
-const AUTO_BACKUP_LIMIT = 30;
-const MANUAL_BACKUP_LIMIT = 100;
+const BACKUP_LIMIT = 10;
 
 export function gameSkinBackupRoot(dataDir: string): string {
   return resolve(dataDir, 'game-skins', 'backups');
@@ -195,12 +194,7 @@ export async function deleteGameSkinBackup(
 async function pruneGameSkinBackups(dataDir: string): Promise<void> {
   const root = gameSkinBackupRoot(dataDir);
   const backups = await listGameSkinBackups(dataDir);
-  const excess = [
-    ...backups.filter((item) => item.kind === 'auto').slice(AUTO_BACKUP_LIMIT),
-    ...backups
-      .filter((item) => item.kind === 'manual')
-      .slice(MANUAL_BACKUP_LIMIT),
-  ];
+  const excess = backups.slice(BACKUP_LIMIT);
   await Promise.all(
     excess.map((item) => rm(join(root, item.id + '.json'), { force: true })),
   );

@@ -13,10 +13,10 @@
 ## 用法
 
 ```sh
-bun run preview ./pack --out ./preview.png
-bun run preview ./pack.mcpack --out ./archive-preview.png --unlit
-bun run preview ./geometry.json --texture ./skin0.png --out ./geometry-preview.png
-bun run preview ./pack --out ./large-preview.png --size 512 --no-cull
+node src/cli.ts preview ./pack --out ./preview.png
+node src/cli.ts preview ./pack.mcpack --out ./archive-preview.png --unlit
+node src/cli.ts preview ./geometry.json --texture ./skin0.png --out ./geometry-preview.png
+node src/cli.ts preview ./pack --out ./large-preview.png --size 512 --no-cull
 ```
 
 | 选项 | 含义 |

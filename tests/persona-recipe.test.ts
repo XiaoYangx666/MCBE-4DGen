@@ -19,7 +19,7 @@ async function fixture() {
     Synchronized: {
       personaProfile: {
         personaCollection: {
-          universalApp: [{ lastUsedPersonaSlot: 'persona_profile_reference-b' }],
+          universalApp: [{ lastUsedPersonaSlot: 'persona_profile_persona2' }],
         },
       },
       personaProfile1: {
@@ -68,7 +68,7 @@ describe('persona recipe export', () => {
       userDir: f.user,
     });
     const saved = JSON.parse(await readFile(result.path, 'utf8'));
-    expect(saved.source.lastUsedPersonaSlot).toBe('persona_profile_reference-b');
+    expect(saved.source.lastUsedPersonaSlot).toBe('persona_profile_persona2');
     expect(saved.profiles).toHaveLength(2);
     expect(saved.profiles[0]).toMatchObject({
       slot: 'personaProfile1',

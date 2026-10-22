@@ -2,30 +2,36 @@
 import copy
 import hashlib
 import json
+import os
 import re
 import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKS = Path(r'D:\Minecraft\Content\data\skin_packs')
+PACKS = Path(os.environ.get('SKIN_PACKS_ROOT', r'D:\Minecraft\Content\data\skin_packs'))
 def inventory(folder):
     return {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in folder.rglob('*') if p.is_file()}
 def write(p, data):
     p.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
 
-reference_text = (PACKS / 'reference-a' / 'geometry.json').read_text(encoding='utf-8-sig')
+REFERENCE_PACK = os.environ.get('REFERENCE_PACK', 'reference-a')
+
+reference_text = (PACKS / REFERENCE_PACK / 'geometry.json').read_text(encoding='utf-8-sig')
 # The supplied reference has a trailing comma. Normalize only the in-memory diagnostic copy.
 reference = json.loads(re.sub(r',\s*}\s*$', '}', reference_text))['geometry.skin0']
-reference_texture = PACKS / 'reference-a' / 'skin0.png'
-for slot, sample, stamp in [('custom', 'avocado', '<timestamp>-custom'),
-                            ('persona', 'shino', '<timestamp>-persona')]:
+reference_texture = PACKS / REFERENCE_PACK / 'skin0.png'
+CUSTOM_STAMP = os.environ.get('CLIENT_CUSTOM_STAMP', 'current-custom')
+PERSONA_STAMP = os.environ.get('CLIENT_PERSONA_STAMP', 'current-persona')
+
+for slot, sample, stamp in [('custom', 'avocado', CUSTOM_STAMP),
+                            ('persona', 'shino', PERSONA_STAMP)]:
     target = PACKS / slot
     receipt_path = ROOT / '.cache' / 'client-backups' / stamp / 'receipt.json'
     receipt = json.loads(receipt_path.read_text())
     assert Path(receipt['target']) == target
     assert inventory(target) == receipt['deployed'], 'Target changed; refusing overwrite'
-    checkpoint = receipt_path.parent / '<checkpoint>'
+    checkpoint = receipt_path.parent / 'before-render-controls'
     assert not checkpoint.exists(), 'Controls already deployed'
     shutil.copytree(target, checkpoint)
     shutil.copy2(receipt_path, receipt_path.parent / 'receipt-before-controls.json')

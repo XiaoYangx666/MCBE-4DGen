@@ -2,7 +2,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { importModel } from '../../src/importer.ts';
 
-const model = await importModel(process.argv[2] ?? '.cache/anime/sample.vrm');
+const model = await importModel(process.argv[2] ?? '.cache/anime/Sendagaya_Shino.vrm');
 const output = resolve(process.argv[3] ?? 'outputs/source-binding.json');
 const report = { source: model.source, meshes: [] as unknown[], joints: [] as unknown[] };
 for (const node of model.document.getRoot().listNodes()) {

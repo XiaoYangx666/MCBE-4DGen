@@ -1,6 +1,6 @@
 # 第 3B 阶段：贴图处理与显式图集
 
-> 运行方式已统一为 Bun；下文 Node 验证结果为该阶段的历史记录。
+> 当前运行方式为 Node + npm；下文的 Bun 验证结果为该阶段的历史记录。
 `src/texture-optimizer.ts` 使用 Sharp 处理图片，并独立实施图集分配与 UV 重映射，不依赖 glTF Transform 自动生成 Minecraft 图集。`src/optimizer.ts` 将网格和贴图处理接成通用 ModelOptimizer；尚未处理 Minecraft 坐标或骨骼。
 
 ## 当前行为
@@ -30,9 +30,9 @@
 ToyCar 有 3 个材质区域：256² 车身、768² 的 3×3 布料重复区域、4² 纯色玻璃替代区域。原模型的 8 张纹理中包含 PBR 效果纹理，不把它们全部当成基础色拼接。1024² 容量测试明确失败，2048² 成功；没有丢弃布料重复采样。玻璃透射是已报告的未支持效果，替代区域不等价于原来的玻璃材质。
 
 ```sh
-bun run scripts/samples/atlas-sample.ts ToyCar 256 2048
-bun run scripts/samples/atlas-sample.ts Avocado 128 256
-bun test tests/texture-optimizer.test.ts
+node scripts/samples/atlas-sample.ts ToyCar 256 2048
+node scripts/samples/atlas-sample.ts Avocado 128 256
+npm run test -- tests/texture-optimizer.test.ts
 ```
 
 中间产物位于忽略的 `.cache/samples/`：`*-atlas.glb`、`*-atlas.png`，不是 Minecraft 皮肤包。

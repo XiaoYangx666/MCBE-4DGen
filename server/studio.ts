@@ -83,16 +83,17 @@ export type PreparedState = {
 
 const PRESETS: Preset[] = [
   {
-    id: 'rin',
-    name: '样本 B',
-    path: '.cache/models/sample-b/样本 Bfashion2/样本 Bfasion2.pmx',
+    id: 'sample-b',
+    name: '示例 B',
+    path: process.env.FOURDGEN_SAMPLE_B ?? '.cache/models/sample-b/source.pmx',
     cache: '.cache/models/sample-b/diagnostic-source.glb',
     profile: 'profiles/sample-b.json',
   },
   {
     id: 'sample-a',
-    name: '样本 A',
-    path: '.cache/models/sample-a/样本 A.pmx',
+    name: '示例 A',
+    path: process.env.FOURDGEN_SAMPLE_A ?? '.cache/models/sample-a/source.pmx',
+    cache: '.cache/models/sample-a/diagnostic-source.glb',
     profile: 'profiles/sample-a.json',
   },
 ];

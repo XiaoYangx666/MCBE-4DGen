@@ -14,3 +14,8 @@ storage.local.json
 
 release/
 profile/
+# Local promo/editing workspace: large clips, renders and tool caches.
+video/
+# OS/editor noise.
+Thumbs.db
+.DS_Store

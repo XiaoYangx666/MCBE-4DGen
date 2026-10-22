@@ -20,11 +20,11 @@ Assimp 输入不承诺保留原格式单位/轴元数据，source 中以 unspeci
 ## 用法
 
 ```sh
-bun run convert model.fbx --out ./fbx-pack
-bun run convert model.dae --out ./dae-pack --backend wasm
-bun run convert model.stl --out ./stl-pack --height 32
-bun run convert model.ply --out ./ply-pack
-bun run validate ./fbx-pack.mcpack
+node src/cli.ts convert model.fbx --out ./fbx-pack
+node src/cli.ts convert model.dae --out ./dae-pack --backend wasm
+node src/cli.ts convert model.stl --out ./stl-pack --height 32
+node src/cli.ts convert model.ply --out ./ply-pack
+npm run validate ./fbx-pack.mcpack
 ```
 
 --backend 对所有 Assimp 格式生效；GLB/glTF 仍直接读取。--ratio 是受误差和拓扑约束的目标，可能达不到，警告会报告实际面数。PLY 的四面体在 Assimp 中带双面材质，因此四个正面最终导出八个三角形，不能把正面数当作最终面数。
@@ -43,8 +43,8 @@ bun run validate ./fbx-pack.mcpack
 使用既有缓存中的 CC0 样本，来源与许可证见 stage-2.md。目录和 mcpack 在 convert 写出后均由独立验证器回读，不将二进制加入仓库。
 
 ```sh
-bun run convert .cache/samples/Avocado.glb --out .cache/stage5-avocado --atlas 512
-bun run convert .cache/samples/ToyCar.glb --out .cache/stage5-toycar --ratio 0.1 --max-texture 128 --atlas 2048
+node src/cli.ts convert .cache/samples/Avocado.glb --out .cache/stage5-avocado --atlas 512
+node src/cli.ts convert .cache/samples/ToyCar.glb --out .cache/stage5-toycar --ratio 0.1 --max-texture 128 --atlas 2048
 ```
 
 | 模型 | 原始三角形 | 优化正面 | 补充反面 | 最终三角形 | geometry.json 字节 | mcpack 字节 |
@@ -54,4 +54,4 @@ bun run convert .cache/samples/ToyCar.glb --out .cache/stage5-toycar --ratio 0.1
 
 归档字节数可能因随机 UUID、ZIP 时间或压缩器而有少量变化。ToyCar 的 10% 减面目标因误差/拓扑/UV 约束未达到；本阶段未做体积预算或强制破坏性减面。
 
-验证：Bun 1.4.3；bun run check 通过；bun test 共 58 项通过。上述结果证明文件转换与引用一致性，客户端显示/穿戴尚未实测。
+验证：Bun 1.4.3；npm run check 通过；npm run test -- 共 58 项通过。上述结果证明文件转换与引用一致性，客户端显示/穿戴尚未实测。

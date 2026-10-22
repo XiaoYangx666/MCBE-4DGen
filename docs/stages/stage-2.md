@@ -1,6 +1,6 @@
 # 第 2 阶段：统一导入与 inspect
 
-> 运行方式已统一为 Bun；下文 Node 验证结果为该阶段的历史记录。
+> 当前运行方式为 Node + npm；下文的 Bun 验证结果为该阶段的历史记录。
 验证日期：2026-10-18（北京时间）。Node 24.19.0 / Bun 1.4.3，Linux x64。
 
 ## 实现范围
@@ -18,8 +18,8 @@
 
 ## 测试证据
 
-- `bun run check`：通过。
-- `bun test`：14 项测试通过（含此前的两个依赖后端测试）。
+- `npm run check`：通过。
+- `npm run test`：14 项测试通过（含此前的两个依赖后端测试）。
 - `node --test tests/importer.test.ts`：12 项测试通过。
 - 覆盖多个 OBJ 对象与材质、MTL/外部 PNG、glTF 外部 buffer/image、RGBA、百分号编码路径、共享 Mesh、嵌套旋转/非均匀缩放、无索引三角形、OBJ 四边形三角化。
 - 骨骼 GLB 断言原始 JOINTS/WEIGHTS 和逆绑定矩阵数量保持；不把它描述成已完成 Static 绑定或 Humanoid 支持。

@@ -4,7 +4,7 @@
 
 ## 输出结构
 
-对照用户上传的 5D 皮肤参考 ZIP，单模型采用如下根目录：
+对照第三方 5D 皮肤参考包，单模型采用如下根目录：
 
 - manifest.json（format_version: 2，随机 header/module UUID，module.type: skin_pack）
 - skins.json（skin0 → geometry.skin0 → skin0.png；hide_armor: true，type: free）
@@ -15,12 +15,12 @@
 
 ## CLI
 
-    bun install --frozen-lockfile
-    bun run src/cli.ts convert ./model.glb --out ./output --name "Custom Skin"
-    bun run src/cli.ts validate ./output
-    bun run src/cli.ts validate ./output.mcpack
+    npm ci
+    node src/cli.ts convert ./model.glb --out ./output --name "Custom Skin"
+    node src/cli.ts validate ./output
+    node src/cli.ts validate ./output.mcpack
 
-也可用 bun run convert model.glb --out ./output；--no-mcpack 可仅输出目录文件。
+也可用 node src/cli.ts convert model.glb --out ./output；--no-mcpack 可仅输出目录文件。
 
 默认行为：冻结初始姿态，保留原三角面（只清理非法退化面），按模型高度 32 落地居中，单图最大 256 像素，自动图集，整个几何体刚性挂在 body。可用 --ratio 0.5 开启有误差约束的减面，--height、--max-texture、--atlas 调整常用参数。仍会对不支持的材质、变形或缺失资源报错，不静默生成有损内容。
 

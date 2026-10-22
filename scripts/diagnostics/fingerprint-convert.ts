@@ -15,12 +15,12 @@ import { buildSkinPack } from "../../src/skin-pack.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const presets: Record<string, { cache: string; profile: string; excluded: string[] }> = {
-  sample-b: {
+  'sample-b': {
     cache: ".cache/models/sample-b/diagnostic-source.glb",
     profile: "profiles/sample-b.json",
     excluded: ["表情"],
   },
-  sample-a: {
+  'sample-a': {
     cache: ".cache/models/sample-a/diagnostic-source.glb",
     profile: "profiles/sample-a.json",
     excluded: [],

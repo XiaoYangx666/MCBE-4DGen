@@ -4,7 +4,7 @@
 
 ## 格式证据
 
-只读检查用户提供的两份 ZIP，不重新分发其模型、纹理或提取结果：
+只读检查两份第三方 4D 皮肤包样本，仅做格式兼容性观察，不复制、不再分发其模型或纹理：
 
 | 样本 | 几何版本 | 模型数 | poly_mesh 骨骼数 | 多边形数 | 重复末顶点的三角形数 | 越界索引 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
@@ -18,7 +18,7 @@
 - [Microsoft 1.8.0 几何 schema](https://learn.microsoft.com/en-us/minecraft/creator/reference/content/schemasreference/schemas/minecraftschema_geometry_1.8.0?view=minecraft-bedrock-stable)。
 - [MBSM 固定修订](https://github.com/Darktubbie/MBSM/tree/d148bf5698445eb532274b8a64ff99aee29a3c02)：研究 `obj-a-skin-bedrock.js` 和 `renderer5d.js` 的格式行为。GPL-3.0，仅参考，不复制代码。
 
-只读复现：`bun run scripts/diagnostics/inspect-reference.ts <zip路径>`；复杂样本需附加诊断选项 `--allow-final-comma`。
+只读复现：`node scripts/diagnostics/inspect-reference.ts <zip路径>`；复杂样本需附加诊断选项 `--allow-final-comma`。
 
 ## 独立实现约定
 
@@ -37,10 +37,10 @@
 ## 真实模型结果
 
 ```sh
-bun run sample:fetch ToyCar
-bun run sample:export ToyCar
-bun run sample:fetch Avocado
-bun run sample:export Avocado
+npm run sample:fetch ToyCar
+npm run sample:export ToyCar
+npm run sample:fetch Avocado
+npm run sample:export Avocado
 ```
 
 脚本输出 `.cache/samples/<名称>.geometry.json`、`<名称>.skin.png` 和 `<名称>-geometry-report.json`。样本来源及 CC0 许可见 stage-2.md；二进制不进入默认发行。
@@ -62,6 +62,6 @@ ToyCar 的双面材质导致最终面数明显增加，不能把 54466 宣称为
 
 该校验器针对本项目生成的索引 poly_mesh 配置，不是所有历史皮肤格式的通用校验器；明确拒绝 Cube 和未索引的 tri_list/quad_list。
 
-`bun run check` 通过；`bun test` 共 46 项通过。新增 9 项覆盖独立索引、坐标与 UV、Pivot、双面材质、非法导出状态、三角形/四边形回读、错误 JSON/索引/层级及退化数据。校准夹具由本项目独立编写，不包含第三方网格。
+`npm run check` 通过；`npm run test` 共 46 项通过。新增 9 项覆盖独立索引、坐标与 UV、Pivot、双面材质、非法导出状态、三角形/四边形回读、错误 JSON/索引/层级及退化数据。校准夹具由本项目独立编写，不包含第三方网格。
 
 下一阶段实现 manifest/skins/语言文件、完整 mcpack 和包级引用校验，并将已有流水线接入 convert/validate CLI。

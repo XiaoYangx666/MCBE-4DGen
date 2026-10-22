@@ -1,28 +1,32 @@
 """Keep only the generated 128px model confirmed visible by the user's screenshot."""
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKS = Path(r'D:\Minecraft\Content\data\skin_packs')
+PACKS = Path(os.environ.get('SKIN_PACKS_ROOT', r'D:\Minecraft\Content\data\skin_packs'))
 def inventory(folder):
     return {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in folder.rglob('*') if p.is_file()}
 def write(p, data):
     p.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
 
-for slot, sample, stamp in [('custom', 'avocado', '<timestamp>-custom'),
-                            ('persona', 'shino', '<timestamp>-persona')]:
+CUSTOM_STAMP = os.environ.get('CLIENT_CUSTOM_STAMP', 'current-custom')
+PERSONA_STAMP = os.environ.get('CLIENT_PERSONA_STAMP', 'current-persona')
+
+for slot, sample, stamp in [('custom', 'avocado', CUSTOM_STAMP),
+                            ('persona', 'shino', PERSONA_STAMP)]:
     target = PACKS / slot
     receipt_path = ROOT / '.cache/client-backups' / stamp / 'receipt.json'
     receipt = json.loads(receipt_path.read_text())
     assert Path(receipt['target']) == target
     assert inventory(target) == receipt['deployed'], 'Target changed; refusing overwrite'
-    checkpoint = receipt_path.parent / '<checkpoint>'
+    checkpoint = receipt_path.parent / 'before-finalize'
     assert not checkpoint.exists(), 'Already finalized'
     shutil.copytree(target, checkpoint)
-    shutil.copy2(receipt_path, receipt_path.parent / 'receipt-<checkpoint>.json')
+    shutil.copy2(receipt_path, receipt_path.parent / 'receipt-before-finalize.json')
     geometry = json.loads((target / 'geometry.json').read_text())
     skins = json.loads((target / 'skins.json').read_text())
     entry = next(e for e in skins['skins'] if e['localization_name'] == 'generated128')
@@ -49,6 +53,6 @@ for slot, sample, stamp in [('custom', 'avocado', '<timestamp>-custom'),
         write(receipt_path, receipt)
     except Exception:
         shutil.copytree(checkpoint, target, dirs_exist_ok=True)
-        shutil.copy2(receipt_path.parent / 'receipt-<checkpoint>.json', receipt_path)
+        shutil.copy2(receipt_path.parent / 'receipt-before-finalize.json', receipt_path)
         raise
     print(slot, sample, '128px generated model retained; restore receipt updated')

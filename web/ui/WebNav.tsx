@@ -36,7 +36,7 @@ export function WebNav({
         )}
         {action}
         <span className="local">
-          <b /> {window.desktop ? "桌面运行" : "本地环境运行"}
+          <b /> {window.desktop ? "桌面运行" : "本机运行"}
         </span>
       </div>
     </header>

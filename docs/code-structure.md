@@ -43,18 +43,18 @@ Importer -> IntermediateModel -> Optimizer -> BoneMapper -> BedrockExporter -> S
 环境检查 -> initializeStorage -> 构建 Web -> Studio.initialize -> HTTP serve
 ```
 
-HTTP 监听通过 `server/serve.ts` 的 `node:http` 适配层提供，因此服务端既可以用 Bun 启动，也可以直接用 Node 24+ 启动：
+HTTP 监听通过 `server/serve.ts` 的 `node:http` 适配层提供，因此服务端直接使用 Node 24+ 启动：
 
 ```powershell
-bun run dev
+npm run dev
 node server/start.ts
-bun run test:node
+npm run test:node
 ```
 
-桌面版后台使用 Electron 自带 Node 运行，打包产物不再包含 Bun；Bun 仅作为依赖安装与构建时的包管理器。
+桌面版后台使用 Electron 自带 Node 运行，打包产物不再包含 Node 运行时；npm 仅作为依赖安装与构建工具。
 
 - `studio.ts`：长期状态与领域操作，包括模型会话、转换任务、准备状态缓存、预览缓存、皮肤包管理器和数据目录切换。
-- `serve.ts`：基于 `node:http` 的 Fetch 风格 HTTP 适配层，兼容 Bun 与 Node。
+- `serve.ts`：基于 `node:http` 的 Fetch 风格 HTTP 适配层，基于 Node。
 - `fs.ts`：跨运行时的文件存在性、读取、流式响应与 MIME 类型。
 - `router.ts`：组装路由表、请求分发与 404/错误边界。
 - `route.ts`：声明式路由表（`route(method, path, handler)`、`:name` 参数）与匹配器。
@@ -96,11 +96,11 @@ bun run test:node
 ## 验证
 
 ```powershell
-bun run check
-bun run check:web
-bun run test:workflow
-bun run test:studio
-bun run test:desktop
+npm run check
+npm run check:web
+npm run test:workflow
+npm run test:studio
+npm run test:desktop
 ```
 
-完整测试现在由 Vitest 在 Node 下运行：`bun run test`。日常快速回归可用 `test:workflow` 与 `test:studio`。
+完整测试现在由 Vitest 在 Node 下运行：`npm run test`。日常快速回归可用 `test:workflow` 与 `test:studio`。

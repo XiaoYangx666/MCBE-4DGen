@@ -67,6 +67,10 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
                 <dd>{data.version}</dd>
               </div>
               <div>
+                <dt>许可证</dt>
+                <dd>GPL-3.0</dd>
+              </div>
+              <div>
                 <dt>运行环境</dt>
                 <dd>
                   {runtime?.electron
@@ -82,14 +86,14 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
             </dl>
             <p className="about-note">
               将模型转换为 Minecraft Bedrock
-              皮肤包，支持静态与人形绑定、减面、图集和可恢复的皮肤包管理。所有文件在本地环境处理。
+              皮肤包，支持静态与人形绑定、减面、图集和可恢复的皮肤包管理。所有文件在本机处理。
             </p>
           </>
         )}
         <div className="pick-actions">
           <a
             className="button-link"
-            href="https://github.com/XiaoYangx666/4DTest"
+            href="https://github.com/XiaoYangx666/MCBE-4DGen"
             target="_blank"
             rel="noreferrer"
           >

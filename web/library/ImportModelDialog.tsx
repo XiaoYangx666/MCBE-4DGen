@@ -105,7 +105,7 @@ export function ImportModelDialog({
       onClose={onClose}
     >
       <p>
-        将模型与贴图一起复制到数据目录。支持本地环境路径、ZIP 或完整模型文件夹。
+        将模型与贴图一起复制到数据目录。支持本机路径、ZIP 或完整模型文件夹。
       </p>
       <label>
         本地 ZIP / 模型 / 文件夹路径
