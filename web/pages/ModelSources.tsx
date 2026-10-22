@@ -90,7 +90,7 @@ function SiteSection({
   featured = false,
 }: {
   title: string;
-  hint: string;
+  hint?: string;
   sites: SourceSite[];
   featured?: boolean;
 }) {
@@ -99,7 +99,7 @@ function SiteSection({
     <section className="source-section">
       <div className="source-section-head">
         <h3>{title}</h3>
-        <span>{hint}</span>
+        {hint && <span>{hint}</span>}
       </div>
       <div className="source-grid">
         {sites.map((site) => (
@@ -240,7 +240,6 @@ export function ModelSources({ onClose }: { onClose: () => void }) {
           <>
             <SiteSection
               title="常用推荐"
-              hint="优先从这些站点找模型；模之屋在首页第一位"
               sites={tierOne}
               featured
             />
