@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { Modal } from "./Modal";
 
 type AboutData = {
   dataRoot: string;
@@ -29,39 +30,25 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  useEffect(() => {
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [onClose]);
-
   const runtime = data?.runtime;
 
   return (
-    <div
-      className="pick-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="about-title"
+    <Modal
+      title={
+        <>
+          关于 4DGen
+          {data?.version && (
+            <span className="version-badge">v{data.version}</span>
+          )}
+        </>
+      }
+      label="关于 4DGen"
+      eyebrow="ABOUT"
+      className="about-dialog"
+      onClose={onClose}
+      closeLabel="关闭"
     >
-      <div className="pick-box about-dialog">
-        <div className="card-top">
-          <div>
-            <span className="eyebrow">ABOUT</span>
-            <h2 id="about-title">
-              关于 4DGen
-              {data?.version && (
-                <span className="version-badge">v{data.version}</span>
-              )}
-            </h2>
-          </div>
-          <button type="button" aria-label="关闭" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        <p className="about-lead">本地模型与皮肤工作台</p>
+      <p className="about-lead">本地模型与皮肤工作台</p>
         {error ? (
           <p className="error" role="alert">
             {error}
@@ -112,7 +99,6 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
             关闭
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

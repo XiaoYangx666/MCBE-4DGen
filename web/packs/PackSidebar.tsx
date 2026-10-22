@@ -1,5 +1,7 @@
 import type { MouseEvent } from "react";
 import { InlineName } from "../ui/InlineName";
+import { SelectableRow } from "../ui/SelectableRow";
+import { GameStatusBadge } from "./GameStatusBadge";
 import type { InlineEdit, PackRow } from "./pack-ui";
 
 export function PackSidebar({
@@ -47,32 +49,16 @@ export function PackSidebar({
             editing.pack.key === row.key &&
             editing.scope === "list";
           return (
-            <div
+            <SelectableRow
               key={row.key}
-              role="button"
-              tabIndex={0}
               title={row.gameSkins ? row.name : "双击重命名，右键更多操作"}
-              className={
-                "pack-library-row text-only" +
-                (row.key === selectedKey ? " selected" : "")
+              className="pack-library-row text-only"
+              selected={row.key === selectedKey}
+              onSelect={() => onSelect(row)}
+              onRename={row.gameSkins ? undefined : () => onRename(row)}
+              onMenu={
+                row.gameSkins ? undefined : (event) => onMenu(event, row)
               }
-              onClick={() => onSelect(row)}
-              onKeyDown={(event) => {
-                if (event.target !== event.currentTarget) return;
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onSelect(row);
-                }
-              }}
-              onDoubleClick={() => {
-                if (!row.gameSkins) onRename(row);
-              }}
-              onContextMenu={(event) => {
-                if (row.gameSkins) return;
-                event.preventDefault();
-                onSelect(row);
-                onMenu(event, row);
-              }}
             >
               <span className="pack-row-copy">
                 {inline ? (
@@ -98,21 +84,13 @@ export function PackSidebar({
               </span>
               <span className="pack-row-end">
                 {game && (
-                  <span
-                    className={
-                      "pack-game-badge" +
-                      (row.gameSkins ? " persona" : " installed")
-                    }
-                  >
-                    {row.gameSkins
-                      ? personaInUse
-                        ? "当前使用"
-                        : "角色创建器"
-                      : "游戏中"}
-                  </span>
+                  <GameStatusBadge
+                    kind={row.gameSkins ? "persona" : "pack"}
+                    inUse={personaInUse}
+                  />
                 )}
               </span>
-            </div>
+            </SelectableRow>
           );
         })}
         {!rows.length && (

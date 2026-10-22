@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, post } from "../lib/api";
+import { Modal } from "../ui/Modal";
 import type { Packs } from "./pack-types";
 
 /** Saving a conversion never writes to the game directory. */
@@ -32,13 +33,6 @@ export function SaveSkinDialog({
       active = false;
     };
   }, []);
-  useEffect(() => {
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) onClose();
-    };
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [busy, onClose]);
   const presets = new Set(
     packs?.status?.flatMap((s) => s.presetSources ?? []) ?? [],
   );
@@ -61,33 +55,21 @@ export function SaveSkinDialog({
     }
   }
   return (
-    <div
-      className="pick-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="save-skin-title"
+    <Modal
+      title="保存皮肤"
+      label="保存皮肤"
+      eyebrow="保存转换结果"
+      className="save-skin-dialog"
+      busy={busy}
+      onClose={onClose}
+      closeLabel="关闭"
     >
       <form
-        className="pick-box save-skin-dialog"
         onSubmit={(e) => {
           e.preventDefault();
           void save();
         }}
       >
-        <div className="card-top">
-          <div>
-            <span className="eyebrow">保存转换结果</span>
-            <h2 id="save-skin-title">保存皮肤</h2>
-          </div>
-          <button
-            type="button"
-            disabled={busy}
-            aria-label="关闭"
-            onClick={onClose}
-          >
-            ×
-          </button>
-        </div>
         <p>保留当前皮肤和转换参数，之后可以再次编辑或加入游戏。</p>
         <label>
           皮肤名称
@@ -149,6 +131,6 @@ export function SaveSkinDialog({
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }

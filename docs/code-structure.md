@@ -73,9 +73,9 @@ bun run test:node
 
 - `main.tsx`、`App.tsx`：挂载、工作台状态与页面切换。
 - `pages/`：`LibraryPage`、`PackPage`、`TemplatesPage`、`SettingsPage`，以及页面内的 `ModelSources`。
-- `packs/`：`PackSidebar`、`PackHeader`、`SkinList`、`SkinDetail`、`PackDialogs`、`GameSkinsPanel`、`PersonaRecipePanel`、`PackPreview`、`SaveSkinDialog`，以及 `pack-types.ts`、`pack-state.ts`、`pack-menu.ts`、`pack-ui.ts`、`game-skins-types.ts`。
+- `packs/`：`PackSidebar`、`PackHeader`、`SkinList`、`SkinDetail`、`PackDialogs`、`GameSkinsPanel`、`PersonaRecipePanel`、`PackPreview`、`SaveSkinDialog`、`GameStatusBadge`，以及 `pack-types.ts`、`pack-state.ts`、`pack-menu.ts`、`pack-ui.ts`、`game-skins-types.ts`。
 - `workbench/`：`Viewer`、`MaterialPanel`、`SettingsPanel`、`OutputPanels`、`HoldOriginalButton`、`estimate.ts`、`types.ts` 及预览渲染工具。
-- `ui/`：`AppBar`、`WebNav`、`AboutDialog`、`ContextMenu`、`InlineName` 等跨页面组件。
+- `ui/`：`AppBar`、`WebNav`、`AboutDialog`、`ContextMenu`、`InlineName`、`Modal`、`SelectableRow` 等跨页面组件。
 - `lib/`：`api.ts`、`appearance.ts`、`navigation.ts`、`use-hash-route.ts` 等基础设施。
 - `styles/`：`style.css`、`workflow.css`、`theme.css`。
 

@@ -1,5 +1,7 @@
 import type { MouseEvent } from "react";
 import { InlineName } from "../ui/InlineName";
+import { SelectableRow } from "../ui/SelectableRow";
+import { GameStatusBadge } from "./GameStatusBadge";
 import type { SkinItem } from "./pack-types";
 import type { InlineEdit, PackRow } from "./pack-ui";
 
@@ -51,31 +53,16 @@ export function SkinList({
             editing.skin.index === skin.index &&
             editing.scope === "list";
           return (
-            <div
-              role="button"
-              tabIndex={0}
-              className={
-                "skin-item text-only" +
-                (skin.index === selectedIndex ? " selected" : "")
-              }
+            <SelectableRow
               key={skin.index}
-              onClick={() => onSelect(skin.index)}
-              onKeyDown={(event) => {
-                if (event.target !== event.currentTarget) return;
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onSelect(skin.index);
-                }
-              }}
-              onDoubleClick={() => {
+              className="skin-item text-only"
+              selected={skin.index === selectedIndex}
+              onSelect={() => onSelect(skin.index)}
+              onRename={() => {
                 onSelect(skin.index);
                 onRename(skin);
               }}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                onSelect(skin.index);
-                onMenu(event, skin);
-              }}
+              onMenu={(event) => onMenu(event, skin)}
             >
               <span className="skin-order">{skin.index + 1}</span>
               <span className="skin-item-copy">
@@ -106,7 +93,7 @@ export function SkinList({
                         更新
                       </button>
                     ) : (
-                      <span className="skin-installed-badge">游戏中</span>
+                      <GameStatusBadge kind="skin" />
                     )
                   ) : (
                     <button
@@ -123,7 +110,7 @@ export function SkinList({
                   )}
                 </span>
               )}
-            </div>
+            </SelectableRow>
           );
         })
       )}

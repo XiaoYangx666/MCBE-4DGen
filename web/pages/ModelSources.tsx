@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Modal } from "../ui/Modal";
 
 const sites = [
   {
@@ -29,31 +29,17 @@ const sites = [
 ];
 
 export function ModelSources({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [onClose]);
   return (
-    <div
-      className="pick-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="获取模型"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      title="获取模型"
+      label="获取模型"
+      className="model-sources"
+      closeLabel="关闭获取模型"
+      closeOnBackdrop
+      autoFocusClose
+      onClose={onClose}
     >
-      <div className="pick-box model-sources">
-        <div className="card-top">
-          <h2>获取模型</h2>
-          <button autoFocus aria-label="关闭获取模型" onClick={onClose}>
-            ×
-          </button>
-        </div>
-        <p>选择网站，在新标签页中打开。下载后回到这里导入。</p>
+      <p>选择网站，在新标签页中打开。下载后回到这里导入。</p>
         <div className="source-sites">
           {sites.map((site) => (
             <a
@@ -74,7 +60,6 @@ export function ModelSources({ onClose }: { onClose: () => void }) {
         <p className="source-format-hint">
           优先下载 ZIP、PMX、VRM 或 GLB；保留模型与贴图的目录结构。
         </p>
-      </div>
-    </div>
+    </Modal>
   );
 }

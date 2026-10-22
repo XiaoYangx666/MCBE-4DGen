@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, post } from "../lib/api";
 import { ModelSources } from "./ModelSources";
+import { Modal } from "../ui/Modal";
+import { findActivePack } from "../packs/pack-state";
 import { Viewer } from "../workbench/Viewer";
 import { PackPreview } from "../packs/PackPreview";
 import type { LibraryPack, Packs } from "../packs/pack-types";
@@ -120,19 +122,6 @@ export function LibraryPage({
       setLoading(false);
     });
   }, []);
-  useEffect(() => {
-    const escape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) {
-        setImporting(false);
-        setRename(null);
-        setDeleting(null);
-        setRemoveVersion(null);
-        setRelink(false);
-      }
-    };
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [busy]);
   const rows = useMemo(() => {
     const byId = new Map(
       models.map((m) => [
@@ -231,8 +220,8 @@ export function LibraryPage({
   }
   const active = (id: string) =>
     packs?.status
-      ?.filter((s) => (s.active ?? []).some((p) => p.id === id))
-      .map((s) => s.slot) ?? [];
+      ?.filter((status) => findActivePack(status.active, id))
+      .map((status) => status.slot) ?? [];
   useEffect(() => {
     const change = () => {
       const params = new URLSearchParams(location.hash.split("?")[1]);
@@ -704,14 +693,13 @@ export function LibraryPage({
         </p>
       )}
       {relink && row?.model && (
-        <div
-          className="pick-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="重新定位源文件"
+        <Modal
+          title="重新定位源文件"
+          label="重新定位源文件"
+          busy={!!busy}
+          onClose={() => setRelink(false)}
         >
           <form
-            className="pick-box"
             onSubmit={(e) => {
               e.preventDefault();
               void run("正在更新源文件路径…", async () => {
@@ -725,7 +713,6 @@ export function LibraryPage({
               });
             }}
           >
-            <h2>重新定位源文件</h2>
             <p>
               选择同一个模型的新位置，编辑配置和历史版本会保留。贴图需随模型一起移动。
             </p>
@@ -758,27 +745,18 @@ export function LibraryPage({
               </p>
             )}
           </form>
-        </div>
+        </Modal>
       )}
       {sources && <ModelSources onClose={() => setSources(false)} />}
       {importing && (
-        <div
-          className="pick-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="导入模型"
+        <Modal
+          title="导入模型"
+          label="导入模型"
+          className="import-dialog"
+          busy={!!busy}
+          closeLabel="关闭导入"
+          onClose={() => setImporting(false)}
         >
-          <div className="pick-box import-dialog">
-            <div className="card-top">
-              <h2>导入模型</h2>
-              <button
-                disabled={!!busy}
-                aria-label="关闭导入"
-                onClick={() => setImporting(false)}
-              >
-                ×
-              </button>
-            </div>
             <p>
               将模型与贴图一起复制到数据目录。支持本地环境路径、ZIP
               或完整模型文件夹。
@@ -879,18 +857,16 @@ export function LibraryPage({
                 {error}
               </p>
             )}
-          </div>
-        </div>
+          </Modal>
       )}
       {rename && (
-        <div
-          className="pick-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="重命名模型"
+        <Modal
+          title="重命名模型"
+          label="重命名模型"
+          busy={!!busy}
+          onClose={() => setRename(null)}
         >
           <form
-            className="pick-box"
             onSubmit={(e) => {
               e.preventDefault();
               void run("正在保存名称…", async () => {
@@ -901,7 +877,6 @@ export function LibraryPage({
               });
             }}
           >
-            <h2>重命名模型</h2>
             <input
               autoFocus
               aria-label="模型名称"
@@ -923,17 +898,18 @@ export function LibraryPage({
             </div>
             {error && <p className="error">{error}</p>}
           </form>
-        </div>
+        </Modal>
       )}
       {(deleting || removeVersion) && (
-        <div
-          className="pick-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="确认删除"
+        <Modal
+          title={deleting ? "删除源模型？" : "删除皮肤版本？"}
+          label="确认删除"
+          busy={!!busy}
+          onClose={() => {
+            setDeleting(null);
+            setRemoveVersion(null);
+          }}
         >
-          <div className="pick-box">
-            <h2>{deleting ? "删除源模型？" : "删除皮肤版本？"}</h2>
             <p>
               {deleting
                 ? `删除「${deleting.name}」的模型管理记录和编辑配置，已生成的皮肤包保留。`
@@ -985,8 +961,7 @@ export function LibraryPage({
               </button>
             </div>
             {error && <p className="error">{error}</p>}
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
