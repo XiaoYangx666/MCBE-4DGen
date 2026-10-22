@@ -7,9 +7,9 @@ import {fileURLToPath} from 'node:url';
 import sharp from 'sharp';
 import JSZip from 'jszip';
 import assert from 'node:assert/strict';
-import {waitForExit} from './process.ts';
+import {waitForExit} from '../lib/process.ts';
 const fixture=await realpath(await mkdtemp(join(tmpdir(),'4d-studio-')));
-const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),port=4187,base=`http://127.0.0.1:${port}`;
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..'),port=4187,base=`http://127.0.0.1:${port}`;
 const child=spawn(process.execPath,['server/start.ts'],{cwd:root,env:{...process.env,PORT:String(port),FOURDGEN_DATA_DIR:join(fixture,'data'),SKIN_MANAGER_CONFIG:join(fixture,'missing-config.json')},stdio:['ignore','pipe','inherit']});
 try {
   child.stdout!.setEncoding('utf8');let output='';

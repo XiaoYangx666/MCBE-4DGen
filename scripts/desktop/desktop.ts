@@ -1,10 +1,10 @@
 import {spawn} from 'node:child_process';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {waitForExit} from './process.ts';
+import {waitForExit} from '../lib/process.ts';
 const electron=await import('electron');
 const executable=electron.default as unknown as string;
 const env:Record<string,string|undefined>={...process.env};delete env.ELECTRON_RUN_AS_NODE;
-const child=spawn(executable,[resolve(dirname(fileURLToPath(import.meta.url)),'..')],{env,stdio:'inherit'});
+const child=spawn(executable,[resolve(dirname(fileURLToPath(import.meta.url)),'../..')],{env,stdio:'inherit'});
 process.on('SIGINT',()=>child.kill());process.on('SIGTERM',()=>child.kill());
 process.exitCode=(await waitForExit(child))??1;

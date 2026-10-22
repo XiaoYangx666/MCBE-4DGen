@@ -7,7 +7,7 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "test:workflow": "vitest run tests/pack-manager.test.ts tests/humanoid.test.ts tests/texture-optimizer.test.ts tests/rigid-mesh-reducer.test.ts tests/pmx-wasm.test.ts tests/bedrock-export.test.ts tests/geometry-validator.test.ts tests/prepare-model.test.ts tests/skin-pack.test.ts tests/preview.test.ts tests/web-preview.test.ts --testTimeout=30000",
-    "probe": "node scripts/probe.ts",
+    "probe": "node scripts/checks/probe.ts",
     "inspect": "node src/cli.ts inspect",
     "sample:fetch": "node scripts/samples/fetch-sample.ts",
     "sample:check": "node scripts/samples/check-sample.ts",
@@ -19,14 +19,14 @@
     "packs": "node src/pack-cli.ts",
     "binding:inspect": "node scripts/diagnostics/inspect-avatar-binding.ts",
     "binding:preview": "node scripts/diagnostics/preview-binding.ts",
-    "workflow": "node scripts/workflow.ts",
+    "workflow": "node scripts/workflow/workflow.ts",
     "dev": "node server/start.ts",
     "check:web": "tsc --noEmit -p tsconfig.web.json",
-    "test:studio": "node scripts/check-studio.ts",
-    "test:node": "node scripts/check-node.ts",
-    "desktop": "node scripts/desktop.ts",
-    "desktop:package": "node scripts/package-desktop.ts",
-    "test:desktop": "node scripts/check-desktop.ts"
+    "test:studio": "node scripts/checks/check-studio.ts",
+    "test:node": "node scripts/checks/check-node.ts",
+    "desktop": "node scripts/desktop/desktop.ts",
+    "desktop:package": "node scripts/desktop/package-desktop.ts",
+    "test:desktop": "node scripts/checks/check-desktop.ts"
   },
   "engines": {
     "node": ">=24"

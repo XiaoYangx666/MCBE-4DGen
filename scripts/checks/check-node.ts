@@ -1,5 +1,5 @@
 /**
- * Node-only smoke test for the local server. Run with `node scripts/check-node.ts`.
+ * Node-only smoke test for the local server. Run with `node scripts/checks/check-node.ts`.
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -17,7 +17,7 @@ import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const fixture = await realpath(await mkdtemp(join(tmpdir(), '4dgen-node-')));
 const dataDir = join(fixture, 'data');
 const configPath = join(fixture, 'missing-skin-manager.json');

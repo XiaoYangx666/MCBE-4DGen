@@ -9,7 +9,7 @@
 | `src/cli.ts` | `inspect`、`convert`、`validate`、`preview` 命令行 |
 | `src/pack-cli.ts` | 皮肤包库与游戏目录的启用、备份、恢复 |
 | `server/start.ts` | 本地网页/桌面后台的启动、Web 构建、HTTP 服务 |
-| `scripts/` | 样本、诊断、打包和冒烟测试；不是稳定接口 |
+| `scripts/` | 按职责分组的检查、工作流、桌面打包、样本与诊断工具；稳定入口见 `scripts/README.md` |
 | `desktop/` | Electron 主进程、预加载脚本与桌面冒烟测试 |
 
 ## 转换核心（`src/`）

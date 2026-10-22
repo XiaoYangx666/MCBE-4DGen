@@ -1,4 +1,4 @@
-import {documentFixture} from '../tests/fixtures.ts';
+import {documentFixture} from '../../tests/fixtures.ts';
 import {NodeIO} from '@gltf-transform/core';
 import sharp from 'sharp';
 import {spawn} from 'node:child_process';
@@ -8,8 +8,8 @@ import {mkdir,readFile,stat} from 'node:fs/promises';
 import type {Readable} from 'node:stream';
 import {setTimeout as delay} from 'node:timers/promises';
 import assert from 'node:assert/strict';
-import {waitForExit} from './process.ts';
-const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),fixture=join(root,'.cache/desktop-tests',crypto.randomUUID());
+import {waitForExit} from '../lib/process.ts';
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..'),fixture=join(root,'.cache/desktop-tests',crypto.randomUUID());
 await mkdir(fixture,{recursive:true});
 const textureFixture=join(fixture,'model.glb');
 const doc=await documentFixture();
