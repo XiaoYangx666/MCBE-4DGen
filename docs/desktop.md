@@ -49,6 +49,18 @@ bun run desktop:package --out C:\path\to\4DGen-portable
 
 这不会影响普通机器上的默认 `release/` 输出。
 
+### 受限会话下的开发启动
+
+如果 `%APPDATA%` 本身不可写（例如受限的本地会话或 CI 沙箱），Electron 会在创建 Chromium 单实例锁时直接退出，日志里出现 `Lock file can not be created: 拒绝访问 (0x5)`。可以把桌面配置放到仓库内可写目录，并仅对受限开发会话关闭 Chromium 沙箱：
+
+```powershell
+$env:FOURDGEN_DESKTOP_USER_DATA = '<repo>\.cache\desktop-profile'
+$env:FOURDGEN_DESKTOP_NO_SANDBOX = '1'
+bun run desktop
+```
+
+`FOURDGEN_DESKTOP_NO_SANDBOX` 只用于本地受限环境或 CI，正常分发和日常桌面使用不要设置。`FOURDGEN_DESKTOP_USER_DATA` 只改变桌面配置与 Chromium profile 的位置，模型、皮肤包和游戏目录仍由 `storage.local.json`、`skin-manager.local.json` 决定。
+
 ### 体积与裁剪
 
 打包时只安装生产依赖；`react`、`react-dom`、`three`、`vite` 等仅用于构建前端，不再进入便携版。Vite 在服务端改为按需动态导入，桌面模式跳过网页构建。打包完成后还会：

@@ -7,11 +7,11 @@ const readline=require('node:readline');
 const packaged=app.isPackaged;
 const resourceRoot=process.resourcesPath;
 app.setName('4DGen');
-app.setPath('userData',join(app.getPath('appData'),'4DGen'));
+const userDataOverride=process.env.FOURDGEN_DESKTOP_USER_DATA;
+app.setPath('userData',userDataOverride?resolve(userDataOverride):join(app.getPath('appData'),'4DGen'));
 let window,backend,origin,quitting=false,tail='';
 const smoke=process.env.FOURDGEN_DESKTOP_SMOKE;
 const smokeFile=process.env.FOURDGEN_DESKTOP_SMOKE_REPORT;
-if(smoke&&process.env.FOURDGEN_DESKTOP_USER_DATA)app.setPath('userData',process.env.FOURDGEN_DESKTOP_USER_DATA);
 function report(value){if(smokeFile)fs.writeFileSync(smokeFile,JSON.stringify(value,null,2));}
 try{fs.mkdirSync(app.getPath('userData'),{recursive:true});}catch{}
 const gotLock=app.requestSingleInstanceLock();
