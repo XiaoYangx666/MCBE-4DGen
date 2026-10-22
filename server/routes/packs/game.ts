@@ -1,28 +1,40 @@
 import { json } from '../../http.ts';
-import type { Studio } from '../../studio.ts';
-import { backupGameSkins, GAME_REQUIRED_ROUTES } from './shared.ts';
+import { route, type RouteContext, type RouteHandler } from '../../route.ts';
+import { backupGameSkins } from './shared.ts';
 
-export async function handleGame(
-  studio: Studio,
-  req: Request,
-  url: URL,
-  parts: string[],
-): Promise<Response | null> {
-  if (url.pathname === '/api/packs/apply-update' && req.method === 'POST') {
-    if (!studio.gameConfigured) throw Error('请先配置游戏目录');
-    const body = (await req.json()) as { id: string; slot: string };
-    const result = await studio
-      .requireManager()
-      .updateEnabled(body.slot, body.id);
-    if (body.slot === 'custom')
-      await backupGameSkins(studio, 'custom:apply-update');
-    return json(result);
-  }
+const GAME_REQUIRED =
+  '请先配置游戏 skin_packs 目录；本地保存和导出仍可使用';
 
-  if (GAME_REQUIRED_ROUTES.has(url.pathname) && !studio.gameConfigured)
-    throw Error('请先配置游戏 skin_packs 目录；本地保存和导出仍可使用');
+/** Reject game-slot mutations until a Minecraft skin_packs directory exists. */
+function gameRoute(
+  method: string,
+  path: string,
+  handler: RouteHandler,
+  message = GAME_REQUIRED,
+) {
+  return route(method, path, async (context: RouteContext) => {
+    if (!context.studio.gameConfigured) throw Error(message);
+    return handler(context);
+  });
+}
 
-  if (url.pathname === '/api/packs/edit-installed' && req.method === 'POST') {
+export const gameRoutes = [
+  gameRoute(
+    'POST',
+    '/api/packs/apply-update',
+    async ({ studio, req }) => {
+      const body = (await req.json()) as { id: string; slot: string };
+      const result = await studio
+        .requireManager()
+        .updateEnabled(body.slot, body.id);
+      if (body.slot === 'custom')
+        await backupGameSkins(studio, 'custom:apply-update');
+      return json(result);
+    },
+    '请先配置游戏目录',
+  ),
+
+  route('POST', '/api/packs/edit-installed', async ({ studio, req }) => {
     const body = (await req.json()) as {
       slot: string;
       name?: string;
@@ -36,10 +48,14 @@ export async function handleGame(
       .editInstalled(String(body.slot ?? ''), body);
     if (body.slot === 'custom') await backupGameSkins(studio, 'custom:edit');
     return json(result);
-  }
+  }),
 
-  if (url.pathname === '/api/packs/enable' && req.method === 'POST') {
-    const body = (await req.json()) as { slot?: string; id?: string; skins?: number[] };
+  gameRoute('POST', '/api/packs/enable', async ({ studio, req }) => {
+    const body = (await req.json()) as {
+      slot?: string;
+      id?: string;
+      skins?: number[];
+    };
     const manager = studio.requireManager();
     const slot = String(body.slot ?? '');
     const skins = Array.isArray(body.skins)
@@ -51,10 +67,14 @@ export async function handleGame(
     await manager.pruneBackups(slot).catch(() => {});
     if (slot === 'custom') await backupGameSkins(studio, 'custom:enable');
     return json(result);
-  }
+  }),
 
-  if (url.pathname === '/api/packs/disable' && req.method === 'POST') {
-    const body = (await req.json()) as { slot?: string; id?: string; skinIndex?: number };
+  gameRoute('POST', '/api/packs/disable', async ({ studio, req }) => {
+    const body = (await req.json()) as {
+      slot?: string;
+      id?: string;
+      skinIndex?: number;
+    };
     const manager = studio.requireManager();
     const slot = String(body.slot ?? '');
     const result = Number.isInteger(body.skinIndex)
@@ -63,9 +83,9 @@ export async function handleGame(
     await manager.pruneBackups(slot).catch(() => {});
     if (slot === 'custom') await backupGameSkins(studio, 'custom:disable');
     return json(result);
-  }
+  }),
 
-  if (url.pathname === '/api/packs/restore' && req.method === 'POST') {
+  gameRoute('POST', '/api/packs/restore', async ({ studio, req }) => {
     const body = (await req.json()) as { slot?: string };
     const manager = studio.requireManager();
     const slot = String(body.slot ?? '');
@@ -73,12 +93,10 @@ export async function handleGame(
     await manager.pruneBackups(slot).catch(() => {});
     if (slot === 'custom') await backupGameSkins(studio, 'custom:restore');
     return json(result);
-  }
+  }),
 
-  if (url.pathname === '/api/packs/recover' && req.method === 'POST') {
+  gameRoute('POST', '/api/packs/recover', async ({ studio, req }) => {
     const body = (await req.json()) as { slot?: string };
     return json(await studio.requireManager().recover(String(body.slot ?? '')));
-  }
-
-  return null;
-}
+  }),
+];

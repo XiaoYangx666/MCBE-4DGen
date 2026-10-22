@@ -5,17 +5,13 @@ import { exportHumanoid } from '../../src/humanoid.ts';
 import type { HumanoidProfile } from '../../src/humanoid.ts';
 import { optimizeModel } from '../../src/optimizer.ts';
 import { buildSkinPack, zipSkinPack } from '../../src/skin-pack.ts';
-import { json, stableJson } from '../http.ts';
+import { HttpError, json, stableJson } from '../http.ts';
 import { updateModel } from '../model-library.ts';
-import type { Job, Studio } from '../studio.ts';
+import { route, type RouteContext } from '../route.ts';
+import type { Job } from '../studio.ts';
 
-export async function handleConvert(
-  studio: Studio,
-  req: Request,
-  url: URL,
-  parts: string[],
-): Promise<Response | null> {
-  if (url.pathname === '/api/convert' && req.method === 'POST') {
+export const convertRoutes = [
+  route('POST', '/api/convert', async ({ studio, req }) => {
     if (studio.busy) return json({ error: '已有任务正在运行' }, 409);
     const body = (await req.json()) as {
       session: string;
@@ -28,7 +24,7 @@ export async function handleConvert(
       profile: HumanoidProfile | null;
     };
     const session = studio.sessions.get(body.session);
-    if (!session) throw Error('模型会话不存在');
+    if (!session) throw new HttpError('模型会话不存在', 404);
     if (
       !['static', 'humanoid'].includes(body.binding) ||
       !Number.isFinite(body.ratio) ||
@@ -215,40 +211,42 @@ export async function handleConvert(
       }
     })();
     return json({ id });
-  }
+  }),
 
-  if (parts[0] === 'api' && parts[1] === 'job') {
-    const job = studio.jobs.get(parts[2]!);
-    if (!job) throw Error('任务不存在');
-    const asset = parts[3];
-    if (!asset)
-      return json({
-        status: job.status,
-        message: job.message,
-        result: job.result,
-      });
-    if (job.status !== 'done') throw Error('任务尚未完成');
-    if (asset === 'scene')
-      return json({
-        name: job.meta?.source ?? '图片皮肤',
-        identifier: 'geometry.skin0',
-        geometry: job.geometry,
-        skins: 1,
-        texture: `/api/job/${parts[2]}/texture`,
-      });
-    if (asset === 'download')
-      return new Response((await zipSkinPack(job.files!)) as BodyInit, {
-        headers: {
-          'Content-Type': 'application/zip',
-          'Content-Disposition': 'attachment; filename="skin.zip"',
-        },
-      });
-    if (asset === 'geometry') return json(job.geometry);
-    if (asset === 'texture')
-      return new Response(job.texture as BodyInit, {
-        headers: { 'Content-Type': 'image/png' },
-      });
-  }
+  route('GET', '/api/job/:id', jobState),
+  route('GET', '/api/job/:id/:asset', jobState),
+];
 
+async function jobState({ studio, params }: RouteContext) {
+  const job = studio.jobs.get(params.id!);
+  if (!job) throw new HttpError('任务不存在', 404);
+  const asset = params.asset;
+  if (!asset)
+    return json({
+      status: job.status,
+      message: job.message,
+      result: job.result,
+    });
+  if (job.status !== 'done') throw Error('任务尚未完成');
+  if (asset === 'scene')
+    return json({
+      name: job.meta?.source ?? '图片皮肤',
+      identifier: 'geometry.skin0',
+      geometry: job.geometry,
+      skins: 1,
+      texture: `/api/job/${params.id}/texture`,
+    });
+  if (asset === 'download')
+    return new Response((await zipSkinPack(job.files!)) as BodyInit, {
+      headers: {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': 'attachment; filename="skin.zip"',
+      },
+    });
+  if (asset === 'geometry') return json(job.geometry);
+  if (asset === 'texture')
+    return new Response(job.texture as BodyInit, {
+      headers: { 'Content-Type': 'image/png' },
+    });
   return null;
 }

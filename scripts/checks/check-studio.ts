@@ -21,6 +21,7 @@ try {
   });
   const post=async(path:string,body:unknown)=>{const r=await fetch(base+path,{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify(body)});const v:any=await r.json();assert.equal(r.status,200,JSON.stringify(v));return v;};
   const storage:any=await(await fetch(base+'/api/storage')).json();assert.equal(storage.root,join(fixture,'data'));
+  const missingJob=await fetch(base+'/api/job/does-not-exist');assert.equal(missingJob.status,404);
   const image=await sharp({create:{width:60,height:120,channels:4,background:{r:40,g:180,b:100,alpha:0.7}}}).png().toBuffer();
   const form=new FormData();form.append('image',new File([image],'测试.png'));form.append('name','图片模板验证');form.append('height','32');
   const response=await fetch(base+'/api/templates/image',{method:'POST',headers:{Origin:base},body:form});const result:any=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.equal(result.width,16);
