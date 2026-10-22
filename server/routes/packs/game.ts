@@ -24,9 +24,9 @@ export const gameRoutes = [
     '/api/packs/apply-update',
     async ({ studio, req }) => {
       const body = (await req.json()) as { id: string; slot: string };
-      const result = await studio
-        .requireManager()
-        .updateEnabled(body.slot, body.id);
+      const manager = studio.requireManager();
+      const result = await manager.updateEnabled(body.slot, body.id);
+      await manager.pruneBackups(body.slot).catch(() => {});
       if (body.slot === 'custom')
         await backupGameSkins(studio, 'custom:apply-update');
       return json(result);
@@ -43,9 +43,9 @@ export const gameRoutes = [
       remove?: boolean;
       revision?: string;
     };
-    const result = await studio
-      .requireManager()
-      .editInstalled(String(body.slot ?? ''), body);
+    const manager = studio.requireManager();
+    const result = await manager.editInstalled(String(body.slot ?? ''), body);
+    await manager.pruneBackups(String(body.slot ?? '')).catch(() => {});
     if (body.slot === 'custom') await backupGameSkins(studio, 'custom:edit');
     return json(result);
   }),
@@ -97,6 +97,10 @@ export const gameRoutes = [
 
   gameRoute('POST', '/api/packs/recover', async ({ studio, req }) => {
     const body = (await req.json()) as { slot?: string };
-    return json(await studio.requireManager().recover(String(body.slot ?? '')));
+    const slot = String(body.slot ?? '');
+    const manager = studio.requireManager();
+    const result = await manager.recover(slot);
+    await manager.pruneBackups(slot).catch(() => {});
+    return json(result);
   }),
 ];

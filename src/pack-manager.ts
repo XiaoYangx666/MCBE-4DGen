@@ -403,7 +403,7 @@ export class PackManager {
   async pruneBackups(slot: string, options: { keepRecent?: number } = {}) {
     const target = this.target(slot), state = await this.state(slot);
     if (state?.pending) return { removed: 0 };
-    const keepRecent = Math.max(1, Math.min(100, Math.floor(options.keepRecent ?? 10)));
+    const keepRecent = Math.max(0, Math.min(100, Math.floor(options.keepRecent ?? 0)));
     const keep = new Set(state ? [state.original] : []);
     const dir = join(this.config.stateDir, 'backups');
     if (!(await exists(dir))) return { removed: 0 };

@@ -13,8 +13,8 @@ Usage: node src/pack-cli.ts <command> [arguments] [--config skin-manager.local.j
   status                                      Inspect configured slots and external changes
   enable <slot> <id>                           Add library pack to slot (backs up first)
   disable <slot> <id>                          Remove pack; last removal restores baseline
-  backups <slot>                              List verified-operation backup metadata
-  restore <slot> [backup-id]                   Restore original baseline or a named backup
+  backups <slot>                              List retained snapshots (original baseline and pending recovery)
+  restore <slot> [backup-id]                   Restore original baseline or a retained recovery snapshot
   recover <slot>                              Recover interrupted deployment using its backup
   archive <id>                                Mark inactive pack archived; keep files/backups
   adopt <slot> <original-directory> [pack-id]  Track existing install and original backup
@@ -55,11 +55,11 @@ async function main() {
     case 'export': count(2); result = await manager.exportPack(args[0]!, resolve(args[1]!)); break;
     case 'list': count(0); result = await manager.list(); break;
     case 'status': count(0); result = await manager.status(); break;
-    case 'enable': count(2); result = await manager.enable(args[0]!, args[1]!); break;
-    case 'disable': count(2); result = await manager.disable(args[0]!, args[1]!); break;
+    case 'enable': count(2); result = await manager.enable(args[0]!, args[1]!); await manager.pruneBackups(args[0]!).catch(() => {}); break;
+    case 'disable': count(2); result = await manager.disable(args[0]!, args[1]!); await manager.pruneBackups(args[0]!).catch(() => {}); break;
     case 'backups': count(1); result = await manager.backups(args[0]!); break;
-    case 'restore': count(1, 2); result = await manager.restore(args[0]!, args[1]); break;
-    case 'recover': count(1); result = await manager.recover(args[0]!); break;
+    case 'restore': count(1, 2); result = await manager.restore(args[0]!, args[1]); await manager.pruneBackups(args[0]!).catch(() => {}); break;
+    case 'recover': count(1); result = await manager.recover(args[0]!); await manager.pruneBackups(args[0]!).catch(() => {}); break;
     case 'archive': count(1); result = await manager.archive(args[0]!); break;
     case 'adopt': count(2, 3); result = await manager.adopt(args[0]!, resolve(args[1]!), args[2]); break;
     default: throw new Error('Unknown command: ' + command + '\n' + help);
