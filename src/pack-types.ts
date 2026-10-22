@@ -1,4 +1,6 @@
 /** Shared skin-pack domain types used by the manager, server and web UI. */
+import type { HumanoidProfile } from './humanoid.ts';
+
 export type PackHashes = Record<string, string>;
 
 export interface PackStats {
@@ -32,7 +34,7 @@ export interface PackMeta {
   maxError?: number;
   height?: number;
   excluded?: string[];
-  profile?: unknown;
+  profile?: HumanoidProfile | null;
   note?: string;
 }
 

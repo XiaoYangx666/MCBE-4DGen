@@ -13,6 +13,10 @@ import { fileURLToPath } from 'node:url';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptEncoder } from 'meshoptimizer';
+import type {
+  LoadedSession,
+  MaterialSummary,
+} from '../src/api-types.ts';
 import { autoProfile } from '../src/auto-profile.ts';
 import type { HumanoidProfile, PreparedHumanoid } from '../src/humanoid.ts';
 import { importModel } from '../src/importer.ts';
@@ -37,9 +41,10 @@ import {
   rememberModel,
   updateModel,
 } from './model-library.ts';
-import type { EditSettings } from './model-library.ts';
 import { fileExists, pathExists, readFileBytes } from './fs.ts';
 import { ownModel } from './source-archive.ts';
+
+export type { LoadedSession } from '../src/api-types.ts';
 
 export interface Preset {
   id: string;
@@ -49,13 +54,7 @@ export interface Preset {
   profile: string;
 }
 
-export interface SessionMaterial {
-  name: string;
-  triangles: number;
-  alpha: number;
-  doubleSided: boolean;
-  transparent: boolean;
-}
+export type SessionMaterial = MaterialSummary;
 
 export interface Session {
   modelId: string;
@@ -63,7 +62,7 @@ export interface Session {
   preview: Uint8Array;
   profile: HumanoidProfile | null;
   name: string;
-  materials: SessionMaterial[];
+  materials: MaterialSummary[];
 }
 
 export interface Job {
@@ -81,16 +80,6 @@ export type PreparedState = {
   humanoid?: PreparedHumanoid;
   static?: PreparedOptimization;
 };
-
-export interface LoadedSession {
-  id: string;
-  modelId: string;
-  name: string;
-  settings: EditSettings | null;
-  profile: HumanoidProfile | null;
-  materials: SessionMaterial[];
-  warnings: string[];
-}
 
 const PRESETS: Preset[] = [
   {

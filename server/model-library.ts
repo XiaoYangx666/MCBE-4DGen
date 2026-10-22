@@ -12,34 +12,13 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
+import type { EditSettings, ModelEntry } from '../src/api-types.ts';
 import { storage, within } from '../src/workspace-storage.ts';
 import { modelPattern } from './model-files.ts';
 
+export type { EditSettings, ModelEntry } from '../src/api-types.ts';
+
 export const libraryRoot = storage.models;
-
-export interface EditSettings {
-  binding: string;
-  ratio: number;
-  maxError: number;
-  height: number;
-  excluded: string[];
-  materialWeights: Record<string, number>;
-  profile: unknown;
-}
-
-export interface ModelEntry {
-  id: string;
-  path: string;
-  name: string;
-  created: string;
-  updated: string;
-  settings?: EditSettings;
-  packIds?: string[];
-  profile?: unknown;
-  stats?: { triangles: number; materials: number; bytes: number };
-  previewKey?: string;
-  sourceAvailable?: boolean;
-}
 
 function entryPath(id: string): string {
   if (!/^[a-f0-9]{64}$/.test(id)) throw Error('模型 ID 无效');
