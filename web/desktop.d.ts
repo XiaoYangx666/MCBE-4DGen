@@ -6,6 +6,7 @@ declare global {
  palette(value?:'graphite'|'ocean'|'sand'|'rose'|'violet'):Promise<'graphite'|'ocean'|'sand'|'rose'|'violet'>;
  appearance(value?:'system'|'light'|'dark'):Promise<'system'|'light'|'dark'>;
  restart():Promise<boolean>;
+ copyText(text:string):Promise<boolean>;
  windowState():Promise<DesktopWindowState>;
  windowAction(action:'minimize'|'maximize'|'close'|'menu'):Promise<void>;
  onWindowState(callback:(state:DesktopWindowState)=>void):()=>void;

@@ -38,48 +38,96 @@ function SiteIcon({ site }: { site: SourceSite }) {
   );
 }
 
+function copyText(text: string): Promise<void> {
+  return navigator.clipboard
+    .writeText(text)
+    .catch(() => {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.top = "-1000px";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      const copied = document.execCommand("copy");
+      area.remove();
+      if (!copied) throw Error("复制失败");
+    });
+}
+
 function SiteCard({ site }: { site: SourceSite }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+
+  async function copyLink() {
+    try {
+      if (window.desktop?.copyText) await window.desktop.copyText(site.url);
+      else await copyText(site.url);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+    setTimeout(() => setCopyState("idle"), 1500);
+  }
+
   return (
-    <a
-      className="source-card"
-      href={site.url}
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      <SiteIcon site={site} />
-      <div className="source-card-body">
-        <div className="source-card-head">
-          <div>
-            <b>{site.name}</b>
-            <span className="source-region">{site.region}</span>
+    <div className="source-card-wrap">
+      <a
+        className="source-card"
+        href={site.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`打开 ${site.name}`}
+      >
+        <SiteIcon site={site} />
+        <div className="source-card-body">
+          <div className="source-card-head">
+            <div>
+              <b>{site.name}</b>
+              <span className="source-region">{site.region}</span>
+            </div>
+            {site.rating !== undefined && (
+              <span className="source-rating">★ {site.rating.toFixed(1)}</span>
+            )}
           </div>
-          {site.rating !== undefined && (
-            <span className="source-rating">★ {site.rating.toFixed(1)}</span>
-          )}
-        </div>
-        <p>{site.summary}</p>
-        <div className="source-chips">
-          <span className="source-chip price">{site.pricing}</span>
-          {site.formats.slice(0, 4).map((format) => (
-            <span className="source-chip" key={format}>
-              {format}
-            </span>
-          ))}
-          {site.categories
-            .filter((category) => category !== "general")
-            .slice(0, 1)
-            .map((category) => (
-              <span className="source-chip category" key={category}>
-                {CATEGORY_LABELS.get(category)}
+          <p>{site.summary}</p>
+          <div className="source-chips">
+            <span className="source-chip price">{site.pricing}</span>
+            {site.formats.slice(0, 4).map((format) => (
+              <span className="source-chip" key={format}>
+                {format}
               </span>
             ))}
+            {site.categories
+              .filter((category) => category !== "general")
+              .slice(0, 1)
+              .map((category) => (
+                <span className="source-chip category" key={category}>
+                  {CATEGORY_LABELS.get(category)}
+                </span>
+              ))}
+          </div>
+          <div className="source-card-foot">
+            <small>{site.domain}</small>
+          </div>
         </div>
-        <div className="source-card-foot">
-          <small>{site.domain}</small>
-          <span>打开 ↗</span>
-        </div>
-      </div>
-    </a>
+      </a>
+      <button
+        type="button"
+        className="source-copy"
+        title="复制链接"
+        aria-label={`复制 ${site.name} 链接`}
+        onClick={() => void copyLink()}
+      >
+        {copyState === "copied"
+          ? "已复制"
+          : copyState === "failed"
+            ? "复制失败"
+            : "复制"}
+      </button>
+    </div>
   );
 }
 
