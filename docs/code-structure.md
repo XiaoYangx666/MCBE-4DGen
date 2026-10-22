@@ -30,6 +30,7 @@ Importer -> IntermediateModel -> Optimizer -> BoneMapper -> BedrockExporter -> S
 - `pack-tree.ts`：受管目录的读取/增量写入、SHA256 校验、几何 JSON 片段扫描与包体统计。
 - `pack-types.ts`：服务端、管理器和前端共用的皮肤包领域类型。
 - `api-types.ts`：模型库、工作台会话、转换结果与图集报告的前后端共享类型。
+- `source-sites.ts`：模型来源网站目录、分类与热度顺序，同时作为本地图标代理的域名白名单。
 - `workspace-storage.ts`：统一数据目录、旧缓存迁移与路径边界检查。
 
 核心模块不依赖 HTTP、React 或 Electron；新增格式或算法应尽量留在此层。
@@ -70,6 +71,7 @@ bun run test:node
     - `library.ts`：本地皮肤包库、预设槽位、导入导出、预览、安装与删除。
     - `game.ts`：游戏槽位的启用、停用、恢复、修复与已安装皮肤编辑；游戏目录守卫由 `gameRoute()` 逐条包装，不再维护路径集合。
   - `templates.ts`：图片皮肤模板。
+  - `source-icons.ts`：模型网站 favicon 的本地代理与磁盘缓存；只接受 `source-sites.ts` 中的域名。
   - `static.ts`：构建后的前端静态文件。
 - `model-library.ts`：模型库条目的增删改查与编辑配置校验。
 - `model-files.ts`：模型扩展名与递归扫描。
