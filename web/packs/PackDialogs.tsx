@@ -12,54 +12,63 @@ const titles: Record<Exclude<PackDialogKind, null>, string> = {
 };
 
 export function PackDialogs({
-  dialog,
-  row,
-  skin,
-  busy,
-  error,
-  name,
-  setName,
-  importPath,
-  setImportPath,
-  sourceId,
-  setSourceId,
-  sourceContents,
-  indices,
-  setIndices,
-  sourceOptions,
-  fileInput,
-  onClose,
-  onCreate,
-  onImportPath,
-  onImportFile,
-  onRemoveSkin,
-  onDelete,
-  onAdd,
+  state,
+  form,
+  actions,
 }: {
-  dialog: PackDialogKind;
-  row: PackRow | undefined;
-  skin: SkinItem | undefined;
-  busy: string;
-  error: string;
-  name: string;
-  setName: Dispatch<SetStateAction<string>>;
-  importPath: string;
-  setImportPath: Dispatch<SetStateAction<string>>;
-  sourceId: string;
-  setSourceId: Dispatch<SetStateAction<string>>;
-  sourceContents: Contents | null;
-  indices: number[];
-  setIndices: Dispatch<SetStateAction<number[]>>;
-  sourceOptions: LibraryPack[];
-  fileInput: RefObject<HTMLInputElement | null>;
-  onClose: () => void;
-  onCreate: () => void;
-  onImportPath: () => void;
-  onImportFile: (file?: File) => void;
-  onRemoveSkin: () => void;
-  onDelete: () => void;
-  onAdd: () => void;
+  state: {
+    kind: PackDialogKind;
+    row: PackRow | undefined;
+    skin: SkinItem | undefined;
+    busy: string;
+    error: string;
+  };
+  form: {
+    name: string;
+    setName: Dispatch<SetStateAction<string>>;
+    importPath: string;
+    setImportPath: Dispatch<SetStateAction<string>>;
+    sourceId: string;
+    setSourceId: Dispatch<SetStateAction<string>>;
+    sourceContents: Contents | null;
+    indices: number[];
+    setIndices: Dispatch<SetStateAction<number[]>>;
+    sourceOptions: LibraryPack[];
+    fileInput: RefObject<HTMLInputElement | null>;
+  };
+  actions: {
+    onClose: () => void;
+    onCreate: () => void;
+    onImportPath: () => void;
+    onImportFile: (file?: File) => void;
+    onRemoveSkin: () => void;
+    onDelete: () => void;
+    onAdd: () => void;
+  };
 }) {
+  const { kind: dialog, row, skin, busy, error } = state;
+  const {
+    name,
+    setName,
+    importPath,
+    setImportPath,
+    sourceId,
+    setSourceId,
+    sourceContents,
+    indices,
+    setIndices,
+    sourceOptions,
+    fileInput,
+  } = form;
+  const {
+    onClose,
+    onCreate,
+    onImportPath,
+    onImportFile,
+    onRemoveSkin,
+    onDelete,
+    onAdd,
+  } = actions;
   if (!dialog) return null;
   return (
     <Modal
