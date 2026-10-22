@@ -1,10 +1,10 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { createPosePreview } from "../web/pose-preview.ts";
-import { estimateTriangles } from "../web/estimate.ts";
-import { triangleBudget } from "../web/estimate.ts";
-import { preparePreviewMaterial } from "../web/preview-material.ts";
+import { createPosePreview } from "../web/workbench/pose-preview.ts";
+import { estimateTriangles } from "../web/workbench/estimate.ts";
+import { triangleBudget } from "../web/workbench/estimate.ts";
+import { preparePreviewMaterial } from "../web/workbench/preview-material.ts";
 
 test("alpha-textured opaque clothing uses depth-writing cutouts while real translucency stays blended", () => {
   const clothing = new THREE.MeshStandardMaterial({ transparent: true, opacity: 1, depthWrite: false });
@@ -29,7 +29,7 @@ test("triangle guidance uses lightweight, acceptable and high bands", () => {
   assert.equal(triangleBudget(50001).level, "red");
   assert.equal(triangleBudget(203145).level, "red");
 });
-import { captureCameraView, restoreCameraView } from "../web/camera-state.ts";
+import { captureCameraView, restoreCameraView } from "../web/workbench/camera-state.ts";
 
 test("camera view survives renderer replacement without sharing mutable vectors", () => {
   const position = new THREE.Vector3(8, 12, -6);

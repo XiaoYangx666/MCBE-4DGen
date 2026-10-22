@@ -1,17 +1,17 @@
-import type { BedrockGeometryFile } from "../src/bedrock-types";
-import type { PersonaRecipe } from "../src/persona-recipe";
+import type { BedrockGeometryFile } from "../../src/bedrock-types";
+import type { PersonaRecipe } from "../../src/persona-recipe";
 import type {
   ActivePack,
   LibraryPack,
   SkinOrigin,
-} from "../src/pack-types";
+} from "../../src/pack-types";
 
 export type {
   LibraryPack,
   PackMeta,
   PackStats,
   SkinOrigin,
-} from "../src/pack-types";
+} from "../../src/pack-types";
 
 export type SlotStatus = {
   slot: string;

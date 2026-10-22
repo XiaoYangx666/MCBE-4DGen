@@ -1,20 +1,20 @@
-import { AppBar } from "./AppBar";
-import { AboutDialog } from "./AboutDialog";
-import { TemplatesPage } from "./TemplatesPage";
-import { SettingsPage } from "./SettingsPage";
+import { AppBar } from "./ui/AppBar";
+import { AboutDialog } from "./ui/AboutDialog";
+import { TemplatesPage } from "./pages/TemplatesPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { useEffect, useState } from "react";
-import { SaveSkinDialog } from "./SaveSkinDialog";
-import { Viewer } from "./Viewer";
-import { MaterialPanel } from "./MaterialPanel";
-import { OutputPanels } from "./OutputPanels";
-import { SettingsPanel } from "./SettingsPanel";
-import { LibraryPage } from "./LibraryPage";
-import { PackPage } from "./PackPage";
-import { WebNav } from "./WebNav";
-import { useHashRoute } from "./use-hash-route";
-import { api, post } from "./api";
-import { estimateTriangles } from "./estimate";
-import type { Result, Session } from "./types";
+import { SaveSkinDialog } from "./packs/SaveSkinDialog";
+import { Viewer } from "./workbench/Viewer";
+import { MaterialPanel } from "./workbench/MaterialPanel";
+import { OutputPanels } from "./workbench/OutputPanels";
+import { SettingsPanel } from "./workbench/SettingsPanel";
+import { LibraryPage } from "./pages/LibraryPage";
+import { PackPage } from "./pages/PackPage";
+import { WebNav } from "./ui/WebNav";
+import { useHashRoute } from "./lib/use-hash-route";
+import { api, post } from "./lib/api";
+import { estimateTriangles } from "./workbench/estimate";
+import type { Result, Session } from "./workbench/types";
 
 export function App() {
   const [saveOpen, setSaveOpen] = useState(false),

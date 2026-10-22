@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, post } from "./api";
+import { api, post } from "../lib/api";
 import type { Packs } from "./pack-types";
 
 /** Saving a conversion never writes to the game directory. */

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { HumanoidProfile } from "../src/humanoid.ts";
+import type { HumanoidProfile } from "../../src/humanoid.ts";
 
 /** Pose the original source skeleton; preserve mixed weights through GPU skinning.
  * Mirrors exportHumanoid's world-to-local arm rotation and fitted shoulder units.

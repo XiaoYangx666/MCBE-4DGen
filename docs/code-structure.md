@@ -72,16 +72,14 @@ bun run test:node
 ## 前端（`web/`）
 
 - `main.tsx`、`App.tsx`：挂载、工作台状态与页面切换。
-- `navigation.ts`、`use-hash-route.ts`、`WebNav.tsx`、`AppBar.tsx`：哈希路由、页面标题和网页/桌面导航。
-- `LibraryPage.tsx`、`PackPage.tsx`、`TemplatesPage.tsx`、`SettingsPage.tsx`：主要页面。
-- `AboutDialog.tsx`：版本、运行环境与数据目录弹窗，可由设置页或桌面菜单打开。
-- `PackPreview.tsx`、`pack-types.ts`：皮肤包预览与共享类型。
-- `pack-state.ts`：皮肤包启用状态、单皮肤安装与更新判断的纯函数。
-- `Viewer.tsx`、`MaterialPanel.tsx`、`SettingsPanel.tsx`、`OutputPanels.tsx`、`SaveSkinDialog.tsx`、`ContextMenu.tsx`、`InlineName.tsx`：工作台与皮肤包共用组件。
-- `appearance.ts`、`theme.css`、`style.css`、`workflow.css`：主题、配色与布局。
-- `api.ts`：统一的同源 JSON 请求。
+- `pages/`：`LibraryPage`、`PackPage`、`TemplatesPage`、`SettingsPage`，以及页面内的 `ModelSources`。
+- `packs/`：`GameSkinsPanel`、`PersonaRecipePanel`、`PackPreview`、`SaveSkinDialog`、`pack-types.ts`、`pack-state.ts`、`game-skins-types.ts`。
+- `workbench/`：`Viewer`、`MaterialPanel`、`SettingsPanel`、`OutputPanels`、`HoldOriginalButton`、`estimate.ts`、`types.ts` 及预览渲染工具。
+- `ui/`：`AppBar`、`WebNav`、`AboutDialog`、`ContextMenu`、`InlineName` 等跨页面组件。
+- `lib/`：`api.ts`、`appearance.ts`、`navigation.ts`、`use-hash-route.ts` 等基础设施。
+- `styles/`：`style.css`、`workflow.css`、`theme.css`。
 
-页面组件持有交互状态；跨页面共享的纯逻辑放到独立模块，避免从页面文件反向导入类型或组件。
+页面组件持有交互状态；跨页面共享的纯逻辑放到 `packs/`、`workbench/` 或 `lib/`，避免从页面文件反向导入类型或组件。
 
 ## 验证
 

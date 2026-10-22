@@ -5,9 +5,9 @@ import {
   getAppearance,
   setAppearance,
   type Appearance,
-} from "./appearance";
+} from "../lib/appearance";
 import { useEffect, useState } from "react";
-import { api, post } from "./api";
+import { api, post } from "../lib/api";
 
 type SettingsData = {
   dataRoot: string;
