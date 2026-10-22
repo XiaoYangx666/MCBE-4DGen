@@ -22,13 +22,12 @@ test("alpha-textured opaque clothing uses depth-writing cutouts while real trans
   assert.equal(mask.alphaTest, 0.7);
 });
 
-test("triangle guidance uses documented Rin and accepted Shino counts without warning at 50k", () => {
-  assert.equal(triangleBudget(30000).warning, "none");
-  assert.equal(triangleBudget(35122).recommendedMax, 35122);
-  assert.equal(triangleBudget(50000).warning, "none");
-  assert.equal(triangleBudget(52106).warning, "none");
-  assert.equal(triangleBudget(52107).warning, "above");
-  assert.equal(triangleBudget(203145).warning, "above");
+test("triangle guidance uses lightweight, acceptable and high bands", () => {
+  assert.equal(triangleBudget(19999).level, "green");
+  assert.equal(triangleBudget(20000).level, "yellow");
+  assert.equal(triangleBudget(50000).level, "yellow");
+  assert.equal(triangleBudget(50001).level, "red");
+  assert.equal(triangleBudget(203145).level, "red");
 });
 import { captureCameraView, restoreCameraView } from "../web/camera-state.ts";
 

@@ -66,6 +66,56 @@ test('library merges colliding IDs, disables individual packs, and restores exac
   } finally { await cleanup(f.dir); }
 });
 
+test('installs and removes individual skins from a multi-skin pack', async () => {
+  const f = await fixture();
+  try {
+    await f.manager.importPack('multi-a', f.source);
+    await f.manager.importPack('multi-b', f.source);
+    const target = await f.manager.createPack('Multi');
+    await f.manager.addSkins(target.id, 'multi-a', [0]);
+    await f.manager.addSkins(target.id, 'multi-b', [0]);
+    assert.equal((await f.manager.contents(target.id)).skins.length, 2);
+    const readSkins = async () => JSON.parse(await readFile(join(f.root, 'custom/skins.json'), 'utf8')).skins;
+
+    await f.manager.enableSkins('custom', target.id, [0]);
+    let skins = await readSkins();
+    assert.equal(skins.length, 1);
+    assert.equal(skins[0].texture, `${target.id}_0.png`);
+    let state = (await f.manager.status()).find((s) => s.slot === 'custom')!;
+    assert.deepEqual(state.active[0]!.skins, [0]);
+
+    await f.manager.enableSkins('custom', target.id, [1]);
+    assert.equal((await readSkins()).length, 2);
+    state = (await f.manager.status()).find((s) => s.slot === 'custom')!;
+    assert.deepEqual(state.active[0]!.skins, [0, 1]);
+
+    await f.manager.disableSkin('custom', target.id, 0);
+    skins = await readSkins();
+    assert.equal(skins.length, 1);
+    assert.equal(skins[0].texture, `${target.id}_1.png`);
+    state = (await f.manager.status()).find((s) => s.slot === 'custom')!;
+    assert.deepEqual(state.active[0]!.skins, [1]);
+
+    await f.manager.disableSkin('custom', target.id, 1);
+    assert.equal(await readFile(join(f.root, 'custom/manifest.json'), 'utf8'), '{"original":true}');
+  } finally { await cleanup(f.dir); }
+});
+
+test('addSkins can point origins at the destination when the source is temporary', async () => {
+  const f = await fixture();
+  try {
+    await f.manager.importFiles('staging', f.files, [], { modelId: 'model-1' });
+    const target = await f.manager.createPack('Target');
+    await f.manager.addSkins(target.id, 'staging', [0], { originPackId: target.id });
+    const contents = await f.manager.contents(target.id);
+    assert.equal(contents.skins[0]?.origin?.packId, target.id);
+    assert.equal(contents.skins[0]?.origin?.skinIndex, 0);
+    assert.equal(contents.skins[0]?.origin?.modelId, 'model-1');
+    await f.manager.remove('staging');
+    assert.equal((await f.manager.contents(target.id)).skins.length, 1);
+  } finally { await cleanup(f.dir); }
+});
+
 test('standard skin imports without geometry.json and damaged backup is rejected', async () => {
   const f = await fixture();
   try {

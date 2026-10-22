@@ -44,7 +44,7 @@ export type SlotStatus = {
   exists: boolean;
   managed: boolean;
   skins: number | null;
-  active: { id: string; revision: string }[];
+  active: { id: string; revision: string; skins?: number[] }[];
   presetSources?: string[];
   changedOutsideManager: boolean | null;
   pending: unknown;

@@ -248,10 +248,7 @@ export function LibraryPage({
   };
   return (
     <div className="page-content library-page">
-      <div className="page-heading">
-        <div>
-          <h1>源模型</h1>
-        </div>
+      <div className="page-heading actions-only">
         <div className="button-row">
           <button
             disabled={!!busy}

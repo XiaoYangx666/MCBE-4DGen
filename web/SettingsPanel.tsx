@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Result, Session } from "./types";
-import { triangleBudget } from "./estimate";
+import { FACE_GREEN_MAX, FACE_YELLOW_MAX, triangleBudget } from "./estimate";
 
 type SettingsPanelProps = {
   session: Session | null;
@@ -38,6 +39,26 @@ export function SettingsPanel(props: SettingsPanelProps) {
     error, message, elapsed, openPacks } = props;
   const budget = triangleBudget(estimate.target);
   const actual = result && !stale ? result.report.triangles : null;
+  const [heightText, setHeightText] = useState(String(height));
+  useEffect(() => setHeightText(String(height)), [height]);
+  const heightValue = Number(heightText);
+  const heightValid =
+    heightText.trim() !== "" &&
+    Number.isFinite(heightValue) &&
+    heightValue >= 1 &&
+    heightValue <= 128;
+  const faceLabels = { green: "轻量", yellow: "可接受", red: "偏高" } as const;
+  const source = Math.max(1, estimate.source);
+  const zone = (faces: number) =>
+    Math.max(
+      0,
+      Math.min(100, ((Math.min(1, faces / source) - 0.01) / 0.99) * 100),
+    );
+  const ratioTrack = `linear-gradient(90deg,
+    color-mix(in srgb, var(--face-green) 55%, transparent) 0 ${zone(FACE_GREEN_MAX)}%,
+    color-mix(in srgb, var(--face-yellow) 55%, transparent) ${zone(FACE_GREEN_MAX)}% ${zone(FACE_YELLOW_MAX)}%,
+    color-mix(in srgb, var(--face-red) 55%, transparent) ${zone(FACE_YELLOW_MAX)}% 100%)`;
+  const actualBudget = actual !== null ? triangleBudget(actual) : null;
   return (
     <aside className="inspector">
       <div className="section-label">02 / 转换设置</div>
@@ -62,51 +83,50 @@ export function SettingsPanel(props: SettingsPanelProps) {
         ? "使用源骨骼映射，跟随原版玩家动作。"
         : "整个模型绑定身体，适合物件与静态皮肤。"}
         </p>
-        <label className="field">
-          保留面数比例 <b>{Math.round(ratio * 100)}%</b>
-          <input
-        type="range"
-        min=".01"
-        max="1"
-        step=".01"
-        value={ratio}
-        onChange={(e) => {
-          setRatio(+e.target.value);
-          changed();
-        }}
-          />
-        </label>
+        <div className="field ratio-field">
+          <span className="ratio-label">
+            保留面数比例 <b>{Math.round(ratio * 100)}%</b>
+          </span>
+          <div className="ratio-slider" style={{ background: ratioTrack }}>
+            <input
+              type="range"
+              aria-label="保留面数比例"
+              min=".01"
+              max="1"
+              step=".01"
+              value={ratio}
+              onChange={(e) => {
+                setRatio(+e.target.value);
+                changed();
+              }}
+            />
+          </div>
+          <div className="ratio-legend">
+            <span className="green">轻量 &lt; 2 万</span>
+            <span className="yellow">2–5 万</span>
+            <span className="red">&gt; 5 万</span>
+          </div>
+        </div>
         {session && (
-          <div className={"face-estimate " + (budget.warning !== "none" ? "over-budget" : "")}>
-        <strong>目标约 {estimate.target.toLocaleString()} 面</strong>
-        <small>建议参考约 3.5 万三角面（样本 B轻量版 {budget.recommendedMax.toLocaleString()} 面）；已验收 Shino 为 {budget.observedMax.toLocaleString()} 面，5 万面左右不视为超量。</small>
-        {budget.warning !== "none" && (
-          <p className="budget-warning" role="status">
-            已超出已验收样本的 {budget.observedMax.toLocaleString()} 面参考范围，建议实机确认加载与多人同屏表现；不代表无法加载。
-          </p>
-        )}
-        {budget.warning !== "none" && budget.recommendedMax / estimate.source >= 0.01 && (
-          <small>如需接近样本 B轻量版，保留比例可先尝试 {Math.floor(budget.recommendedMax / estimate.source * 100)}% 左右，再检查轮廓。</small>
-        )}
-        {actual !== null && triangleBudget(actual).warning !== "none" && (
-          <p className="budget-warning">实际成品 {actual.toLocaleString()} 面，超出已验收样本参考范围，需实机确认。若希望继续减面但比例不再生效，可适当增加高级设置中的形状变化容限。</p>
-        )}
-        <small>
-          含双面输出；原始保留部分 {estimate.source.toLocaleString()}{" "}
-          面。误差限制可能使成品面数高于目标。
-        </small>
-        {result && (
-          <small>
-            上次实际：{result.report.triangles.toLocaleString()} 面
-            {stale ? "（参数已修改）" : ""}
-          </small>
-        )}
+          <div className={"face-estimate face-" + budget.level}>
+            <div className="face-row">
+              <strong>目标约 {estimate.target.toLocaleString()} 面</strong>
+              <span className={"face-chip " + budget.level}>
+                {faceLabels[budget.level]}
+              </span>
+            </div>
+            {actual !== null && actualBudget && (
+              <div className="face-row">
+                <span className="face-actual">
+                  上次实际 {actual.toLocaleString()} 面
+                </span>
+                <span className={"face-chip " + actualBudget.level}>
+                  {faceLabels[actualBudget.level]}
+                </span>
+              </div>
+            )}
           </div>
         )}
-        <div className="range-labels">
-          <span>更轻</span>
-          <span>更多细节</span>
-        </div>
         <details className="advanced-reduction">
           <summary>高级减面设置（通常保持默认）</summary>{" "}
           <label className="field">
@@ -134,14 +154,21 @@ export function SettingsPanel(props: SettingsPanelProps) {
         type="number"
         min="1"
         max="128"
-        value={height}
+        value={heightText}
+        aria-invalid={!heightValid}
         onChange={(e) => {
-          setHeight(+e.target.value);
-          setMode("pose");
-          changed();
+          const next = e.target.value;
+          setHeightText(next);
+          const value = Number(next);
+          if (next.trim() !== "" && Number.isFinite(value) && value >= 1 && value <= 128) {
+            setHeight(value);
+            setMode("pose");
+            changed();
+          }
         }}
           />
         </label>
+        {!heightValid && <p className="field-error">模型高度需为 1–128</p>}
         <div className="subheading">姿势与朝向</div>
         <label className="field">
           Y 轴旋转 <b>{profile.rotationYDegrees ?? 0}°</b>
@@ -161,7 +188,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
             <button key={angle} type="button" onClick={() => updateProfile("rotationYDegrees", angle)}>{angle}°</button>
           ))}
         </div>
-        <p className="help">点预览右下角「正面检查」，脸和胸前应正对你；看到后脑就转 180°，看到侧脸就尝试 ±90°。绿色箭头固定表示玩家正前方，拖动视角不会改变它。</p>
+        <p className="help">点右下角「正面检查」，让角色正面朝向绿色箭头。</p>
         {binding === "humanoid" && (
           <>
         <label className="field">
@@ -225,7 +252,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <button
           className="primary"
           disabled={busy || !session}
-          onClick={convert}
+          onClick={() => {
+            if (!heightValid) {
+              setError("模型高度需为 1–128 之间的数字");
+              return;
+            }
+            convert();
+          }}
         >
           {busy ? (
         <>

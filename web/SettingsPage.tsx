@@ -148,11 +148,8 @@ export function SettingsPage({ onAbout }: { onAbout: () => void }) {
   }
 
   return (
-    <main className="page-content settings-page">
-      <div className="settings-heading">
-        <h1>设置</h1>
-        <p>管理本地数据与 Minecraft 安装位置。</p>
-      </div>
+    <main className="page-content">
+      <div className="settings-page">
       {error && (
         <p className="pack-message error" role="alert">
           {error}
@@ -411,6 +408,7 @@ export function SettingsPage({ onAbout }: { onAbout: () => void }) {
           </section>
         </div>
       )}
+      </div>
     </main>
   );
 }

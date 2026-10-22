@@ -17,6 +17,9 @@
   --usage-skins:#b388f5;
   --usage-cache:#e3b15c;
   --usage-other:#8b93a6;
+  --face-green:#4fc39a;
+  --face-yellow:#e3b15c;
+  --face-red:#f09b9f;
   color:var(--ink);background:var(--canvas);
 }
 [data-theme="light"] {
@@ -38,6 +41,9 @@
   --usage-skins:#8256d8;
   --usage-cache:#b47a1f;
   --usage-other:#7b8496;
+  --face-green:#2e9c76;
+  --face-yellow:#b47a1f;
+  --face-red:#b73e54;
 }
 body,.app,.desktop-shell .app {background:var(--canvas);color:var(--ink);}
 button,input,select,textarea {color:var(--ink);}

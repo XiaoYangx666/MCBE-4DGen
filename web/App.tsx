@@ -11,7 +11,6 @@ import { SettingsPanel } from "./SettingsPanel";
 import { LibraryPage } from "./LibraryPage";
 import { PackPage } from "./PackPage";
 import { WebNav } from "./WebNav";
-import { WorkflowStrip } from "./WorkflowStrip";
 import { useHashRoute } from "./use-hash-route";
 import { api, post } from "./api";
 import { estimateTriangles } from "./estimate";
@@ -228,14 +227,6 @@ export function App() {
   return (
     <div className="app">
       {navigation}
-      <WorkflowStrip
-        result={result}
-        stale={stale}
-        busy={busy}
-        dirty={dirty}
-        session={session}
-        onSave={() => setSaveOpen(true)}
-      />
       <div className="workspace">
         <aside className="sidebar">
           <MaterialPanel
