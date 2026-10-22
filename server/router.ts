@@ -1,7 +1,7 @@
 import { checkRequest, json } from './http.ts';
 import { handleConvert } from './routes/convert.ts';
 import { handleModels } from './routes/models.ts';
-import { handlePacks } from './routes/packs.ts';
+import { handlePacks } from './routes/packs/index.ts';
 import { handleSettings } from './routes/settings.ts';
 import { serveStatic } from './routes/static.ts';
 import { handleTemplates } from './routes/templates.ts';
