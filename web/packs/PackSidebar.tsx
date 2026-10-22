@@ -5,32 +5,37 @@ import { GameStatusBadge } from "./GameStatusBadge";
 import type { InlineEdit, PackRow } from "./pack-ui";
 
 export function PackSidebar({
-  rows,
-  selectedKey,
-  query,
-  editing,
-  personaInUse,
-  isGameActive,
-  onQueryChange,
-  onSelect,
-  onRename,
-  onMenu,
-  onCommit,
-  onCancel,
+  data,
+  runtime,
+  actions,
 }: {
-  rows: PackRow[];
-  selectedKey?: string;
-  query: string;
-  editing: InlineEdit | null;
-  personaInUse: boolean;
-  isGameActive: (row: PackRow) => boolean;
-  onQueryChange: (value: string) => void;
-  onSelect: (row: PackRow) => void;
-  onRename: (row: PackRow) => void;
-  onMenu: (event: MouseEvent, row: PackRow) => void;
-  onCommit: (edit: InlineEdit, value: string) => void;
-  onCancel: () => void;
+  data: {
+    rows: PackRow[];
+    selectedKey?: string;
+    query: string;
+    editing: InlineEdit | null;
+    personaInUse: boolean;
+  };
+  runtime: { isGameActive: (row: PackRow) => boolean };
+  actions: {
+    onQueryChange: (value: string) => void;
+    onSelect: (row: PackRow) => void;
+    onRename: (row: PackRow) => void;
+    onMenu: (event: MouseEvent, row: PackRow) => void;
+    onCommit: (edit: InlineEdit, value: string) => void;
+    onCancel: () => void;
+  };
 }) {
+  const { rows, selectedKey, query, editing, personaInUse } = data;
+  const { isGameActive } = runtime;
+  const {
+    onQueryChange,
+    onSelect,
+    onRename,
+    onMenu,
+    onCommit,
+    onCancel,
+  } = actions;
   return (
     <aside className="pack-list-pane organized-packs">
       <div className="pack-sidebar-head">

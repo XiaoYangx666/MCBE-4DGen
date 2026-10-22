@@ -7,37 +7,42 @@ import type { InlineEdit, PackRow } from "./pack-ui";
 
 export function SkinList({
   pack,
-  skins,
-  selectedIndex,
-  editing,
-  busy,
-  gameReady,
-  installed,
-  outdated,
-  onSelect,
-  onRename,
-  onMenu,
-  onInstall,
-  onUpdate,
-  onCommit,
-  onCancel,
+  runtime,
+  actions,
 }: {
-  pack: PackRow;
-  skins: SkinItem[] | null;
-  selectedIndex: number;
-  editing: InlineEdit | null;
-  busy: string;
-  gameReady: boolean;
-  installed: (index: number) => boolean;
-  outdated: boolean;
-  onSelect: (index: number) => void;
-  onRename: (skin: SkinItem) => void;
-  onMenu: (event: MouseEvent, skin: SkinItem) => void;
-  onInstall: (index: number) => void;
-  onUpdate: () => void;
-  onCommit: (edit: InlineEdit, value: string) => void;
-  onCancel: () => void;
+  pack: {
+    row: PackRow;
+    skins: SkinItem[] | null;
+    selectedIndex: number;
+    editing: InlineEdit | null;
+  };
+  runtime: {
+    busy: string;
+    gameReady: boolean;
+    installed: (index: number) => boolean;
+    outdated: boolean;
+  };
+  actions: {
+    onSelect: (index: number) => void;
+    onRename: (skin: SkinItem) => void;
+    onMenu: (event: MouseEvent, skin: SkinItem) => void;
+    onInstall: (index: number) => void;
+    onUpdate: () => void;
+    onCommit: (edit: InlineEdit, value: string) => void;
+    onCancel: () => void;
+  };
 }) {
+  const { row, skins, selectedIndex, editing } = pack;
+  const { busy, gameReady, installed, outdated } = runtime;
+  const {
+    onSelect,
+    onRename,
+    onMenu,
+    onInstall,
+    onUpdate,
+    onCommit,
+    onCancel,
+  } = actions;
   return (
     <div className="skin-list-pane">
       <div className="pane-caption">包内皮肤</div>
@@ -45,11 +50,11 @@ export function SkinList({
         <p className="muted">正在读取…</p>
       ) : (
         skins.map((skin) => {
-          const isInstalled = !pack.preset && installed(skin.index);
+          const isInstalled = !row.preset && installed(skin.index);
           const isOutdated = isInstalled && outdated;
           const inline =
             editing?.kind === "skin" &&
-            editing.pack.key === pack.key &&
+            editing.pack.key === row.key &&
             editing.skin.index === skin.index &&
             editing.scope === "list";
           return (
@@ -77,7 +82,7 @@ export function SkinList({
                   <b>{skin.name}</b>
                 )}
               </span>
-              {!pack.preset && (
+              {!row.preset && (
                 <span className="skin-item-state">
                   {isInstalled ? (
                     isOutdated ? (

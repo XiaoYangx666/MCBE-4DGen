@@ -4,28 +4,23 @@ import type { Contents } from "./pack-types";
 import type { InlineEdit, PackRow } from "./pack-ui";
 
 export function PackHeader({
-  row,
-  contents,
-  busy,
-  locked,
-  editing,
-  onRename,
-  onMenu,
-  onAdd,
-  onCommit,
-  onCancel,
+  pack,
+  runtime,
+  actions,
 }: {
-  row: PackRow;
-  contents: Contents | null;
-  busy: string;
-  locked: boolean;
-  editing: InlineEdit | null;
-  onRename: () => void;
-  onMenu: (event: MouseEvent) => void;
-  onAdd: () => void;
-  onCommit: (edit: InlineEdit, value: string) => void;
-  onCancel: () => void;
+  pack: { row: PackRow; contents: Contents | null };
+  runtime: { busy: string; locked: boolean; editing: InlineEdit | null };
+  actions: {
+    onRename: () => void;
+    onMenu: (event: MouseEvent) => void;
+    onAdd: () => void;
+    onCommit: (edit: InlineEdit, value: string) => void;
+    onCancel: () => void;
+  };
 }) {
+  const { row, contents } = pack;
+  const { busy, locked, editing } = runtime;
+  const { onRename, onMenu, onAdd, onCommit, onCancel } = actions;
   const inline =
     editing?.kind === "pack" &&
     editing.pack.key === row.key &&

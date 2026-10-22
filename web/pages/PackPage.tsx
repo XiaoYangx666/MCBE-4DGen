@@ -620,25 +620,28 @@ export function PackPage() {
       ) : (
         <div className="pack-browser">
           <PackSidebar
-            rows={visible}
-            selectedKey={row?.key}
-            query={query}
-            editing={editing}
-            personaInUse={personaInUse}
-            isGameActive={isGameActive}
-            onQueryChange={setQuery}
-            onSelect={selectPack}
-            onRename={(pack) => editPack(pack, "list")}
-            onMenu={(event, pack) =>
-              setMenu({
-                x: event.clientX,
-                y: event.clientY,
-                pack,
-                scope: "list",
-              })
-            }
-            onCommit={commitEdit}
-            onCancel={() => setEditing(null)}
+            data={{
+              rows: visible,
+              selectedKey: row?.key,
+              query,
+              editing,
+              personaInUse,
+            }}
+            runtime={{ isGameActive }}
+            actions={{
+              onQueryChange: setQuery,
+              onSelect: selectPack,
+              onRename: (pack) => editPack(pack, "list"),
+              onMenu: (event, pack) =>
+                setMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  pack,
+                  scope: "list",
+                }),
+              onCommit: commitEdit,
+              onCancel: () => setEditing(null),
+            }}
           />
           <section className="pack-content-pane">
             {row ? (
@@ -654,24 +657,24 @@ export function PackPage() {
               ) : (
                 <>
                   <PackHeader
-                    row={row}
-                    contents={contents}
-                    busy={busy}
-                    locked={locked}
-                    editing={editing}
-                    onRename={() => editPack(row, "detail")}
-                    onAdd={() => show("add")}
-                    onMenu={(event) => {
-                      const box = event.currentTarget.getBoundingClientRect();
-                      setMenu({
-                        x: box.left,
-                        y: box.bottom + 4,
-                        pack: row,
-                        scope: "detail",
-                      });
+                    pack={{ row, contents }}
+                    runtime={{ busy, locked, editing }}
+                    actions={{
+                      onRename: () => editPack(row, "detail"),
+                      onAdd: () => show("add"),
+                      onMenu: (event) => {
+                        const box =
+                          event.currentTarget.getBoundingClientRect();
+                        setMenu({
+                          x: box.left,
+                          y: box.bottom + 4,
+                          pack: row,
+                          scope: "detail",
+                        });
+                      },
+                      onCommit: commitEdit,
+                      onCancel: () => setEditing(null),
                     }}
-                    onCommit={commitEdit}
-                    onCancel={() => setEditing(null)}
                   />
                   {state?.changedOutsideManager && (
                     <p className="inline-note">
@@ -691,82 +694,91 @@ export function PackPage() {
                   )}
                   <div className="skin-content-layout">
                     <SkinList
-                      pack={row}
-                      skins={contents ? contents.skins : null}
-                      selectedIndex={skinIndex}
-                      editing={editing}
-                      busy={busy}
-                      gameReady={gameReady}
-                      installed={(index) => skinInstalled(row.id, index)}
-                      outdated={packOutdated(row)}
-                      onSelect={setSkinIndex}
-                      onRename={(target) => editSkin(row, target, "list")}
-                      onMenu={(event, target) => {
-                        setSelected(row.key);
-                        setSkinIndex(target.index);
-                        setMenu({
-                          x: event.clientX,
-                          y: event.clientY,
-                          pack: row,
-                          skin: target,
-                          scope: "list",
-                        });
+                      pack={{
+                        row,
+                        skins: contents ? contents.skins : null,
+                        selectedIndex: skinIndex,
+                        editing,
                       }}
-                      onInstall={(index) =>
-                        void run(
-                          "正在安装…",
-                          () =>
-                            post("/api/packs/enable", {
-                              slot: gameSlotName,
-                              id: row.id,
-                              skins: [index],
-                            }),
-                          "已安装到游戏",
-                        )
-                      }
-                      onUpdate={() => menuActions.updatePack(row)}
-                      onCommit={commitEdit}
-                      onCancel={() => setEditing(null)}
+                      runtime={{
+                        busy,
+                        gameReady,
+                        installed: (index) => skinInstalled(row.id, index),
+                        outdated: packOutdated(row),
+                      }}
+                      actions={{
+                        onSelect: setSkinIndex,
+                        onRename: (target) => editSkin(row, target, "list"),
+                        onMenu: (event, target) => {
+                          setSelected(row.key);
+                          setSkinIndex(target.index);
+                          setMenu({
+                            x: event.clientX,
+                            y: event.clientY,
+                            pack: row,
+                            skin: target,
+                            scope: "list",
+                          });
+                        },
+                        onInstall: (index) =>
+                          void run(
+                            "正在安装…",
+                            () =>
+                              post("/api/packs/enable", {
+                                slot: gameSlotName,
+                                id: row.id,
+                                skins: [index],
+                              }),
+                            "已安装到游戏",
+                          ),
+                        onUpdate: () => menuActions.updatePack(row),
+                        onCommit: commitEdit,
+                        onCancel: () => setEditing(null),
+                      }}
                     />
                     <SkinDetail
-                      row={row}
-                      skin={skin}
-                      skinIndex={skinIndex}
-                      baseUrl={baseUrl}
-                      contents={contents}
-                      sourceModel={sourceModel}
-                      state={state}
-                      presetSourceIds={presetSourceIds}
-                      library={library}
-                      busy={busy}
-                      locked={locked}
-                      gameReady={gameReady}
-                      installed={!!skin && skinInstalled(row.id, skin.index)}
-                      outdated={packOutdated(row)}
-                      editing={editing}
-                      onRename={() => {
-                        if (skin) editSkin(row, skin, "detail");
+                      pack={{
+                        row,
+                        contents,
+                        baseUrl,
+                        state,
+                        presetSourceIds,
+                        library,
                       }}
-                      onMenu={(event) => {
-                        if (!skin) return;
-                        const box =
-                          event.currentTarget.getBoundingClientRect();
-                        setMenu({
-                          x: box.left,
-                          y: box.bottom + 4,
-                          pack: row,
-                          skin,
-                          scope: "detail",
-                        });
+                      skinView={{ item: skin, index: skinIndex, sourceModel }}
+                      runtime={{
+                        busy,
+                        locked,
+                        gameReady,
+                        installed: !!skin && skinInstalled(row.id, skin.index),
+                        outdated: packOutdated(row),
+                        editing,
                       }}
-                      onInstall={() => {
-                        if (skin) menuActions.installSkin(row, skin);
+                      actions={{
+                        onRename: () => {
+                          if (skin) editSkin(row, skin, "detail");
+                        },
+                        onMenu: (event) => {
+                          if (!skin) return;
+                          const box =
+                            event.currentTarget.getBoundingClientRect();
+                          setMenu({
+                            x: box.left,
+                            y: box.bottom + 4,
+                            pack: row,
+                            skin,
+                            scope: "detail",
+                          });
+                        },
+                        onInstall: () => {
+                          if (skin) menuActions.installSkin(row, skin);
+                        },
+                        onUpdate: () => menuActions.updatePack(row),
+                        onOpenPack: openPack,
+                        onAdd: () => show("add"),
+                        onCommit: commitEdit,
+                        onCancel: () => setEditing(null),
                       }}
-                      onUpdate={() => menuActions.updatePack(row)}
-                      onOpenPack={openPack}
-                      onAdd={() => show("add")}
-                      onCommit={commitEdit}
-                      onCancel={() => setEditing(null)}
                     />
                   </div>
                 </>
@@ -778,31 +790,31 @@ export function PackPage() {
         </div>
       )}
       <PackDialogs
-        dialog={dialog}
-        row={row}
-        skin={skin}
-        busy={busy}
-        error={error}
-        name={name}
-        setName={setName}
-        importPath={importPath}
-        setImportPath={setImportPath}
-        sourceId={sourceId}
-        setSourceId={setSourceId}
-        sourceContents={sourceContents}
-        indices={indices}
-        setIndices={setIndices}
-        sourceOptions={library.filter(
-          (pack) => pack.skins > 0 && pack.id !== row?.id,
-        )}
-        fileInput={fileInput}
-        onClose={() => setDialog(null)}
-        onCreate={createPack}
-        onImportPath={importByPath}
-        onImportFile={(file) => void importFile(file)}
-        onRemoveSkin={removeSkinFromPack}
-        onDelete={deletePack}
-        onAdd={addSkins}
+        state={{ kind: dialog, row, skin, busy, error }}
+        form={{
+          name,
+          setName,
+          importPath,
+          setImportPath,
+          sourceId,
+          setSourceId,
+          sourceContents,
+          indices,
+          setIndices,
+          sourceOptions: library.filter(
+            (pack) => pack.skins > 0 && pack.id !== row?.id,
+          ),
+          fileInput,
+        }}
+        actions={{
+          onClose: () => setDialog(null),
+          onCreate: createPack,
+          onImportPath: importByPath,
+          onImportFile: (file) => void importFile(file),
+          onRemoveSkin: removeSkinFromPack,
+          onDelete: deletePack,
+          onAdd: addSkins,
+        }}
       />
       {menu && (
         <ContextMenu

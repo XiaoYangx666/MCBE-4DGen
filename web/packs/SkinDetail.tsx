@@ -10,54 +10,58 @@ import type {
 import type { InlineEdit, PackRow } from "./pack-ui";
 
 export function SkinDetail({
-  row,
-  skin,
-  skinIndex,
-  baseUrl,
-  contents,
-  sourceModel,
-  state,
-  presetSourceIds,
-  library,
-  busy,
-  locked,
-  gameReady,
-  installed,
-  outdated,
-  editing,
-  onRename,
-  onMenu,
-  onInstall,
-  onUpdate,
-  onOpenPack,
-  onAdd,
-  onCommit,
-  onCancel,
+  pack,
+  skinView,
+  runtime,
+  actions,
 }: {
-  row: PackRow;
-  skin: SkinItem | undefined;
-  skinIndex: number;
-  baseUrl: string;
-  contents: Contents | null;
-  sourceModel: { id: string; name: string } | undefined;
-  state: SlotStatus | undefined;
-  presetSourceIds: Set<string>;
-  library: LibraryPack[];
-  busy: string;
-  locked: boolean;
-  gameReady: boolean;
-  installed: boolean;
-  outdated: boolean;
-  editing: InlineEdit | null;
-  onRename: () => void;
-  onMenu: (event: MouseEvent) => void;
-  onInstall: () => void;
-  onUpdate: () => void;
-  onOpenPack: (id: string) => void;
-  onAdd: () => void;
-  onCommit: (edit: InlineEdit, value: string) => void;
-  onCancel: () => void;
+  pack: {
+    row: PackRow;
+    contents: Contents | null;
+    baseUrl: string;
+    state: SlotStatus | undefined;
+    presetSourceIds: Set<string>;
+    library: LibraryPack[];
+  };
+  skinView: {
+    item: SkinItem | undefined;
+    index: number;
+    sourceModel: { id: string; name: string } | undefined;
+  };
+  runtime: {
+    busy: string;
+    locked: boolean;
+    gameReady: boolean;
+    installed: boolean;
+    outdated: boolean;
+    editing: InlineEdit | null;
+  };
+  actions: {
+    onRename: () => void;
+    onMenu: (event: MouseEvent) => void;
+    onInstall: () => void;
+    onUpdate: () => void;
+    onOpenPack: (id: string) => void;
+    onAdd: () => void;
+    onCommit: (edit: InlineEdit, value: string) => void;
+    onCancel: () => void;
+  };
 }) {
+  const { row, contents, baseUrl, state, presetSourceIds, library } = pack;
+  const skin = skinView.item;
+  const skinIndex = skinView.index;
+  const sourceModel = skinView.sourceModel;
+  const { busy, locked, gameReady, installed, outdated, editing } = runtime;
+  const {
+    onRename,
+    onMenu,
+    onInstall,
+    onUpdate,
+    onOpenPack,
+    onAdd,
+    onCommit,
+    onCancel,
+  } = actions;
   const inline =
     !!skin &&
     editing?.kind === "skin" &&
