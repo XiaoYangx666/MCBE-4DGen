@@ -653,7 +653,11 @@ export function PackPage() {
         </span>
         <span className="pack-row-end">
           {game && (
-            <span className="pack-game-badge">
+            <span
+              className={
+                "pack-game-badge" + (p.gameSkins ? " persona" : " installed")
+              }
+            >
               {p.gameSkins
                 ? personaInUse
                   ? "当前使用"
