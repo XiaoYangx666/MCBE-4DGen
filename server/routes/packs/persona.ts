@@ -8,25 +8,21 @@ import {
   readGameSkinBackup,
 } from '../../../src/game-skins.ts';
 import {
-  buildPersonaRecipe,
   exportPersonaRecipes,
   readDefaultCastIcon,
   readPersonaPieceThumbnail,
 } from '../../../src/persona-recipe.ts';
 import { storage } from '../../../src/workspace-storage.ts';
 import { json } from '../../http.ts';
-import type { Studio } from '../../studio.ts';
+import { route } from '../../route.ts';
 
-export async function handlePersona(
-  studio: Studio,
-  req: Request,
-  url: URL,
-  parts: string[],
-): Promise<Response | null> {
-  if (
-    url.pathname === '/api/persona/marketplace-icon' &&
-    req.method === 'GET'
-  ) {
+const PNG_CACHE_HEADERS = {
+  'Content-Type': 'image/png',
+  'Cache-Control': 'public, max-age=31536000',
+};
+
+export const personaRoutes = [
+  route('GET', '/api/persona/marketplace-icon', async ({ url }) => {
     const raw = url.searchParams.get('url') ?? '';
     let target: URL;
     try {
@@ -48,10 +44,7 @@ export async function handlePersona(
     try {
       const cached = await readFile(file);
       return new Response(new Uint8Array(cached), {
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=31536000',
-        },
+        headers: PNG_CACHE_HEADERS,
       });
     } catch {
       /* cache miss */
@@ -61,18 +54,10 @@ export async function handlePersona(
     const bytes = new Uint8Array(await response.arrayBuffer());
     await mkdir(dir, { recursive: true });
     await writeFile(file, bytes);
-    return new Response(bytes, {
-      headers: {
-        'Content-Type': 'image/png',
-        'Cache-Control': 'public, max-age=31536000',
-      },
-    });
-  }
+    return new Response(bytes, { headers: PNG_CACHE_HEADERS });
+  }),
 
-  if (
-    url.pathname === '/api/persona/piece-icon' &&
-    req.method === 'GET'
-  ) {
+  route('GET', '/api/persona/piece-icon', async ({ studio, url }) => {
     if (!studio.gameConfigured) throw Error('请先配置游戏 skin_packs 目录');
     const icon = await readPersonaPieceThumbnail(
       studio.requireManager().config.skinPacksRoot,
@@ -82,12 +67,9 @@ export async function handlePersona(
     return new Response(icon as BodyInit, {
       headers: { 'Content-Type': 'image/png' },
     });
-  }
+  }),
 
-  if (
-    url.pathname === '/api/persona/icon' &&
-    req.method === 'GET'
-  ) {
+  route('GET', '/api/persona/icon', async ({ studio, url }) => {
     if (!studio.gameConfigured) throw Error('请先配置游戏 skin_packs 目录');
     const icon = await readDefaultCastIcon(
       studio.requireManager().config.skinPacksRoot,
@@ -97,22 +79,17 @@ export async function handlePersona(
     return new Response(icon as BodyInit, {
       headers: { 'Content-Type': 'image/png' },
     });
-  }
+  }),
 
-  if (
-    parts[0] === 'api' &&
-    parts[1] === 'packs' &&
-    parts[3] === 'icon' &&
-    req.method === 'GET'
-  ) {
-    const icon = await studio.requireManager().icon(parts[2]!);
+  route('GET', '/api/packs/:id/icon', async ({ studio, params }) => {
+    const icon = await studio.requireManager().icon(params.id!);
     if (!icon) return new Response('Not found', { status: 404 });
     return new Response(icon as BodyInit, {
       headers: { 'Content-Type': 'image/png' },
     });
-  }
+  }),
 
-  if (url.pathname === '/api/persona/export' && req.method === 'POST') {
+  route('POST', '/api/persona/export', async ({ studio }) => {
     if (!studio.gameConfigured) throw Error('请先配置游戏 skin_packs 目录');
     const manager = studio.requireManager();
     const result = await exportPersonaRecipes({
@@ -125,9 +102,9 @@ export async function handlePersona(
       gameRunning: result.recipe.gameRunning,
       lastUsedPersonaSlot: result.recipe.source.lastUsedPersonaSlot,
     });
-  }
+  }),
 
-  if (url.pathname === '/api/persona/backup' && req.method === 'POST') {
+  route('POST', '/api/persona/backup', async ({ studio, req }) => {
     if (!studio.gameConfigured) throw Error('请先配置游戏 skin_packs 目录');
     const body = (await req.json().catch(() => ({}))) as { label?: string };
     const manager = studio.requireManager();
@@ -140,48 +117,31 @@ export async function handlePersona(
         ...(body.label?.trim() ? { label: body.label.trim() } : {}),
       }),
     );
-  }
+  }),
 
-  if (url.pathname === '/api/persona/backups' && req.method === 'GET')
-    return json({ backups: await listGameSkinBackups(storage.skins) });
+  route('GET', '/api/persona/backups', async () =>
+    json({ backups: await listGameSkinBackups(storage.skins) }),
+  ),
 
-  if (
-    parts[0] === 'api' &&
-    parts[1] === 'persona' &&
-    parts[2] === 'backups' &&
-    parts.length === 4 &&
-    req.method === 'GET'
-  ) {
-    const id = parts[3]!;
-    const backup = await readGameSkinBackup(storage.skins, id);
+  route('GET', '/api/persona/backups/:id', async ({ params }) => {
+    const backup = await readGameSkinBackup(storage.skins, params.id!);
     if (!backup) return new Response('Not found', { status: 404 });
     return new Response(JSON.stringify(backup, null, 2), {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        'Content-Disposition': `attachment; filename="game-skins-${id}.json"`,
+        'Content-Disposition': `attachment; filename="game-skins-${params.id}.json"`,
       },
     });
-  }
+  }),
 
-  if (
-    url.pathname === '/api/persona/backups/delete' &&
-    req.method === 'POST'
-  ) {
+  route('POST', '/api/persona/backups/delete', async ({ req }) => {
     const body = (await req.json()) as { id?: string };
     const id = String(body.id ?? '');
     return json({ id, deleted: await deleteGameSkinBackup(storage.skins, id) });
-  }
+  }),
 
-  if (
-    parts[0] === 'api' &&
-    parts[1] === 'persona' &&
-    parts[2] === 'backups' &&
-    parts.length === 4 &&
-    req.method === 'DELETE'
-  ) {
-    const id = parts[3]!;
+  route('DELETE', '/api/persona/backups/:id', async ({ params }) => {
+    const id = params.id!;
     return json({ id, deleted: await deleteGameSkinBackup(storage.skins, id) });
-  }
-
-  return null;
-}
+  }),
+];

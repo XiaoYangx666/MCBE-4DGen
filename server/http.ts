@@ -3,6 +3,17 @@ import type { Studio } from './studio.ts';
 export const json = (value: unknown, status = 200) =>
   Response.json(value, { status });
 
+/** Error carrying an explicit HTTP status; everything else is a 400. */
+export class HttpError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.name = 'HttpError';
+    this.status = status;
+  }
+}
+
 /** Stable JSON keeps cache keys independent of object property order. */
 export function stableJson(value: unknown): string {
   return JSON.stringify(value, (_, item) =>

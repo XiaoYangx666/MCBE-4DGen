@@ -6,19 +6,15 @@ import { storage } from '../../src/workspace-storage.ts';
 import { fileExists } from '../fs.ts';
 import { json, safeName, withBusy } from '../http.ts';
 import { modelPattern } from '../model-files.ts';
-import type { Studio } from '../studio.ts';
+import { route } from '../route.ts';
 import { isUploadSessionId, uploadSessionId } from '../upload-session.ts';
 
 const MAX_UPLOAD_BYTES = 256 * 1024 * 1024;
 const MAX_UPLOAD_FILES = 2000;
 
-export async function handleUploads(
-  studio: Studio,
-  req: Request,
-  url: URL,
-): Promise<Response | null> {
-  if (url.pathname === '/api/upload' && req.method === 'POST')
-    return withBusy(studio, async () => {
+export const uploadRoutes = [
+  route('POST', '/api/upload', ({ studio, req }) =>
+    withBusy(studio, async () => {
       const form = await req.formData();
       const files = form.getAll('files');
       const names = form.getAll('paths');
@@ -81,10 +77,11 @@ export async function handleUploads(
       return json(
         await studio.load(candidates[0]!, basename(candidates[0]!), null),
       );
-    });
+    }),
+  ),
 
-  if (url.pathname === '/api/upload/select' && req.method === 'POST')
-    return withBusy(studio, async () => {
+  route('POST', '/api/upload/select', ({ studio, req }) =>
+    withBusy(studio, async () => {
       const body = (await req.json()) as { pending?: string; main?: string };
       const id = String(body.pending ?? '');
       if (!isUploadSessionId(id)) throw Error('上传会话无效或已过期');
@@ -95,7 +92,6 @@ export async function handleUploads(
       if (!modelPattern.test(main)) throw Error('请选择模型文件');
       if (!(await fileExists(main))) throw Error('模型文件不存在');
       return json(await studio.load(main, basename(main), null));
-    });
-
-  return null;
-}
+    }),
+  ),
+];

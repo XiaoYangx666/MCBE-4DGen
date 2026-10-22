@@ -1,29 +1,22 @@
-import { checkRequest, json } from './http.ts';
-import { handleConvert } from './routes/convert.ts';
-import { handleModels } from './routes/models.ts';
-import { handlePacks } from './routes/packs/index.ts';
-import { handleSettings } from './routes/settings.ts';
+import { checkRequest, HttpError, json } from './http.ts';
+import { createRouteMatcher } from './route.ts';
+import { convertRoutes } from './routes/convert.ts';
+import { modelRoutes } from './routes/models.ts';
+import { packRoutes } from './routes/packs/index.ts';
+import { settingsRoutes } from './routes/settings.ts';
 import { serveStatic } from './routes/static.ts';
-import { handleTemplates } from './routes/templates.ts';
-import { handleUploads } from './routes/uploads.ts';
+import { templateRoutes } from './routes/templates.ts';
+import { uploadRoutes } from './routes/uploads.ts';
 import type { Studio } from './studio.ts';
 
-type Route = (
-  studio: Studio,
-  req: Request,
-  url: URL,
-  parts: string[],
-) => Promise<Response | null>;
-
-// Order mirrors the original route table: exact routes first, then parameterized ones.
-const ROUTES: Route[] = [
-  handleSettings,
-  handleTemplates,
-  handleModels,
-  handleUploads,
-  handleConvert,
-  handlePacks,
-];
+const dispatch = createRouteMatcher([
+  ...settingsRoutes,
+  ...templateRoutes,
+  ...modelRoutes,
+  ...uploadRoutes,
+  ...convertRoutes,
+  ...packRoutes,
+]);
 
 export function createHandler(
   studio: Studio,
@@ -31,21 +24,20 @@ export function createHandler(
 ): (req: Request) => Promise<Response> {
   return async (req: Request) => {
     const url = new URL(req.url);
-    const parts = url.pathname.split('/').filter(Boolean);
     try {
       const denied = checkRequest(req, url, port());
       if (denied) return denied;
-      for (const route of ROUTES) {
-        const response = await route(studio, req, url, parts);
-        if (response) return response;
-      }
+      const response = await dispatch(studio, req, url);
+      if (response) return response;
       if (url.pathname.startsWith('/api/'))
         return json({ error: 'Unknown API' }, 404);
       return await serveStatic(studio, url);
     } catch (error) {
+      const status = error instanceof HttpError ? error.status : 400;
+      if (status >= 500) console.error('API 请求失败：', error);
       return json(
         { error: error instanceof Error ? error.message : String(error) },
-        400,
+        status,
       );
     }
   };

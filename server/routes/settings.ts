@@ -6,18 +6,15 @@ import {
   storage,
 } from '../../src/workspace-storage.ts';
 import { json } from '../http.ts';
-import type { Studio } from '../studio.ts';
+import { route } from '../route.ts';
 import { storageUsage } from '../storage-usage.ts';
 
-export async function handleSettings(
-  studio: Studio,
-  req: Request,
-  url: URL,
-): Promise<Response | null> {
-  if (url.pathname === '/api/settings/storage-usage' && req.method === 'GET')
-    return json(await storageUsage(dataRoot));
+export const settingsRoutes = [
+  route('GET', '/api/settings/storage-usage', async () =>
+    json(await storageUsage(dataRoot)),
+  ),
 
-  if (url.pathname === '/api/settings' && req.method === 'GET') {
+  route('GET', '/api/settings', async ({ studio }) => {
     const stored = await readFile(
       resolve(
         process.env.FOURDGEN_CONFIG_DIR ?? studio.root,
@@ -52,37 +49,33 @@ export async function handleSettings(
         chrome: process.versions.chrome ?? null,
       },
     });
-  }
+  }),
 
-  if (
-    url.pathname === '/api/settings/game-directory' &&
-    req.method === 'POST'
-  ) {
+  route('POST', '/api/settings/game-directory', async ({ studio, req }) => {
     const body = (await req.json()) as { path?: string };
     const gameRoot = await studio.setGameDirectory(
       String(body.path ?? '').trim(),
     );
     return json({ message: '游戏目录已保存，立即生效。', gameRoot });
-  }
+  }),
 
-  if (url.pathname === '/api/storage' && req.method === 'GET')
-    return json({
+  route('GET', '/api/storage', async () =>
+    json({
       root: dataRoot,
       models: storage.models,
       sources: storage.sources,
       skins: storage.skins,
       cache: storage.cache,
       environment: !!process.env.FOURDGEN_DATA_DIR,
-    });
+    }),
+  ),
 
-  if (url.pathname === '/api/storage' && req.method === 'POST') {
+  route('POST', '/api/storage', async ({ req }) => {
     const body = (await req.json()) as { path?: string };
     await requestStorageLocation(String(body.path ?? ''));
     return json({
       restartRequired: true,
       message: '数据目录已设置，重启后自动复制数据。旧目录保留。',
     });
-  }
-
-  return null;
-}
+  }),
+];

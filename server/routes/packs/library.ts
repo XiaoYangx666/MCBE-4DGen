@@ -2,17 +2,30 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { buildPersonaRecipe } from '../../../src/persona-recipe.ts';
 import { storage, within } from '../../../src/workspace-storage.ts';
-import { json } from '../../http.ts';
-import type { Studio } from '../../studio.ts';
+import { HttpError, json } from '../../http.ts';
+import { route } from '../../route.ts';
 import { backupGameSkins } from './shared.ts';
 
-export async function handleLibrary(
-  studio: Studio,
-  req: Request,
-  url: URL,
-  parts: string[],
-): Promise<Response | null> {
-  if (url.pathname === '/api/packs') {
+const PNG_HEADERS = { 'Content-Type': 'image/png' };
+
+function sceneResponse(scene: {
+  name: string;
+  identifier: string;
+  geometry: unknown;
+  skins: unknown;
+  texture: Uint8Array;
+}) {
+  return json({
+    name: scene.name,
+    identifier: scene.identifier,
+    geometry: scene.geometry,
+    skins: scene.skins,
+    texture: `data:image/png;base64,${Buffer.from(scene.texture).toString('base64')}`,
+  });
+}
+
+export const libraryRoutes = [
+  route('GET', '/api/packs', async ({ studio }) => {
     if (!studio.manager)
       return json({
         configured: false,
@@ -48,79 +61,65 @@ export async function handleLibrary(
       ...(persona ? { persona } : {}),
       ...(personaError ? { personaError } : {}),
     });
-  }
+  }),
 
-  if (
-    parts[0] === 'api' &&
-    parts[1] === 'packs' &&
-    parts[3] === 'scene' &&
-    req.method === 'GET'
-  ) {
-    const scene = await studio
-      .requireManager()
-      .scene(parts[2]!, Number(url.searchParams.get('skin') ?? 0));
-    return json({
-      name: scene.name,
-      identifier: scene.identifier,
-      geometry: scene.geometry,
-      skins: scene.skins,
-      texture: `data:image/png;base64,${Buffer.from(scene.texture).toString('base64')}`,
-    });
-  }
+  route('GET', '/api/packs/:id/scene', async ({ studio, params, url }) =>
+    sceneResponse(
+      await studio
+        .requireManager()
+        .scene(params.id!, Number(url.searchParams.get('skin') ?? 0)),
+    ),
+  ),
 
-  if (
-    parts[0] === 'api' &&
-    parts[1] === 'packs' &&
-    parts[3] === 'skins' &&
-    req.method === 'GET'
-  )
-    return json(await studio.requireManager().contents(parts[2]!));
+  route('GET', '/api/packs/:id/skins', async ({ studio, params }) =>
+    json(await studio.requireManager().contents(params.id!)),
+  ),
 
-  if (
-    parts[0] === 'api' &&
-    parts[1] === 'packs' &&
-    parts[3] === 'texture' &&
-    req.method === 'GET'
-  ) {
-    const scene = await studio
-      .requireManager()
-      .scene(parts[2]!, Number(url.searchParams.get('skin') ?? 0));
-    return new Response(scene.texture as BodyInit, {
-      headers: { 'Content-Type': 'image/png' },
-    });
-  }
+  route('GET', '/api/packs/:id/texture', async ({ studio, params, url }) =>
+    new Response(
+      (
+        await studio
+          .requireManager()
+          .scene(params.id!, Number(url.searchParams.get('skin') ?? 0))
+      ).texture as BodyInit,
+      { headers: PNG_HEADERS },
+    ),
+  ),
 
-  if (
-    parts[0] === 'api' &&
-    parts[1] === 'preset-packs' &&
-    req.method === 'GET'
-  ) {
-    const manager = studio.requireManager();
-    const slot = parts[2]!;
-    if (parts[3] === 'skins') return json(await manager.presetContents(slot));
-    const scene = await manager.presetScene(
-      slot,
-      Number(url.searchParams.get('skin') ?? 0),
-    );
-    if (parts[3] === 'texture')
-      return new Response(scene.texture as BodyInit, {
-        headers: { 'Content-Type': 'image/png' },
-      });
-    if (parts[3] === 'scene')
-      return json({
-        ...scene,
-        texture: `data:image/png;base64,${Buffer.from(scene.texture).toString('base64')}`,
-      });
-  }
+  route('GET', '/api/preset-packs/:slot/skins', async ({ studio, params }) =>
+    json(await studio.requireManager().presetContents(params.slot!)),
+  ),
 
-  if (
-    parts[0] === 'api' &&
-    parts[1] === 'packs' &&
-    parts[3] === 'source-image' &&
-    req.method === 'GET'
-  ) {
+  route('GET', '/api/preset-packs/:slot/texture', async ({
+    studio,
+    params,
+    url,
+  }) =>
+    new Response(
+      (
+        await studio
+          .requireManager()
+          .presetScene(params.slot!, Number(url.searchParams.get('skin') ?? 0))
+      ).texture as BodyInit,
+      { headers: PNG_HEADERS },
+    ),
+  ),
+
+  route('GET', '/api/preset-packs/:slot/scene', async ({
+    studio,
+    params,
+    url,
+  }) =>
+    sceneResponse(
+      await studio
+        .requireManager()
+        .presetScene(params.slot!, Number(url.searchParams.get('skin') ?? 0)),
+    ),
+  ),
+
+  route('GET', '/api/packs/:id/source-image', async ({ studio, params }) => {
     const pack = (await studio.requireManager().list()).find(
-      (item) => item.id === parts[2],
+      (item) => item.id === params.id,
     );
     const source = pack?.meta?.source;
     if (
@@ -132,19 +131,14 @@ export async function handleLibrary(
     return new Response(new Uint8Array(await readFile(source)), {
       headers: { 'Content-Type': pack.meta?.sourceMime ?? 'image/png' },
     });
-  }
+  }),
 
-  if (
-    parts[0] === 'api' &&
-    parts[1] === 'packs' &&
-    parts[3] === 'download' &&
-    req.method === 'GET'
-  ) {
+  route('GET', '/api/packs/:id/download', async ({ studio, params }) => {
     const folder = resolve(storage.cache, 'pack-exports', crypto.randomUUID());
     await mkdir(folder, { recursive: true });
     const output = resolve(folder, 'skin.zip');
     try {
-      await studio.requireManager().exportPack(parts[2]!, output);
+      await studio.requireManager().exportPack(params.id!, output);
       return new Response(new Uint8Array(await readFile(output)), {
         headers: {
           'Content-Type': 'application/zip',
@@ -154,16 +148,16 @@ export async function handleLibrary(
     } finally {
       await rm(folder, { recursive: true, force: true });
     }
-  }
+  }),
 
-  if (url.pathname === '/api/packs/create' && req.method === 'POST') {
+  route('POST', '/api/packs/create', async ({ studio, req }) => {
     const body = (await req.json()) as { name?: string };
     return json(
       await studio.requireManager().createPack(String(body.name ?? '')),
     );
-  }
+  }),
 
-  if (url.pathname === '/api/packs/add-skins' && req.method === 'POST') {
+  route('POST', '/api/packs/add-skins', async ({ studio, req }) => {
     const body = (await req.json()) as {
       target: string;
       source: string;
@@ -175,9 +169,9 @@ export async function handleLibrary(
         .requireManager()
         .addSkins(body.target, body.source, body.indices),
     );
-  }
+  }),
 
-  if (url.pathname === '/api/packs/import' && req.method === 'POST') {
+  route('POST', '/api/packs/import', async ({ studio, req }) => {
     const manager = studio.requireManager();
     const id = 'pack-' + crypto.randomUUID();
     if (req.headers.get('content-type')?.includes('application/json')) {
@@ -201,16 +195,16 @@ export async function handleLibrary(
     } finally {
       await rm(path, { force: true });
     }
-  }
+  }),
 
-  if (url.pathname === '/api/packs/remove-skin' && req.method === 'POST') {
+  route('POST', '/api/packs/remove-skin', async ({ studio, req }) => {
     const body = (await req.json()) as { id: string; skinIndex: number };
     return json(
       await studio.requireManager().removeSkin(body.id, body.skinIndex),
     );
-  }
+  }),
 
-  if (url.pathname === '/api/packs/rename' && req.method === 'POST') {
+  route('POST', '/api/packs/rename', async ({ studio, req }) => {
     const body = (await req.json()) as {
       id: string;
       name?: string;
@@ -218,9 +212,9 @@ export async function handleLibrary(
       skinName?: string;
     };
     return json(await studio.requireManager().renameNames(body.id, body));
-  }
+  }),
 
-  if (url.pathname === '/api/packs/install' && req.method === 'POST') {
+  route('POST', '/api/packs/install', async ({ studio, req }) => {
     const manager = studio.requireManager();
     const body = (await req.json()) as {
       job?: string;
@@ -231,7 +225,7 @@ export async function handleLibrary(
     };
     const job = studio.jobs.get(body.job ?? '');
     if (!job || job.status !== 'done' || !job.files)
-      throw Error('转换结果不存在或尚未完成');
+      throw new HttpError('转换结果不存在或尚未完成', 404);
     const label = String(body.label ?? '')
       .trim()
       .slice(0, 120);
@@ -245,7 +239,9 @@ export async function handleLibrary(
       try {
         const staged = await manager.importFiles(temp, job.files, ['texts'], {
           ...job.meta,
-          versionName: label || new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+          versionName:
+            label ||
+            new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         });
         if (label)
           await manager.renameNames(staged.id, {
@@ -255,7 +251,7 @@ export async function handleLibrary(
           });
         await manager.addSkins(target, temp, [0], { originPackId: target });
         const pack = (await manager.list()).find((item) => item.id === target);
-        if (!pack) throw Error('目标皮肤包不存在');
+        if (!pack) throw new HttpError('目标皮肤包不存在', 404);
         result = { pack, enabled: false };
       } finally {
         await manager.remove(temp).catch(() => {});
@@ -271,7 +267,8 @@ export async function handleLibrary(
       {
         ...job.meta,
         versionName:
-          label || new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+          label ||
+          new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
       },
     );
     if (label)
@@ -294,12 +291,10 @@ export async function handleLibrary(
         warning: error instanceof Error ? error.message : String(error),
       });
     }
-  }
+  }),
 
-  if (url.pathname === '/api/packs/delete' && req.method === 'POST') {
+  route('POST', '/api/packs/delete', async ({ studio, req }) => {
     const body = (await req.json()) as { id?: string };
     return json(await studio.requireManager().remove(String(body.id ?? '')));
-  }
-
-  return null;
-}
+  }),
+];
