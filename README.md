@@ -5,6 +5,10 @@
 
 把 PMX、VRM、FBX、GLB、OBJ 等 3D 模型或一张图片，转换成 **Minecraft Bedrock 4D 皮肤包**。
 
+![4DGen 工作台](docs/images/workbench.webp)
+
+*工作台：导入模型后调整材质、减面、姿势，并生成 4D 皮肤包。*
+
 ## 下载
 
 普通用户推荐直接下载 Windows 安装包：
