@@ -11,7 +11,7 @@
 
 - 打开 [Releases](https://github.com/XiaoYangx666/MCBE-4DGen/releases)
 - 下载最新的 `4DGen-0.1.0-setup.exe`
-- 运行安装程序，按提示完成安装
+- 运行安装程序，按提示完成安装（中文安装界面）
 
 安装包按当前用户安装到 `%LOCALAPPDATA%\Programs\4DGen`，不需要管理员权限，并包含卸载程序。
 
