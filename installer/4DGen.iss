@@ -46,6 +46,7 @@ RestartApplications=no
 AllowNoIcons=yes
 
 [Languages]
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
