@@ -7,13 +7,15 @@
 
 ## 下载
 
-普通用户推荐直接下载 Windows 便携版：
+普通用户推荐直接下载 Windows 安装包：
 
 - 打开 [Releases](https://github.com/XiaoYangx666/MCBE-4DGen/releases)
-- 下载最新的 Windows 便携版压缩包
-- 解压后运行 `4DGen.exe`
+- 下载最新的 `4DGen-0.1.0-setup.exe`
+- 运行安装程序，按提示完成安装
 
-便携版不需要另装 Node.js 或开发环境。当前构建未签名，首次运行可能触发 Windows SmartScreen 提示。
+安装包按当前用户安装到 `%LOCALAPPDATA%\Programs\4DGen`，不需要管理员权限，并包含卸载程序。
+
+也可以下载便携版 ZIP，解压后直接运行 `4DGen.exe`。安装包和便携版都不需要另装 Node.js。当前构建未签名，首次运行可能触发 Windows SmartScreen 提示。
 
 如果发布页还没有可用构建，可以按下面的方式从源码启动 Web 工作台。
 
