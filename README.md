@@ -47,6 +47,22 @@ npm run dev
 
 默认不会写游戏目录。只有显式执行「启用」或给 workflow 加 `--deploy` 才会部署。
 
+### 网页版（纯浏览器）
+
+不需要 Node 后台，构建后是纯静态站点：
+
+```sh
+npm run webapp:dev
+```
+
+打开 <http://127.0.0.1:4174>。网页版专注于图片皮肤与模型转换，包含三维预览和 `.mcpack` 下载，不包含皮肤包管理、游戏目录写入或模型库。模型使用静态整体绑定，贴图固定 128 × 128。
+
+```sh
+npm run webapp:build    # 输出到 webapp/dist/
+```
+
+构建产物可直接部署到任意静态托管。详见 [网页版](docs/web-app.md)。
+
 ## 功能
 
 - **模型导入**：OBJ/MTL、GLB、glTF、FBX、DAE、STL、PLY、PMX、VRM，保留节点、材质、蒙皮与贴图。
@@ -55,7 +71,7 @@ npm run dev
 - **导出**：Bedrock `poly_mesh` 几何、ZIP、`manifest.json`、`skins.json`、`geometry.json` 与本地化文件。
 - **皮肤包管理**：多包启停、改名、备份与恢复、外部改动保护，写入游戏目录前自动备份。
 - **图片模板**：任意可解码图片可生成双面平面 4D 皮肤。
-- **界面**：本地 Web 工作台（三维预览、材质筛选、姿势与减面）和 Windows 便携版。
+- **界面**：本地 Web 工作台（三维预览、材质筛选、姿势与减面）、Windows 便携版，以及可静态部署的纯浏览器网页版。
 
 ## 支持格式
 
@@ -73,6 +89,7 @@ npm run dev
 
 - [完整工作流程](docs/workflow.md)
 - [本地网页工作台](docs/local-web.md)
+- [网页版（纯浏览器）](docs/web-app.md)
 - [桌面版使用与打包](docs/desktop.md)
 - [数据目录与图片模板](docs/storage-and-templates.md)
 - [命令行与皮肤包管理](docs/cli.md)

@@ -1,4 +1,5 @@
 node_modules/
+webapp/dist/
 # Local scratch only: generated artifacts and caches. Reusable benchmark and
 # diagnostic sources live in scripts/diagnostics/bench/, never in outputs/.
 outputs/

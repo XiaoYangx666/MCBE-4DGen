@@ -9,6 +9,7 @@
 | `src/cli.ts` | `inspect`、`convert`、`validate`、`preview` 命令行 |
 | `src/pack-cli.ts` | 皮肤包库与游戏目录的启用、备份、恢复 |
 | `server/start.ts` | 本地网页/桌面后台的启动、Web 构建、HTTP 服务 |
+| `webapp/` | 纯浏览器的静态网页版，无 Node 后台；图片皮肤与模型转换 |
 | `scripts/` | 按职责分组的检查、工作流、桌面打包、样本与诊断工具；稳定入口见 `scripts/README.md` |
 | `desktop/` | Electron 主进程、预加载脚本与桌面冒烟测试 |
 
@@ -25,7 +26,7 @@ Importer -> IntermediateModel -> Optimizer -> BoneMapper -> BedrockExporter -> S
 - `texture-optimizer.ts`、`texture-charts.ts`、`image-template.ts`：图集、UV 连通分岛与图片模板。
 - `bone-mapper.ts`、`humanoid.ts`、`auto-profile.ts`：Static 与六部位人形绑定。
 - `bedrock-exporter.ts`、`bedrock-types.ts`、`geometry-validator.ts`：Bedrock 1.8.0 poly_mesh 导出与校验。
-- `skin-pack.ts`、`pack-cli.ts`、`import-skin-pack.ts`：ZIP、皮肤包校验、不可变库与可恢复部署。
+- `skin-pack.ts`、`skin-pack-files.ts`、`pack-cli.ts`、`import-skin-pack.ts`：ZIP、皮肤包校验、不可变库与可恢复部署。`skin-pack-files.ts` 只依赖 Web 标准 API，桌面版与网页版共用皮肤包构建器。
 - `pack-manager.ts`：皮肤包库与游戏槽位的领域操作；文件树的安全遍历、写入、校验和统计放在 `pack-tree.ts`。
 - `pack-tree.ts`：受管目录的读取/增量写入、SHA256 校验、几何 JSON 片段扫描与包体统计。
 - `pack-types.ts`：服务端、管理器和前端共用的皮肤包领域类型。
@@ -93,11 +94,27 @@ npm run test:node
 
 页面组件持有交互状态；跨页面共享的纯逻辑放到 `packs/`、`workbench/` 或 `lib/`，避免从页面文件反向导入类型或组件。
 
+## 纯浏览器网页版（`webapp/`）
+
+网页版是独立的 Vite + React 静态应用，构建产物在 `webapp/dist/`，不需要 `server/`。
+
+- `lib/import-model.ts`：GLTF/OBJ/FBX/DAE/STL/PLY 加载与多文件资源映射。
+- `lib/extract.ts`：世界变换、材质分组、UV 归一化与包围数据。
+- `lib/atlas.ts`：128 × 128 图集规划、绘制、UV 重映射。
+- `lib/bedrock.ts`：静态整体绑定、镜像与 `poly_mesh` 导出。
+- `lib/convert.ts`：图集 → 几何 → 皮肤包 → ZIP 流程。
+- `lib/image-skin.ts`：图片平面皮肤。
+- `lib/output-preview.ts`：从导出的 `geometry.json` 反向解码为 three.js 预览。
+- `components/`：图片模式、模型模式、视口、拖放与下载。
+- 共享 `src/skin-pack-files.ts` 与 `src/geometry-validator.ts`；不导入 `sharp`、`node:fs` 或 `libassimp`。
+- 样式复用 `web/styles/theme.css` 的明暗主题变量，页面布局遵循本地工作台的顶栏、双栏卡片与紧凑表单。
+
 ## 验证
 
 ```powershell
 npm run check
 npm run check:web
+npm run check:webapp
 npm run test:workflow
 npm run test:studio
 npm run test:desktop
