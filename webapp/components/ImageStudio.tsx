@@ -4,7 +4,7 @@ import { DownloadButtons, InstallHelp } from './Common';
 import { Icon } from './Icons';
 import { createImageSkin, type ImageSkinResult } from '../lib/image-skin';
 import { nextFrame } from '../lib/convert';
-import { formatBytes } from '../lib/download';
+import { formatBytes, isCompactViewport } from '../lib/download';
 
 const DEFAULT_NAME = '我的 4D 皮肤';
 
@@ -19,6 +19,7 @@ export function ImageStudio() {
   const [phase, setPhase] = useState('');
   const [error, setError] = useState<string | null>(null);
   const customName = useRef(false);
+  const resultRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!file) {
@@ -29,6 +30,12 @@ export function ImageStudio() {
     setSourceUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
+
+  useEffect(() => {
+    if (!result || !isCompactViewport()) return;
+    const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior, block: 'start' }));
+  }, [result]);
 
   const key = `${name.trim()}|${height}`;
   const stale = !!result && resultKey !== key;
@@ -143,7 +150,7 @@ export function ImageStudio() {
         </div>
       </section>
 
-      <section className="studio-result">
+      <section className="studio-result" ref={resultRef}>
         <div className="result-header">
           <div>
             <h2>{result ? name.trim() : '成品预览'}</h2>

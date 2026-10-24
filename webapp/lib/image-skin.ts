@@ -1,5 +1,5 @@
 import { buildSkinPack } from '../../src/skin-pack-files.ts';
-import type { BedrockGeometryFile, VertexRef } from '../../src/bedrock-types.ts';
+import { buildImageSkinGeometry } from '../../src/image-skin-geometry.ts';
 import { canvasPng, validateName } from './convert.ts';
 
 export interface ImageSkinOptions {
@@ -52,37 +52,7 @@ export async function createImageSkin(file: Blob, options: ImageSkinOptions): Pr
 
     const u0 = left / 128, u1 = (left + drawWidth) / 128;
     const v0 = 1 - (top + drawHeight) / 128, v1 = 1 - top / 128;
-    const refs = (a: number, b: number, c: number, n: number): [VertexRef, VertexRef, VertexRef] =>
-      [[a, n, a], [b, n, b], [c, n, c]];
-    const geometry: BedrockGeometryFile = {
-      format_version: '1.8.0',
-      'geometry.skin0': {
-        texturewidth: 128,
-        textureheight: 128,
-        visible_bounds_width: Math.max(width, options.height) / 16 + 1,
-        visible_bounds_height: options.height / 16 + 1,
-        visible_bounds_offset: [0, options.height / 32, 0],
-        bones: [{
-          name: 'body',
-          pivot: [0, 24, 0],
-          poly_mesh: {
-            normalized_uvs: true,
-            positions: [
-              [-width / 2, 0, 0], [width / 2, 0, 0],
-              [width / 2, options.height, 0], [-width / 2, options.height, 0],
-            ],
-            normals: [[0, 0, -1], [0, 0, 1]],
-            uvs: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]],
-            polys: [
-              refs(0, 2, 1, 0),
-              refs(0, 3, 2, 0),
-              refs(0, 1, 2, 1),
-              refs(0, 2, 3, 1),
-            ],
-          },
-        }],
-      },
-    };
+    const geometry = buildImageSkinGeometry({ width, height: options.height, u0, v0, u1, v1 });
     const png = await canvasPng(canvas);
     const files = buildSkinPack({
       geometry,

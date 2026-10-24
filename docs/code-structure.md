@@ -23,7 +23,7 @@ Importer -> IntermediateModel -> Optimizer -> BoneMapper -> BedrockExporter -> S
 
 - `importer.ts`、`avatar-import.ts`、`tga.ts`、`pmx-metadata.ts`：读取 GLB/glTF、Assimp 格式与 PMX/VRM 元数据。
 - `prepare-model.ts`、`optimizer.ts`、`mesh-optimizer.ts`、`rigid-mesh-reducer.ts`：变换、姿势冻结、减面。
-- `texture-optimizer.ts`、`texture-charts.ts`、`image-template.ts`：图集、UV 连通分岛与图片模板。
+- `texture-optimizer.ts`、`texture-charts.ts`、`image-template.ts`、`image-skin-geometry.ts`：图集、UV 连通分岛、图片模板与两端共用的平面皮肤几何。
 - `bone-mapper.ts`、`humanoid.ts`、`auto-profile.ts`：Static 与六部位人形绑定。
 - `bedrock-exporter.ts`、`bedrock-types.ts`、`geometry-validator.ts`：Bedrock 1.8.0 poly_mesh 导出与校验。
 - `skin-pack.ts`、`skin-pack-files.ts`、`pack-cli.ts`、`import-skin-pack.ts`：ZIP、皮肤包校验、不可变库与可恢复部署。`skin-pack-files.ts` 只依赖 Web 标准 API，桌面版与网页版共用皮肤包构建器。
