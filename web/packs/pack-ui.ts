@@ -36,4 +36,5 @@ export type PackDialogKind =
   | "delete"
   | "remove-skin"
   | "add"
+  | "export"
   | null;

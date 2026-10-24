@@ -116,6 +116,12 @@ export function buildPackMenu(
         onSelect: () => actions.restorePack(pack),
       });
     }
+    items.push({
+      label: "导出 .zip",
+      separate: true,
+      disabled: !!runtime.busy || !pack.skins,
+      onSelect: () => actions.exportPack(pack),
+    });
     return items;
   }
 
