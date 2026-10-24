@@ -57,6 +57,7 @@ export function PackPage() {
     presetSourceIds,
     refresh,
     exportRecipes,
+    exportGamePack,
     run,
     selectPack,
     show,
@@ -210,6 +211,7 @@ export function PackPage() {
                     actions={{
                       onRename: () => editPack(row, "detail"),
                       onAdd: () => show("add"),
+                      onExport: () => show("export"),
                       onMenu: (event) => {
                         const box =
                           event.currentTarget.getBoundingClientRect();
@@ -337,6 +339,7 @@ export function PackPage() {
           sourceId,
           setSourceId,
           sourceContents,
+          contents,
           indices,
           setIndices,
           sourceOptions: library.filter(
@@ -352,6 +355,7 @@ export function PackPage() {
           onRemoveSkin: removeSkinFromPack,
           onDelete: deletePack,
           onAdd: addSkins,
+          onExport: () => void exportGamePack(),
         }}
       />
       {menu && (

@@ -90,6 +90,43 @@ export const libraryRoutes = [
     json(await studio.requireManager().presetContents(params.slot!)),
   ),
 
+  route('GET', '/api/preset-packs/:slot/export', async ({
+    studio,
+    params,
+    url,
+  }) => {
+    if (!studio.gameConfigured) throw Error('请先配置游戏 skin_packs 目录');
+    const raw = url.searchParams.get('skins');
+    const skins = raw
+      ? raw
+          .split(',')
+          .filter(Boolean)
+          .map((value) => {
+            const index = Number(value);
+            if (!Number.isInteger(index)) throw Error('请选择有效皮肤');
+            return index;
+          })
+      : [];
+    const result = await studio.requireManager().exportInstalled(
+      params.slot!,
+      skins,
+      { name: url.searchParams.get('name') ?? '' },
+    );
+    const filename =
+      result.name
+        .replace(/[\\/:*?"<>|\x00-\x1f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80) || 'game-skin-pack';
+    return new Response(result.bytes as BodyInit, {
+      headers: {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="game-skin-pack.zip"; filename*=UTF-8''${encodeURIComponent(filename + '.zip')}`,
+        'Cache-Control': 'no-store',
+      },
+    });
+  }),
+
   route('GET', '/api/preset-packs/:slot/texture', async ({
     studio,
     params,
