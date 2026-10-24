@@ -1,20 +1,20 @@
 import { safeExternalAsset } from "./import-skin-pack.ts";
 import { validateImportedGeometry } from "./pack-geometry.ts";
-import { randomUUID } from 'node:crypto';
 import { readFile, readdir, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import JSZip from 'jszip';
 import sharp from 'sharp';
 import type { BedrockGeometryFile } from './bedrock-types.ts';
-import { parseGeometryJSON, validateGeometry } from './geometry-validator.ts';
+import { parseGeometryJSON } from './geometry-validator.ts';
 
-export type SkinPackFiles = Record<string, Uint8Array>;
-const encoder = new TextEncoder();
+import { buildSkinPack } from './skin-pack-files.ts';
+import type { SkinPackFiles, SkinPackInput } from './skin-pack-files.ts';
+export { buildSkinPack };
+export type { SkinPackFiles, SkinPackInput };
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const fileName = /^[A-Za-z0-9_-]+\.png$/;
 const rootFile = /^(?:manifest|skins|geometry)\.json$|^[A-Za-z0-9_-]+\.png$|^texts\/(?:[a-z]{2}_[A-Z]{2}\.lang|languages\.json)$/;
-const text = (value: unknown) => encoder.encode(JSON.stringify(value));
 function assert(ok: unknown, message: string): asserts ok {
   if (!ok) throw new Error('Invalid skin pack: ' + message);
 }
@@ -28,44 +28,6 @@ function required(files: Readonly<SkinPackFiles>, name: string): Uint8Array {
   const content = Object.hasOwn(files, name) ? files[name] : undefined;
   if (!(content instanceof Uint8Array)) throw new Error('Invalid skin pack: missing ' + name);
   return content;
-}
-
-export interface SkinPackInput {
-  geometry: BedrockGeometryFile;
-  png: Uint8Array;
-  /** Human-readable name in manifest.json. */
-  packName?: string;
-  /** Must equal an identifier already present in geometry.json. */
-  identifier: string;
-}
-
-/** Legacy geometry, texture, unique pack identity and localized display names. */
-export function buildSkinPack(input: SkinPackInput): SkinPackFiles {
-  const name = input.packName ?? 'Custom Skin Pack';
-  if (!name.trim() || name.length > 128) throw new Error('Pack name must be 1–128 characters');
-  if (input.identifier !== 'geometry.skin0') {
-    throw new Error('Single-skin export requires identifier geometry.skin0');
-  }
-  validateGeometry(input.geometry, { expectedIdentifier: input.identifier });
-  const headerId = randomUUID(), moduleId = randomUUID();
-  const key = 'FourDGen_' + headerId.replaceAll('-', '');
-  const label = name.replace(/[\r\n=]/g, ' ');
-  return {
-    'manifest.json': text({
-      format_version: 2,
-      header: { name, uuid: headerId, version: [1, 0, 0] },
-      modules: [{ type: 'skin_pack', uuid: moduleId, version: [1, 0, 0] }],
-    }),
-    'skins.json': text({ serialize_name: key, localization_name: key, skins: [{
-      localization_name: 'skin0', geometry: input.identifier,
-      texture: 'skin0.png', hide_armor: true, type: 'free',
-    }] }),
-    'geometry.json': text(input.geometry),
-    'skin0.png': new Uint8Array(input.png),
-    'texts/languages.json': text(['en_US', 'zh_CN']),
-    'texts/en_US.lang': encoder.encode(`skinpack.${key}=${label}\nskin.${key}.skin0=${label}\n`),
-    'texts/zh_CN.lang': encoder.encode(`skinpack.${key}=${label}\nskin.${key}.skin0=${label}\n`),
-  };
 }
 
 export interface PackValidation {

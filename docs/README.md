@@ -6,6 +6,7 @@
 
 - [完整工作流程](workflow.md)：转换、校验、预览、皮肤包入库、备份与恢复。
 - [本地网页工作台](local-web.md)：`npm run dev`（Node 服务端）、材质筛选、姿势预览、减面与图集参数。
+- [网页版（纯浏览器）](web-app.md)：`npm run webapp:dev`、图片皮肤、模型转换、静态部署与浏览器端限制。
 - [桌面版使用与打包](desktop.md)：Electron 开发版、Windows 便携版、启动检查与验证限制。
 - [命令行与皮肤包管理](cli.md)：批量转换、参数、启停与恢复命令（普通用户可跳过）。
 - [PMX 转换记录](pmx-model-tests.md)：两个 PMX 样本的 profile、产物、减面与图集实验。
