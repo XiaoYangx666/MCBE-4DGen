@@ -1,6 +1,7 @@
 const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('desktop',Object.freeze({
   chooseDirectory:(kind,initial)=>ipcRenderer.invoke('desktop:choose-directory',{kind,initial}),
+  saveFile:(suggestedName,bytes)=>ipcRenderer.invoke('desktop:save-file',{suggestedName,bytes}),
   windowState:()=>ipcRenderer.invoke('desktop:window-state'),
   windowAction:action=>ipcRenderer.invoke('desktop:window-action',action),
   onWindowState:callback=>{const listener=(_event,state)=>callback(state);ipcRenderer.on('desktop:window-state',listener);return ()=>ipcRenderer.removeListener('desktop:window-state',listener);},

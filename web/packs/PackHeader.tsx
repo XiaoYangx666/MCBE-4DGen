@@ -14,13 +14,14 @@ export function PackHeader({
     onRename: () => void;
     onMenu: (event: MouseEvent) => void;
     onAdd: () => void;
+    onExport: () => void;
     onCommit: (edit: InlineEdit, value: string) => void;
     onCancel: () => void;
   };
 }) {
   const { row, contents } = pack;
   const { busy, locked, editing } = runtime;
-  const { onRename, onMenu, onAdd, onCommit, onCancel } = actions;
+  const { onRename, onMenu, onAdd, onExport, onCommit, onCancel } = actions;
   const inline =
     editing?.kind === "pack" &&
     editing.pack.key === row.key &&
@@ -51,6 +52,14 @@ export function PackHeader({
         </span>
       </div>
       <div className="pack-detail-actions">
+        {row.preset && (
+          <button
+            disabled={!!busy || !contents?.skins.length}
+            onClick={onExport}
+          >
+            导出 ZIP
+          </button>
+        )}
         <button disabled={!!busy || locked} onClick={onAdd}>
           ＋ 添加皮肤
         </button>

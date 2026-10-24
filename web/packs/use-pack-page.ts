@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, post } from "../lib/api";
+import { saveZip } from "../lib/save-file";
 import {
   findActivePack,
   isPackFullyInstalled,
@@ -204,9 +205,10 @@ export function usePackPage() {
   }, [row?.key, row?.revision, tick]);
 
   useEffect(() => {
+    if (dialog !== "add") return;
     setSourceContents(null);
     setIndices([]);
-    if (!sourceId || dialog !== "add") return;
+    if (!sourceId) return;
     let cancelled = false;
     api(`/api/packs/${sourceId}/skins`)
       .then((result) => {
@@ -222,6 +224,11 @@ export function usePackPage() {
       cancelled = true;
     };
   }, [sourceId, dialog]);
+
+  useEffect(() => {
+    if (dialog === "export" && contents)
+      setIndices(contents.skins.map((item) => item.index));
+  }, [dialog, contents]);
 
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
@@ -285,6 +292,10 @@ export function usePackPage() {
     setError("");
     setName("");
     if (kind === "add") setSourceId("");
+    if (kind === "export") {
+      setIndices(contents?.skins.map((item) => item.index) ?? []);
+      setName(row ? `${row.name} 导出`.slice(0, 120) : "");
+    }
   }
   function closeDialog() {
     setDialog(null);
@@ -462,6 +473,40 @@ export function usePackPage() {
     );
   }
 
+  async function exportGamePack() {
+    if (!row?.preset || !contents || !indices.length) return;
+    setBusy("正在导出…");
+    setError("");
+    setNotice("");
+    try {
+      const params = new URLSearchParams({ skins: indices.join(",") });
+      if (name.trim()) params.set("name", name.trim());
+      const response = await fetch(`${baseUrl}/export?${params}`, {
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw Error(body?.error ?? `导出失败（${response.status}）`);
+      }
+      const result = await saveZip(
+        new Uint8Array(await response.arrayBuffer()),
+        name.trim() || row.name,
+      );
+      if (!result.saved) {
+        setNotice("已取消保存");
+        return;
+      }
+      setDialog(null);
+      setNotice(result.path ? `已保存到 ${result.path}` : "已开始下载");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy("");
+    }
+  }
+
   const menuActions: PackMenuActions = {
     renamePack: editPack,
     renameSkin: editSkin,
@@ -523,6 +568,11 @@ export function usePackPage() {
         "已从游戏中移除，本地包保留",
       ),
     exportPack: (pack) => {
+      if (pack.preset) {
+        setSelected(pack.key);
+        show("export");
+        return;
+      }
       location.href = `/api/packs/${encodeURIComponent(pack.id)}/download`;
     },
     deletePack: (pack) => {
@@ -608,6 +658,7 @@ export function usePackPage() {
     presetSourceIds,
     refresh,
     exportRecipes,
+    exportGamePack,
     run,
     selectPack,
     show,
