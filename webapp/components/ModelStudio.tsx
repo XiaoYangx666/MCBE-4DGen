@@ -9,7 +9,7 @@ import { extractModel } from '../lib/extract';
 import { convertBatches, nextFrame, type ConvertResult } from '../lib/convert';
 import type { DoubleSidedPolicy } from '../lib/bedrock';
 import { buildGeometryPreview } from '../lib/output-preview';
-import { formatBytes } from '../lib/download';
+import { formatBytes, isCompactViewport } from '../lib/download';
 
 const DEFAULT_NAME = '我的 4D 皮肤';
 
@@ -31,6 +31,7 @@ export function ModelStudio() {
   const modelRef = useRef<LoadedModel | null>(null);
   const loadId = useRef(0);
   const customName = useRef(false);
+  const resultRef = useRef<HTMLElement>(null);
 
   useEffect(() => () => {
     modelRef.current?.dispose();
@@ -44,6 +45,10 @@ export function ModelStudio() {
     }
     const created = buildGeometryPreview(result.geometry, result.textureUrl);
     setPreview(created.object);
+    if (isCompactViewport()) {
+      const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+      requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior, block: 'start' }));
+    }
     return () => created.dispose();
   }, [result]);
 
@@ -215,7 +220,7 @@ export function ModelStudio() {
         </div>
       </section>
 
-      <section className="studio-result model-result">
+      <section className="studio-result model-result" ref={resultRef}>
         <div className="result-header">
           <div>
             <h2>{result && viewMode === 'output' ? '输出预览' : model ? '源模型预览' : '模型预览'}</h2>

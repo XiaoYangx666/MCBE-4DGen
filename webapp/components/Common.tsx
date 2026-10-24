@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { downloadBlob, safeFilename } from '../lib/download';
+import { safeFilename, saveOrShare } from '../lib/download';
 import { zipSkinPack } from '../lib/convert';
 import { Icon } from './Icons';
 
@@ -18,7 +18,7 @@ export function DownloadButtons({ files, name, compact }: DownloadButtonsProps) 
     setError(null);
     try {
       const blob = await zipSkinPack(files);
-      downloadBlob(blob, `${safeFilename(name)}.mcpack`);
+      await saveOrShare(blob, `${safeFilename(name)}.mcpack`, name);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -30,7 +30,11 @@ export function DownloadButtons({ files, name, compact }: DownloadButtonsProps) 
     const png = files['skin0.png'];
     if (!png) return;
     const buffer = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer;
-    downloadBlob(new Blob([buffer], { type: 'image/png' }), `${safeFilename(name)}-skin0.png`);
+    void saveOrShare(
+      new Blob([buffer], { type: 'image/png' }),
+      `${safeFilename(name)}-skin0.png`,
+      `${name} 贴图`,
+    );
   };
 
   return (
@@ -56,7 +60,7 @@ export function InstallHelp() {
         <li>双击文件，或右键选择「用 Minecraft 打开」。</li>
         <li>进入游戏 → 更衣室 → 经典皮肤，选择刚导入的皮肤。</li>
       </ol>
-      <p>只支持 Minecraft 基岩版（Windows / 手机 / 主机）。Java 版不支持 4D 皮肤。</p>
+      <p>只支持 Minecraft 基岩版（Windows / 手机 / 主机）。Java 版不支持 4D 皮肤。手机上如果出现系统分享面板，选择「存储到文件」即可。</p>
     </details>
   );
 }

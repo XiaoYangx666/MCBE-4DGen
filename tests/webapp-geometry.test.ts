@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { buildImageSkinGeometry } from '../src/image-skin-geometry.ts';
+import { validateGeometry } from '../src/geometry-validator.ts';
 import { buildBedrockGeometry } from '../webapp/lib/bedrock.ts';
 import type { SourceBatch } from '../webapp/lib/types.ts';
 
@@ -57,6 +59,19 @@ describe('webapp bedrock export', () => {
   it('rejects invalid heights and empty meshes', () => {
     expect(() => buildBedrockGeometry([quad()], { height: 0, doubleSided: 'source' })).toThrow(/高度/);
     expect(() => buildBedrockGeometry([], { height: 32, doubleSided: 'source' })).toThrow();
+  });
+
+  it('shares the flat image geometry between desktop and browser', () => {
+    const file = buildImageSkinGeometry({ width: 24, height: 32, u0: 0.25, v0: 0.25, u1: 0.75, v1: 0.75 });
+    const geometry = file['geometry.skin0'];
+    expect(geometry.bones[0]!.poly_mesh!.polys).toHaveLength(4);
+    expect(geometry.bones[0]!.poly_mesh!.uvs[0]).toEqual([0.25, 0.25]);
+    expect(() => validateGeometry(file, {
+      expectedIdentifier: 'geometry.skin0',
+      textureSize: { width: 128, height: 128 },
+      atlasUVs: true,
+    })).not.toThrow();
+    expect(() => buildImageSkinGeometry({ width: 0, height: 32, u0: 0, v0: 0, u1: 1, v1: 1 })).toThrow();
   });
 
   it('centers on X and Z', () => {

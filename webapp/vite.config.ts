@@ -12,11 +12,13 @@ export default defineConfig({
     target: 'es2022',
   },
   server: {
-    host: '127.0.0.1',
+    // The app has no backend, so binding to the LAN is safe and lets phones
+    // open the same URL while testing.
+    host: '0.0.0.0',
     port: 4174,
   },
   preview: {
-    host: '127.0.0.1',
+    host: '0.0.0.0',
     port: 4174,
   },
 });

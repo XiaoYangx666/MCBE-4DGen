@@ -14,6 +14,8 @@ export function initialTheme(): Theme {
 export function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.palette = 'violet';
+  document.querySelector('meta[name="theme-color"]')
+    ?.setAttribute('content', theme === 'dark' ? '#17191f' : '#f3f5fa');
 }
 
 export function rememberTheme(theme: Theme) {

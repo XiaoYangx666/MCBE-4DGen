@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
@@ -21,17 +21,24 @@ interface ViewState {
 export function Viewport({ object, className, grid = false, autoRotate = false }: ViewportProps) {
   const host = useRef<HTMLDivElement>(null);
   const state = useRef<ViewState | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const element = host.current;
     if (!element) return;
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 10_000);
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      powerPreference: 'high-performance',
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference: 'high-performance',
+      });
+    } catch {
+      setFailed(true);
+      return;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setClearColor(0x000000, 0);
@@ -101,8 +108,16 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
     };
     tick();
 
+    const contextLost = (event: Event) => {
+      event.preventDefault();
+      cancelAnimationFrame(frame);
+      setFailed(true);
+    };
+    renderer.domElement.addEventListener('webglcontextlost', contextLost);
+
     return () => {
       cancelAnimationFrame(frame);
+      renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       observer.disconnect();
       controls.dispose();
       if (view.current) scene.remove(view.current);
@@ -127,10 +142,19 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
 
   return (
     <div className={`viewport ${className ?? ''}`} ref={host}>
-      <div className="viewport-hint">拖拽旋转 · 滚轮缩放</div>
-      <button type="button" className="viewport-reset" onClick={() => state.current?.fit()}>
-        重置视角
-      </button>
+      {failed ? (
+        <div className="viewport-fallback">
+          <b>三维预览不可用</b>
+          <span>当前浏览器没有启用 WebGL。转换和下载仍然可以继续。</span>
+        </div>
+      ) : (
+        <>
+          <div className="viewport-hint">拖拽旋转 · 滚轮缩放</div>
+          <button type="button" className="viewport-reset" onClick={() => state.current?.fit()}>
+            重置视角
+          </button>
+        </>
+      )}
     </div>
   );
 }

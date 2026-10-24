@@ -11,6 +11,8 @@ npm run webapp:preview  # 预览构建产物
 npm run check:webapp    # 只检查网页版
 ```
 
+开发服务器和预览服务器都监听 `0.0.0.0`，Vite 会同时打印一个 `Network` 地址。手机和电脑连同一个 Wi-Fi 后，直接打开这个地址即可，例如 `http://192.168.1.20:4174`。如果手机打不开，检查 Windows 防火墙是否允许 Node.js 的入站连接。
+
 `webapp/dist/` 可以部署到任意静态托管（Cloudflare Pages、GitHub Pages、Netlify、对象存储等）。构建使用相对路径，放在子目录也能打开。网页版没有 API 请求，不需要配置后端。
 
 ## 功能
@@ -44,6 +46,36 @@ npm run check:webapp    # 只检查网页版
 - **跟随材质**：源材质为双面时补充背面，默认。
 - **全部双面**：所有三角面都补背面，面数约翻倍。
 - **仅正面**：最省面，但背面不可见。
+
+## 移动端
+
+- 宽度小于 860 px 时，设置区与结果区改为单列，页面正常滚动；桌面端仍是固定高度的双栏工作台。
+- 输入框在移动端使用 16 px 字号，避免 iOS Safari 聚焦时自动放大；主要按钮和文件选择区的最小高度按触控目标调整。
+- 生成或转换完成后，移动端会自动滚动到结果卡片，不需要手动往下找。
+- 三维预览使用 `touch-action: none`，支持单指旋转、双指缩放/平移。
+- 高 DPI 屏幕上 canvas 的 CSS 尺寸与绘制缓冲区分开处理，避免手机只显示左上角一块。
+- 手机下载 `.mcpack` 时优先调用系统分享/保存面板（Web Share API），可存到“文件”或直接发送；不支持时回退为普通下载。Web Share 通常需要 HTTPS，局域网 HTTP 调试时可能只走下载回退。
+- WebGL 不可用时，预览区会显示提示，但转换和 `.mcpack` 下载仍然可用。
+- 建议 iOS 16.4+ / 最新 Android Chrome。手机内存有限，建议先处理 50 MB 以下、5 万面以内的模型；超大模型可能卡住页面。
+
+## 复用边界
+
+网页版没有复制一整套桌面转换代码，而是复用兼容层，保留各自擅长的运行环境。
+
+已复用：
+
+- `src/skin-pack-files.ts`：`manifest.json`、`skins.json`、语言文件与皮肤包身份，桌面版和网页版导出完全同源。
+- `src/geometry-validator.ts`、`src/bedrock-types.ts`：导出前后的 Bedrock 几何结构校验和类型。
+- `src/image-skin-geometry.ts`：图片平面皮肤的几何由桌面 sharp 路径和浏览器 Canvas 路径共用。
+- `web/styles/theme.css`：明暗主题、调色板与 CSS 变量。
+- 测试中的校验器：网页版导出的 `.mcpack` 会用桌面版同一套 `validateSkinPackPath` 检查。
+
+没有直接共用：
+
+- 模型导入与导出。桌面版基于 `glTF-transform`、`sharp`、`libassimp`；浏览器版基于 three.js 加载器和 Canvas。强行抽象会把 Node 依赖带进浏览器。
+- 图集规划。桌面版有 UV 连通分岛、材质权重和逐岛重采样；网页版使用适合 128×128 的轻量 shelf packing。
+- 布局 CSS。桌面工作台是固定 `100dvh`、三栏、密集表单；网页版需要单列滚动和触控尺寸，只共用设计变量与视觉规范。
+- `bedrock-exporter.ts`。桌面版按 glTF primitive/骨骼流导出，网页版按三角面汤导出；两者共享输出格式、坐标约定和同一个校验器。以后如果两端都要改 poly_mesh 细节，可以再抽出纯写入器。
 
 ## 与桌面版的差异
 
@@ -95,6 +127,7 @@ webapp/
 共享模块：
 
 - `src/skin-pack-files.ts`：无 Node 依赖的皮肤包构建器，桌面版与网页版共用。
+- `src/image-skin-geometry.ts`：图片平面皮肤的共享几何。
 - `src/geometry-validator.ts`：导出前后的 Bedrock 几何结构校验。
 - `web/styles/theme.css`：网页版直接复用本地工作台的配色变量，保持明暗主题一致。
 
