@@ -898,10 +898,31 @@ button.text-danger:hover:not(:disabled) { background: transparent; color: var(--
   pointer-events: none;
   backdrop-filter: blur(6px);
 }
-.viewport-reset {
+.viewport-orientation {
+  position: absolute;
+  left: 16px;
+  top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
+  color: var(--muted);
+  font-size: 10px;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+.viewport-orientation b { color: var(--accent); font-weight: 600; }
+.viewport-actions {
   position: absolute;
   right: 12px;
   bottom: 12px;
+  display: flex;
+  gap: 6px;
+}
+.viewport-reset {
   padding: 5px 9px;
   border: 1px solid var(--line);
   border-radius: 5px;

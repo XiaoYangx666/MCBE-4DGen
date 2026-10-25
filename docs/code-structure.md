@@ -89,7 +89,7 @@ npm run test:node
 - `library/`：模型库的 `ModelListPane`、`ImportModelDialog`、`RenameModelDialog`、`RelinkModelDialog`、`DeleteModelDialog` 与 `model-types.ts`。
 - `packs/`：`PackSidebar`、`PackHeader`、`SkinList`、`SkinDetail`、`PackDialogs`、`GameSkinsPanel`、`PersonaRecipePanel`、`PackPreview`、`SaveSkinDialog`、`GameStatusBadge`，以及 `use-pack-page.ts`、`pack-types.ts`、`pack-state.ts`、`pack-menu.ts`、`pack-ui.ts`、`game-skins-types.ts`。`PackPage` 只负责视图，数据加载和操作由 `usePackPage` 统一管理。
 - `ui/`：`AppBar`、`WebNav`、`AboutDialog`、`ContextMenu`、`InlineName`、`Modal`、`SelectableRow` 等跨页面组件。
-- `shared/`：与纯浏览器网页版共用的展示层，只依赖 Web 标准 API 与 React：`palettes.ts`（配色元数据）、`SourceDirectory.tsx`（模型站点目录）、`poly-mesh-preview.ts`（导出的 poly_mesh → three.js 网格、纹理与取景）、`preview-lighting.ts`（预览环境光、三点光与软阴影）、`format.ts`（字节与文件名工具）、`clipboard.ts`（复制回退）、`useDialogDismiss.ts`（Esc/背景点击）。这里不放 API、IndexedDB 或服务端数据模型。
+- `shared/`：与纯浏览器网页版共用的展示层，只依赖 Web 标准 API 与 React：`palettes.ts`（配色元数据）、`SourceDirectory.tsx`（模型站点目录）、`poly-mesh-preview.ts`（导出的 poly_mesh → three.js 网格、纹理与取景）、`preview-lighting.ts`（预览环境光、三点光与软阴影）、`preview-orientation.ts`（前向箭头与标签）、`format.ts`（字节与文件名工具）、`clipboard.ts`（复制回退）、`useDialogDismiss.ts`（Esc/背景点击）。这里不放 API、IndexedDB 或服务端数据模型。
 - `lib/`：`api.ts`、`appearance.ts`、`navigation.ts`、`use-hash-route.ts` 等基础设施。
 - `styles/`：`style.css`、`workflow.css`、`theme.css`、`shared.css`。
 

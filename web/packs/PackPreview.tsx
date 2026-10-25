@@ -6,6 +6,7 @@ import {
   fitPreviewCamera,
 } from "../shared/poly-mesh-preview";
 import { createPreviewLighting } from "../shared/preview-lighting";
+import { createPreviewOrientation } from "../shared/preview-orientation";
 import { createDemandRender } from "../workbench/demand-render";
 import type { Scene } from "./pack-types";
 import { bindViewportAppearance } from "../workbench/viewport-appearance";
@@ -76,6 +77,11 @@ export function PackPreview({
     const grid = new THREE.GridHelper(48, 24, 0x46515b, 0x282f36);
     grid.position.y = -0.01;
     world.add(grid);
+    const orientation = createPreviewOrientation({
+      direction: -1,
+      label: "玩家正前方（−Z）",
+    });
+    world.add(orientation.object);
 
     const preview = buildPolyMeshPreview(scene.geometry, scene.texture, {
       identifier: scene.identifier as `geometry.${string}`,
@@ -89,6 +95,7 @@ export function PackPreview({
     world.add(group);
     lighting.apply(true, group);
     lighting.fit(group);
+    orientation.fit(group);
 
     // Match the in-game forward direction: Bedrock packs face -Z, so the
     // default camera sits in front of the model and looks back along +Z.
@@ -138,6 +145,7 @@ export function PackPreview({
       resize.disconnect();
       controls.dispose();
       preview.dispose();
+      orientation.dispose();
       lighting.dispose();
       grid.geometry.dispose();
       (grid.material as THREE.Material).dispose();
