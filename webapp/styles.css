@@ -1047,139 +1047,10 @@ button.text-danger:hover:not(:disabled) { background: transparent; color: var(--
 }
 .sources-header h2 { margin: 0 0 4px; font-size: 18px; font-weight: 550; }
 .sources-header p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
-.sources-toolbar {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--line);
-}
-.sources-toolbar input {
-  width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--ink);
-  outline: none;
-}
-.sources-toolbar input:focus { border-color: var(--accent); }
-.sources-tabs {
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.sources-tabs::-webkit-scrollbar { display: none; }
-.sources-tabs button {
-  flex: 0 0 auto;
-  padding: 6px 9px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--accent);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.sources-tabs button small { margin-left: 4px; color: var(--muted); font-size: 9px; }
-.sources-tabs button.active {
-  border-color: var(--line);
-  background: var(--selected);
-  color: var(--ink);
-}
-.sources-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: 14px 18px 18px;
-}
-.sources-caption {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-  color: var(--ink);
-  font-size: 11px;
-}
-.sources-caption span { color: var(--muted); font-size: 10px; }
-.sources-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 8px;
-}
-.source-item {
-  position: relative;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-}
-.source-main {
-  display: flex;
-  gap: 10px;
-  height: 100%;
-  padding: 11px 58px 11px 12px;
-  border-radius: 8px;
-  color: var(--ink);
-}
-.source-main:hover { background: var(--hover); }
-.source-avatar {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--selected);
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 600;
-}
-.source-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.source-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.source-head b {
-  font-size: 12px;
-  font-weight: 550;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.source-rating { color: var(--accent); font-size: 9px; white-space: nowrap; }
-.source-summary {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 10.5px;
-  line-height: 1.55;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-.source-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.source-chip {
-  padding: 1px 5px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  color: var(--accent);
-  font-size: 8.5px;
-}
-.source-chip.price { color: var(--ink); }
-.source-domain { color: var(--muted); font-size: 8.5px; }
-.source-copy {
-  position: absolute;
-  top: 9px;
-  right: 9px;
-  padding: 3px 7px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--accent);
-  font-size: 9px;
-}
-.source-copy:hover { background: var(--hover); color: var(--ink); }
-.sources-note { margin: 14px 0 0; color: var(--muted); font-size: 9.5px; line-height: 1.7; }
+/* Card, search and tab styles live in web/styles/shared.css; only the dialog
+   shell spacing is web-app specific. */
+.sources-dialog .source-directory .source-toolbar { padding: 12px 18px 10px; }
+.sources-dialog .source-directory .source-scroll { padding: 14px 18px 18px; }
 
 .busy-overlay {
   position: absolute;
@@ -1274,11 +1145,8 @@ footer a { color: var(--accent); }
   .preview-header, .preview-footer { padding-left: 14px; padding-right: 14px; }
   .sources-dialog { max-height: calc(100dvh - 20px); }
   .sources-header { padding: 14px 14px 10px; }
-  .sources-toolbar { padding: 10px 14px; }
-  .sources-scroll { padding: 12px 14px 16px; }
-  .sources-grid { grid-template-columns: minmax(0, 1fr); }
-  .source-main { padding-right: 62px; }
-  .source-copy { min-height: 28px; padding: 5px 8px; font-size: 10px; }
+  .sources-dialog .source-directory .source-toolbar { padding: 10px 14px 8px; }
+  .sources-dialog .source-directory .source-scroll { padding: 12px 14px 16px; }
   .viewport-toggle, .viewport-reset { min-height: 34px; padding: 7px 10px; font-size: 11px; }
   .skin-stage { flex: none; height: 320px; min-height: 0; }
   /* iOS zooms into focused controls below 16px. */

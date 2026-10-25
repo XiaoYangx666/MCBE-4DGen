@@ -1,21 +1,19 @@
-export type Theme = 'light' | 'dark';
-export type Palette = 'graphite' | 'ocean' | 'sand' | 'rose' | 'violet';
+import {
+  DEFAULT_PALETTE,
+  PALETTE_OPTIONS,
+  isPalette,
+  type Palette,
+} from '../../web/shared/palettes';
 
-export const PALETTES: { key: Palette; label: string; hint: string }[] = [
-  { key: 'graphite', label: '中性灰', hint: '干净、克制' },
-  { key: 'ocean', label: '海盐蓝', hint: '清爽、低饱和' },
-  { key: 'sand', label: '暖砂', hint: '柔和、暖色调' },
-  { key: 'rose', label: '玫瑰灰', hint: '温润、淡玫瑰' },
-  { key: 'violet', label: '蓝紫', hint: '原有蓝紫配色' },
-];
+export type { Palette } from '../../web/shared/palettes';
+export type Theme = 'light' | 'dark';
+
+/** Palette metadata shared with the desktop workbench. */
+export const PALETTES = PALETTE_OPTIONS;
 
 const THEME_KEY = '4dgen-web-theme';
 const PALETTE_KEY = '4dgen-web-palette';
 const media = window.matchMedia('(prefers-color-scheme: dark)');
-
-function isPalette(value: string | null): value is Palette {
-  return PALETTES.some((palette) => palette.key === value);
-}
 
 export function initialTheme(): Theme {
   try {
@@ -31,7 +29,7 @@ export function initialPalette(): Palette {
     if (isPalette(saved)) return saved;
   } catch { /* storage can be blocked */ }
   // Matches the desktop workbench default.
-  return 'graphite';
+  return DEFAULT_PALETTE;
 }
 
 export function applyAppearance(theme: Theme, palette: Palette) {

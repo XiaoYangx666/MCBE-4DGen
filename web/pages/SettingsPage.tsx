@@ -1,11 +1,11 @@
 import {
   getPalette,
   setPalette,
-  type Palette,
   getAppearance,
   setAppearance,
   type Appearance,
 } from "../lib/appearance";
+import { PALETTE_OPTIONS } from "../shared/palettes";
 import { useEffect, useState } from "react";
 import { api, post } from "../lib/api";
 
@@ -44,14 +44,6 @@ const APPEARANCES = [
   ["system", "跟随系统"],
   ["light", "浅色"],
   ["dark", "深色"],
-] as const;
-
-const PALETTES = [
-  ["graphite", "中性灰", "干净、克制"],
-  ["ocean", "海盐蓝", "清爽、低饱和"],
-  ["sand", "暖砂", "柔和、暖色调"],
-  ["rose", "玫瑰灰", "温润、淡玫瑰"],
-  ["violet", "蓝紫", "原有蓝紫配色"],
 ] as const;
 
 function formatSize(bytes: number): string {
@@ -191,23 +183,23 @@ export function SettingsPage({ onAbout }: { onAbout: () => void }) {
             </div>
             <h3 className="palette-heading">配色</h3>
             <div className="palette-options" role="group" aria-label="界面配色">
-              {PALETTES.map(([value, label, description]) => (
+              {PALETTE_OPTIONS.map(({ key, label, hint }) => (
                 <button
-                  key={value}
-                  aria-pressed={palette === value}
+                  key={key}
+                  aria-pressed={palette === key}
                   onClick={() => {
-                    void setPalette(value as Palette)
-                      .then(() => updatePalette(value))
+                    void setPalette(key)
+                      .then(() => updatePalette(key))
                       .catch((paletteError) => setError(String(paletteError)));
                   }}
                 >
-                  <span className={"palette-preview " + value}>
+                  <span className={"palette-preview " + key}>
                     <i />
                     <i />
                     <i />
                   </span>
                   <b>{label}</b>
-                  <small>{description}</small>
+                  <small>{hint}</small>
                 </button>
               ))}
             </div>
