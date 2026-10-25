@@ -174,27 +174,9 @@ function AppShell() {
       </header>
 
       <main className="page-content">
-        <div className="page-heading">
-          <div>
-            <div className="eyebrow">
-              {mode === 'image' ? 'TEMPLATE / IMAGE' : mode === 'model' ? 'CONVERT / 3D MODEL' : 'COLLECTION / SKIN PACK'}
-            </div>
-            <h1>{mode === 'image' ? '图片皮肤' : mode === 'model' ? '3D 模型' : '我的皮肤包'}</h1>
-            <p>
-              {mode === 'image'
-                ? '把图片做成双面平面皮肤。'
-                : mode === 'model'
-                  ? '导入模型，生成基岩版 poly_mesh 皮肤。'
-                  : '把生成的皮肤收进一个包，导出一个 ZIP。'}
-            </p>
-          </div>
-          {mode === 'pack' && (
-            <div className="page-heading-actions">
-              <span className="badge">{pack?.skins.length ?? 0} 个皮肤</span>
-            </div>
-          )}
-        </div>
-
+        <h1 className="sr-only">
+          {mode === 'image' ? '图片皮肤' : mode === 'model' ? '3D 模型' : '我的皮肤包'}
+        </h1>
         <div className="studio-host">
           <div hidden={mode !== 'image'}><ImageStudio /></div>
           {modelVisited && (
