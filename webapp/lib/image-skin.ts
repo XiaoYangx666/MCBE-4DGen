@@ -1,4 +1,5 @@
 import { buildSkinPack } from '../../src/skin-pack-files.ts';
+import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 import { buildImageSkinGeometry } from '../../src/image-skin-geometry.ts';
 import { canvasPng, validateName } from './convert.ts';
 
@@ -9,6 +10,7 @@ export interface ImageSkinOptions {
 
 export interface ImageSkinResult {
   files: Record<string, Uint8Array>;
+  geometry: BedrockGeometryFile;
   png: Uint8Array;
   pngUrl: string;
   width: number;
@@ -62,6 +64,7 @@ export async function createImageSkin(file: Blob, options: ImageSkinOptions): Pr
     });
     return {
       files,
+      geometry,
       png,
       pngUrl: canvas.toDataURL('image/png'),
       width,

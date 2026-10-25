@@ -15,6 +15,7 @@ export interface ConvertOptions {
 export interface ConvertResult {
   files: Record<string, Uint8Array>;
   geometry: BedrockGeometryFile;
+  png: Uint8Array;
   report: GeometryReport;
   textureCoverage: number;
   textureUrl: string;
@@ -63,7 +64,7 @@ export async function convertBatches(
     height: options.height,
     doubleSided: options.doubleSided,
   });
-  options.onPhase?.('打包 .mcpack…');
+  options.onPhase?.('打包皮肤包…');
   await nextFrame();
   const files = buildSkinPack({
     geometry: file,
@@ -74,6 +75,7 @@ export async function convertBatches(
   return {
     files,
     geometry: file,
+    png,
     report,
     textureCoverage: atlas.coverage,
     textureUrl: atlas.canvas.toDataURL('image/png'),
@@ -92,13 +94,40 @@ export async function canvasPng(canvas: HTMLCanvasElement): Promise<Uint8Array> 
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-export async function zipSkinPack(files: Readonly<Record<string, Uint8Array>>): Promise<Blob> {
+/**
+ * Minecraft does not reliably import a bare .mcpack on phones. A ZIP with one
+ * top-level pack folder can be extracted straight into com.mojang/skin_packs.
+ */
+export async function zipSkinPack(
+  files: Readonly<Record<string, Uint8Array>>,
+  options: { folder?: string } = {},
+): Promise<Blob> {
   const zip = new JSZip();
+  const folder = options.folder?.replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
+  const root = folder ? zip.folder(folder) : zip;
+  if (!root) throw new Error('无法创建 ZIP 目录');
   for (const [name, bytes] of Object.entries(files)) {
-    if (/\.png$/i.test(name)) zip.file(name, bytes, { compression: 'STORE' });
-    else zip.file(name, bytes, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
+    if (/\.png$/i.test(name)) root.file(name, bytes, { compression: 'STORE' });
+    else root.file(name, bytes, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
   }
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+}
+
+/** Stable, filesystem-safe folder name from the pack's manifest header UUID. */
+export function packFolderFromFiles(files: Readonly<Record<string, Uint8Array>>): string {
+  const manifest = files['manifest.json'];
+  if (manifest) {
+    try {
+      const header = (JSON.parse(new TextDecoder().decode(manifest)) as { header?: { uuid?: unknown } }).header;
+      if (typeof header?.uuid === 'string' && /^[0-9a-f-]{36}$/i.test(header.uuid))
+        return `4DGen-${header.uuid.replaceAll('-', '').slice(0, 8)}`;
+    } catch { /* fall through */ }
+  }
+  return '4DGen-skin';
+}
+
+export function packFolderName(headerId: string) {
+  return `4DGen-${headerId.replaceAll('-', '').slice(0, 8)}`;
 }
 
 export const nextFrame = () => new Promise<void>((resolve) => {

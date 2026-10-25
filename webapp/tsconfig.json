@@ -17,7 +17,9 @@
     "../src/bedrock-types.ts",
     "../src/geometry-validator.ts",
     "../src/skin-pack-files.ts",
+    "../src/source-sites.ts",
     "../tests/webapp-geometry.test.ts",
-    "../tests/webapp-atlas.test.ts"
+    "../tests/webapp-atlas.test.ts",
+    "../tests/webapp-pack-import.test.ts"
   ]
 }
