@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { fitPreviewCamera } from '../../web/shared/poly-mesh-preview';
 import { Icon } from './Icons';
 
@@ -38,9 +39,13 @@ interface ViewState {
     hemi: THREE.HemisphereLight;
     key: THREE.DirectionalLight;
     fill: THREE.DirectionalLight;
+    rim: THREE.DirectionalLight;
     ambient: THREE.AmbientLight;
   };
+  envMap: THREE.Texture;
+  shadowPlane: THREE.Mesh;
   fit: () => void;
+  fitShadow: () => void;
 }
 
 // Metalness is restored when lighting is switched back on. A WeakMap keeps the
@@ -48,12 +53,22 @@ interface ViewState {
 const metalnessBackup = new WeakMap<THREE.Material, number>();
 
 function applyLighting(view: ViewState, lit: boolean) {
-  view.lights.hemi.visible = lit;
-  view.lights.key.visible = lit;
-  view.lights.fill.visible = lit;
+  const { hemi, key, fill, rim, ambient } = view.lights;
+  hemi.visible = lit;
+  key.visible = lit;
+  fill.visible = lit;
+  rim.visible = lit;
   // AmbientLight at PI cancels the 1/PI Lambert factor, so the texture keeps
   // its authored colours instead of turning grey.
-  view.lights.ambient.visible = !lit;
+  ambient.visible = !lit;
+  view.shadowPlane.visible = lit && !!view.current;
+
+  const nextToneMapping = THREE.NoToneMapping;
+  const environmentChanged = (view.scene.environment !== null) !== lit;
+  const toneMappingChanged = view.renderer.toneMapping !== nextToneMapping;
+  view.scene.environment = lit ? view.envMap : null;
+  view.renderer.toneMapping = nextToneMapping;
+  view.renderer.toneMappingExposure = 1;
 
   const root = view.current;
   if (!root) return;
@@ -63,18 +78,20 @@ function applyLighting(view: ViewState, lit: boolean) {
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const material of materials) {
       const standard = material as THREE.MeshStandardMaterial;
-      if (typeof standard.metalness !== 'number') continue;
-      if (!lit) {
-        if (!metalnessBackup.has(material)) metalnessBackup.set(material, standard.metalness);
-        // Metals have no diffuse response to ambient light and would go black.
-        standard.metalness = 0;
-      } else {
-        const saved = metalnessBackup.get(material);
-        if (saved !== undefined) {
-          standard.metalness = saved;
-          metalnessBackup.delete(material);
+      if (typeof standard.metalness === 'number') {
+        if (!lit) {
+          if (!metalnessBackup.has(material)) metalnessBackup.set(material, standard.metalness);
+          // Metals have no diffuse response to ambient light and would go black.
+          standard.metalness = 0;
+        } else {
+          const saved = metalnessBackup.get(material);
+          if (saved !== undefined) {
+            standard.metalness = saved;
+            metalnessBackup.delete(material);
+          }
         }
       }
+      if (environmentChanged || toneMappingChanged) material.needsUpdate = true;
     }
   });
 }
@@ -106,19 +123,44 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setClearColor(0x000000, 0);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     element.append(renderer.domElement);
 
-    const hemi = new THREE.HemisphereLight(0xdce8ff, 0x151a24, 2.4);
+    // A studio environment gives PBR materials soft indirect light and
+    // reflections; plain directional lights alone look plastic.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const room = new RoomEnvironment();
+    const envMap = pmrem.fromScene(room, 0.04).texture;
+    room.dispose();
+    pmrem.dispose();
+    scene.environmentIntensity = 0.15;
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f9a, 2.2);
     scene.add(hemi);
-    const key = new THREE.DirectionalLight(0xffffff, 2.3);
-    key.position.set(3, 6, 5);
-    scene.add(key);
-    const fill = new THREE.DirectionalLight(0x92aeff, 1.1);
-    fill.position.set(-5, 2, -4);
-    scene.add(fill);
+    const key = new THREE.DirectionalLight(0xffffff, 2.2);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.bias = -0.0005;
+    key.shadow.normalBias = 0.02;
+    const fill = new THREE.DirectionalLight(0xc7d8ff, 0.3);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.7);
+    for (const light of [key, fill, rim]) {
+      scene.add(light);
+      scene.add(light.target);
+    }
     const ambient = new THREE.AmbientLight(0xffffff, Math.PI);
     ambient.visible = false;
     scene.add(ambient);
+
+    const shadowPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.ShadowMaterial({ color: 0x000000, opacity: 0.22 }),
+    );
+    shadowPlane.rotation.x = -Math.PI / 2;
+    shadowPlane.receiveShadow = true;
+    shadowPlane.visible = false;
+    scene.add(shadowPlane);
 
     const helper = grid ? new THREE.GridHelper(64, 16, 0x3c4660, 0x252b38) : null;
     if (helper) {
@@ -144,14 +186,51 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       });
     };
 
+    const fitShadow = () => {
+      const view = state.current;
+      if (!view?.current) return;
+      const box = new THREE.Box3().setFromObject(view.current);
+      if (box.isEmpty()) return;
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const radius = Math.max(size.x, size.y, size.z, 0.5) * 0.8;
+      const { key, fill, rim } = view.lights;
+      key.target.position.copy(center);
+      fill.target.position.copy(center);
+      rim.target.position.copy(center);
+      key.position.copy(center)
+        .add(new THREE.Vector3(0.5, 1, 0.7).normalize().multiplyScalar(radius * 4));
+      fill.position.copy(center)
+        .add(new THREE.Vector3(-1, 0.4, 0.8).normalize().multiplyScalar(radius * 4));
+      rim.position.copy(center)
+        .add(new THREE.Vector3(0.2, 0.6, -1).normalize().multiplyScalar(radius * 4));
+      for (const light of [key, fill, rim]) {
+        light.target.updateMatrixWorld();
+        light.updateMatrixWorld();
+      }
+      const shadowCamera = key.shadow.camera;
+      shadowCamera.left = -radius;
+      shadowCamera.right = radius;
+      shadowCamera.top = radius;
+      shadowCamera.bottom = -radius;
+      shadowCamera.near = 0.1;
+      shadowCamera.far = radius * 12;
+      shadowCamera.updateProjectionMatrix();
+      view.shadowPlane.position.set(center.x, box.min.y + 0.002, center.z);
+      view.shadowPlane.scale.setScalar(Math.max(size.x, size.z, radius) * 2.6);
+    };
+
     const view: ViewState = {
       renderer,
       scene,
       camera,
       controls,
       current: null,
-      lights: { hemi, key, fill, ambient },
+      lights: { hemi, key, fill, rim, ambient },
+      envMap,
+      shadowPlane,
       fit,
+      fitShadow,
     };
     state.current = view;
     applyLighting(view, litRef.current);
@@ -196,6 +275,10 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       renderer.domElement.remove();
       helper?.geometry.dispose();
       if (helper) (helper.material as THREE.Material).dispose();
+      envMap.dispose();
+      key.shadow.map?.dispose();
+      shadowPlane.geometry.dispose();
+      (shadowPlane.material as THREE.Material).dispose();
       state.current = null;
     };
   }, [grid, autoRotate]);
@@ -206,12 +289,20 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
     if (view.current && view.current !== object) {
       applyLighting(view, true);
       view.scene.remove(view.current);
+      view.shadowPlane.visible = false;
     }
     view.current = object;
     if (object) {
+      object.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      });
       view.scene.add(object);
       applyLighting(view, litRef.current);
       view.fit();
+      view.fitShadow();
     }
   }, [object]);
 
