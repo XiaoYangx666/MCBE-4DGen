@@ -902,19 +902,19 @@ button.text-danger:hover:not(:disabled) { background: transparent; color: var(--
   position: absolute;
   left: 16px;
   top: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  max-width: calc(100% - 120px);
+  overflow: hidden;
   padding: 3px 7px;
   border: 1px solid var(--line);
   border-radius: 4px;
   background: color-mix(in srgb, var(--surface) 75%, transparent);
   color: var(--muted);
   font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   pointer-events: none;
   backdrop-filter: blur(6px);
 }
-.viewport-orientation b { color: var(--accent); font-weight: 600; }
 .viewport-actions {
   position: absolute;
   right: 12px;

@@ -105,10 +105,8 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
 
     const lighting = createPreviewLighting(renderer, scene);
     const orientation = createPreviewOrientation({
-      direction: 1,
-      label: false,
-      offset: 'side',
-      elevation: 0.35,
+      direction: -1,
+      label: '玩家正前方（−Z）',
     });
     scene.add(orientation.object);
     orientation.object.visible = false;
@@ -142,8 +140,8 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       if (!view?.current) return;
       fitPreviewCamera(view.camera, view.controls, view.current, {
         view: 'front',
-        strategy: 'max-dimension',
-        padding: 1.45,
+        strategy: 'extent',
+        padding: 1.16,
       });
     };
 
@@ -251,7 +249,7 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       ) : (
         <>
           <div className="viewport-hint">拖拽旋转 · 滚轮缩放</div>
-          <div className="viewport-orientation">正面 <b>+Z</b></div>
+          <div className="viewport-orientation">正面检查：脸和胸前应朝向绿色箭头</div>
           <button
             type="button"
             className="viewport-toggle"
@@ -265,10 +263,10 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
             <button
               type="button"
               className="viewport-reset viewport-front"
-              title="切换到角色正面"
+              title="切换到角色正面检查"
               onClick={() => state.current?.front()}
             >
-              正面
+              正面检查
             </button>
             <button type="button" className="viewport-reset" onClick={() => state.current?.fit()}>
               重置视角
