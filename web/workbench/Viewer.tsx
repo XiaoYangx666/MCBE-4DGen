@@ -12,6 +12,7 @@ import type { HumanoidProfile } from "../../src/humanoid";
 import type { Result, Session } from "./types";
 import { api } from "../lib/api";
 import { preparePreviewMaterial } from "./preview-material";
+import { createPreviewLighting } from "../shared/preview-lighting";
 import { HoldOriginalButton } from "./HoldOriginalButton";
 import { captureCameraView, restoreCameraView, type CameraViewState } from "./camera-state";
 
@@ -80,10 +81,7 @@ export function Viewer({
     el.appendChild(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x707984, 3));
-    const light = new THREE.DirectionalLight(0xffffff, 2);
-    light.position.set(20, 40, 30);
-    scene.add(light);
+    const lighting = createPreviewLighting(renderer, scene);
     const grid = new THREE.GridHelper(64, 32, 0x46515b, 0x282f36);
     scene.add(grid);
     const forward = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0.1, 0), 18, 0xa8dfb8, 3, 1.5);
@@ -252,6 +250,8 @@ export function Viewer({
           }));
         });
         applyPose();
+        lighting.apply(!settings.current.unlit, group);
+        lighting.fit(group);
         const saved = cameraState.current;
         if (saved?.sessionId === session.id) {
           restoreCameraView(saved, camera, controls);
@@ -301,9 +301,9 @@ export function Viewer({
       if(modelDirty) {
         modelDirty = false;
         applyPose();
+        const current = settings.current;
         group.traverse((object) => {
           if (!(object instanceof THREE.Mesh)) return;
-          const current = settings.current;
           object.visible = current.mode !== "result"
             ? current.solo !== null
               ? object.userData.materialNames?.includes(current.solo)
@@ -315,6 +315,10 @@ export function Viewer({
             for (const material of materials) material.wireframe = current.wire;
           }
         });
+        // Lighting follows the posed bounds; unlit mode still shows the flat
+        // materials, so the rig just swaps to its ambient fill.
+        lighting.apply(!current.unlit, group);
+        lighting.fit(group);
       }
       const moving = controls.update();
       renderer.render(scene, camera);
@@ -346,6 +350,7 @@ export function Viewer({
       directionLabel.material.dispose();
       labelTexture.dispose();
       disposeObject(group);
+      lighting.dispose();
       grid.geometry.dispose();
       (grid.material as THREE.Material).dispose();
       renderer.dispose();

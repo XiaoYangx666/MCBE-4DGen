@@ -95,6 +95,7 @@ npm run check:webapp    # 只检查网页版
 - `web/shared/palettes.ts`：配色 key、名称、说明与默认配色。
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态；图标和剪贴板通过 props 注入。
 - `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与相机取景；桌面端皮肤包预览和网页版 3D 预览共用。
+- `web/shared/preview-lighting.ts`：预览用的环境光、三点光、软阴影和自适应光位；网页版、桌面皮肤包预览和工作台共用。
 - `web/shared/format.ts`：网页版使用的 `formatBytes` / `safeFilename` / `formatCount`。
 - `web/shared/useDialogDismiss.ts`：网页版弹窗共用的 Esc、背景点击与初始焦点行为。
 - 测试中的校验器：网页版导出的皮肤包会用桌面版同一套 `validateSkinPackFiles` / `validateSkinPackPath` 检查。
@@ -176,6 +177,7 @@ webapp/
 - `web/shared/palettes.ts`：配色 key、名称、说明与默认值。
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态，图标和剪贴板由调用方注入。
 - `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与相机取景，桌面端与网页端共用。
+- `web/shared/preview-lighting.ts`：预览环境光、三点光、软阴影与自适应光位，桌面端与网页端共用。
 - `web/shared/format.ts`：`formatBytes`、`safeFilename`、`formatCount`。
 - `web/shared/useDialogDismiss.ts`：Esc、背景点击与初始焦点。
 - `web/styles/theme.css`：网页版直接复用本地工作台的配色变量，保持明暗主题一致。

@@ -5,6 +5,7 @@ import {
   buildPolyMeshPreview,
   fitPreviewCamera,
 } from "../shared/poly-mesh-preview";
+import { createPreviewLighting } from "../shared/preview-lighting";
 import { createDemandRender } from "../workbench/demand-render";
 import type { Scene } from "./pack-types";
 import { bindViewportAppearance } from "../workbench/viewport-appearance";
@@ -67,14 +68,14 @@ export function PackPreview({
     controls.addEventListener("start", () => {
       userMoved = true;
     });
-    world.add(new THREE.HemisphereLight(0xffffff, 0x707984, 3));
-    const light = new THREE.DirectionalLight(0xffffff, 2);
-    light.position.set(20, 40, 30);
-    world.add(light);
+    let requestRender = () => {};
+    // Pack previews are always lit; the rig also owns the soft ground shadow.
+    const lighting = createPreviewLighting(renderer, world, {
+      onChange: () => requestRender(),
+    });
     const grid = new THREE.GridHelper(48, 24, 0x46515b, 0x282f36);
     grid.position.y = -0.01;
     world.add(grid);
-    let requestRender = () => {};
 
     const preview = buildPolyMeshPreview(scene.geometry, scene.texture, {
       identifier: scene.identifier as `geometry.${string}`,
@@ -86,6 +87,8 @@ export function PackPreview({
     });
     const group = preview.object;
     world.add(group);
+    lighting.apply(true, group);
+    lighting.fit(group);
 
     // Match the in-game forward direction: Bedrock packs face -Z, so the
     // default camera sits in front of the model and looks back along +Z.
@@ -135,6 +138,7 @@ export function PackPreview({
       resize.disconnect();
       controls.dispose();
       preview.dispose();
+      lighting.dispose();
       grid.geometry.dispose();
       (grid.material as THREE.Material).dispose();
       renderer.dispose();
