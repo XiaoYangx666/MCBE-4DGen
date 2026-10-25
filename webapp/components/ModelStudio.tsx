@@ -187,7 +187,7 @@ export function ModelStudio() {
             disabled={loading || busy}
           />
           <div className="model-source-entry">
-            <button type="button" className="text-button" onClick={() => setSourcesOpen(true)}>
+            <button type="button" className="button-link" onClick={() => setSourcesOpen(true)}>
               获取模型 <span aria-hidden="true">↗</span>
             </button>
           </div>
@@ -278,7 +278,10 @@ export function ModelStudio() {
                 <>
                   <Icon name="cube" size={42} />
                   <h2>还没有导入模型</h2>
-                  <p>先拖入一个模型。</p>
+                  <p>拖入模型，或从常用站点获取。</p>
+                  <button type="button" className="button-link" onClick={() => setSourcesOpen(true)}>
+                    获取模型 <span aria-hidden="true">↗</span>
+                  </button>
                 </>
               )}
             </div>

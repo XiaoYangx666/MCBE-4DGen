@@ -404,7 +404,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .text-button:hover:not(:disabled) { background: transparent; color: var(--ink); }
 
 .model-source-entry { display: flex; justify-content: flex-end; margin-top: 8px; }
-.model-source-entry .text-button { display: inline-flex; align-items: center; gap: 3px; }
+.model-source-entry .button-link { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; font-size: 11px; }
 
 .button-link {
   display: inline-flex;
@@ -877,6 +877,7 @@ button.text-danger:hover:not(:disabled) { background: transparent; color: var(--
 .empty-state svg { color: var(--accent); opacity: 0.65; }
 .empty-state h2 { color: var(--ink); font-weight: 500; font-size: 18px; margin: 14px 0 0; }
 .empty-state p { margin: 6px 0 0; font-size: 12px; max-width: 360px; color: var(--muted); }
+.empty-state .button-link { margin-top: 14px; }
 .empty-state.compact { height: 100%; padding: 24px; }
 
 /* ---------- model viewport ---------- */
