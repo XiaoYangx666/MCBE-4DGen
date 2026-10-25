@@ -5,6 +5,16 @@
  * chrome and spacing around this component.
  */
 
+/*
+ * Shared three.js preview shell: setSize(..., false) keeps the drawing buffer
+ * at CSS size × DPR, so the canvas itself must fill its host box.
+ */
+.preview-viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .source-directory {
   display: flex;
   flex: 1 1 auto;

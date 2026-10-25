@@ -265,7 +265,10 @@ export function ModelStudio() {
 
         <div className="model-stage">
           {viewObject ? (
-            <Viewport object={viewObject} grid={viewMode === 'output'} />
+            <Viewport
+              object={viewObject}
+              grid={viewMode === 'output'}
+            />
           ) : (
             <div className="empty-state compact">
               {loading ? (

@@ -89,7 +89,7 @@ npm run test:node
 - `library/`：模型库的 `ModelListPane`、`ImportModelDialog`、`RenameModelDialog`、`RelinkModelDialog`、`DeleteModelDialog` 与 `model-types.ts`。
 - `packs/`：`PackSidebar`、`PackHeader`、`SkinList`、`SkinDetail`、`PackDialogs`、`GameSkinsPanel`、`PersonaRecipePanel`、`PackPreview`、`SaveSkinDialog`、`GameStatusBadge`，以及 `use-pack-page.ts`、`pack-types.ts`、`pack-state.ts`、`pack-menu.ts`、`pack-ui.ts`、`game-skins-types.ts`。`PackPage` 只负责视图，数据加载和操作由 `usePackPage` 统一管理。
 - `ui/`：`AppBar`、`WebNav`、`AboutDialog`、`ContextMenu`、`InlineName`、`Modal`、`SelectableRow` 等跨页面组件。
-- `shared/`：与纯浏览器网页版共用的展示层，只依赖 Web 标准 API 与 React：`palettes.ts`（配色元数据）、`SourceDirectory.tsx`（模型站点目录）、`poly-mesh-preview.ts`（导出的 poly_mesh → three.js 网格、纹理与取景）、`preview-lighting.ts`（预览环境光、三点光与软阴影）、`preview-orientation.ts`（前向箭头与标签）、`format.ts`（字节与文件名工具）、`clipboard.ts`（复制回退）、`useDialogDismiss.ts`（Esc/背景点击）。这里不放 API、IndexedDB 或服务端数据模型。
+- `shared/`：与纯浏览器网页版共用的展示层，只依赖 Web 标准 API 与 React：`palettes.ts`（配色元数据）、`SourceDirectory.tsx`（模型站点目录）、`poly-mesh-preview.ts`（导出的 poly_mesh → three.js 网格、纹理与统一取景 preset）、`preview-viewport.ts`（renderer / scene / camera / OrbitControls / 渲染循环 / 光照与正面指示的共享外壳）、`preview-lighting.ts`（预览环境光、三点光与软阴影）、`preview-orientation.ts`（前向箭头与标签）、`demand-render.ts`（按需渲染合并）、`viewport-appearance.ts`（主题背景与网格着色）、`format.ts`（字节与文件名工具）、`clipboard.ts`（复制回退）、`useDialogDismiss.ts`（Esc/背景点击）。这里不放 API、IndexedDB 或服务端数据模型。
 - `lib/`：`api.ts`、`appearance.ts`、`navigation.ts`、`use-hash-route.ts` 等基础设施。
 - `styles/`：`style.css`、`workflow.css`、`theme.css`、`shared.css`。
 
@@ -110,7 +110,7 @@ npm run test:node
 - `lib/pack-import.ts`：读取 legacy poly_mesh 皮肤包 ZIP 并转换成单包里的皮肤。
 - `components/`：图片模式、模型模式、`ModelSourcesDialog`（获取模型弹窗外壳）、单包管理、`SkinPreview`（皮肤卡片的三维预览弹窗）、视口、拖放与下载。
 - 共享 `src/skin-pack-files.ts` 与 `src/geometry-validator.ts`；不导入 `sharp`、`node:fs` 或 `libassimp`。
-- 共享展示层 `web/shared/`：配色元数据、模型站点目录、`formatBytes` / `safeFilename` 与弹窗 Esc/背景点击行为。`webapp/lib/theme.ts`、`webapp/lib/download.ts` 只做再导出，持久化仍留在网页版本地。
+- 共享展示层 `web/shared/`：配色元数据、模型站点目录、`formatBytes` / `safeFilename`、弹窗 Esc/背景点击行为，以及预览外壳（`preview-viewport`、`poly-mesh-preview`、`preview-lighting`、`preview-orientation`、`demand-render`、`viewport-appearance`）。`webapp/lib/theme.ts`、`webapp/lib/download.ts` 只做再导出，持久化仍留在网页版本地。
 - 样式复用 `web/styles/theme.css` 的明暗主题变量与 `web/styles/shared.css` 的站点目录样式，页面布局遵循本地工作台的顶栏、双栏卡片与紧凑表单。
 
 ## 验证

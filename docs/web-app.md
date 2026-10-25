@@ -95,9 +95,12 @@ npm run check:webapp    # 只检查网页版
 - `web/styles/shared.css`：模型站点目录的卡片、搜索框、分类标签与响应式规则。
 - `web/shared/palettes.ts`：配色 key、名称、说明与默认配色。
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态；图标和剪贴板通过 props 注入。
-- `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与相机取景；桌面端皮肤包预览和网页版 3D 预览共用。
+- `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与统一取景 preset（`PREVIEW_CAMERA` / `PREVIEW_FRAMING`）；桌面端皮肤包预览、网页版 3D 预览和工作台共用。
+- `web/shared/preview-viewport.ts`：renderer、scene、camera、OrbitControls、ResizeObserver、连续/按需渲染循环、光照与正面指示的共享外壳；网页版和桌面皮肤包预览完整使用，工作台复用它并保留姿势/材质/focus 逻辑。
 - `web/shared/preview-lighting.ts`：预览用的环境光、三点光、软阴影和自适应光位；网页版、桌面皮肤包预览和工作台共用。
 - `web/shared/preview-orientation.ts`：预览的绿色前向箭头和文字标签，方向和位置可配置；三个预览入口共用。
+- `web/shared/demand-render.ts`：按需渲染的帧合并；共享外壳与工作台共用。
+- `web/shared/viewport-appearance.ts`：主题 `--viewport` 背景与 `--muted` 网格着色；共享外壳与工作台共用。
 - `web/shared/format.ts`：网页版使用的 `formatBytes` / `safeFilename` / `formatCount`。
 - `web/shared/useDialogDismiss.ts`：网页版弹窗共用的 Esc、背景点击与初始焦点行为。
 - 测试中的校验器：网页版导出的皮肤包会用桌面版同一套 `validateSkinPackFiles` / `validateSkinPackPath` 检查。
@@ -138,6 +141,7 @@ npm run check:webapp    # 只检查网页版
 - 转换在主线程完成。很大的模型可能短暂卡住页面，后续可以移到 Web Worker。
 - 预览需要 WebGL；转换本身只依赖 Canvas 2D。
 - 预览展示的是导出的静态几何，不包含骨骼动画、表情和源模型姿势。
+- 源模型朝向不做自动归一化；预览按 −Z 作为角色正面，源模型本身朝 +Z 时看起来会是背面。
 - 网页版只保留一个皮肤包，且存储在当前浏览器的 IndexedDB 中。
 - 导入只支持 `1.8.0` legacy poly_mesh 皮肤包；内置人形、cube 几何和 KTX2/Draco 资源会被跳过。
 - 导出是带顶层文件夹的 `.zip`，需要手动解压到 `skin_packs`，不提供一键写入游戏目录。
@@ -178,9 +182,12 @@ webapp/
 - `src/source-sites.ts`：模型站点目录与分类数据。
 - `web/shared/palettes.ts`：配色 key、名称、说明与默认值。
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态，图标和剪贴板由调用方注入。
-- `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与相机取景，桌面端与网页端共用。
+- `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与统一取景 preset，桌面端与网页端共用。
+- `web/shared/preview-viewport.ts`：共享预览外壳（renderer、camera、OrbitControls、渲染循环、光照、正面指示、网格/背景与对象生命周期）。
 - `web/shared/preview-lighting.ts`：预览环境光、三点光、软阴影与自适应光位，桌面端与网页端共用。
 - `web/shared/preview-orientation.ts`：预览的前向箭头与标签，桌面端与网页端共用。
+- `web/shared/demand-render.ts`：按需渲染的帧合并。
+- `web/shared/viewport-appearance.ts`：主题背景与网格着色。
 - `web/shared/format.ts`：`formatBytes`、`safeFilename`、`formatCount`。
 - `web/shared/useDialogDismiss.ts`：Esc、背景点击与初始焦点。
 - `web/styles/theme.css`：网页版直接复用本地工作台的配色变量，保持明暗主题一致。
