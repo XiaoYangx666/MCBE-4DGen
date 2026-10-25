@@ -1,8 +1,5 @@
-import {bindViewportAppearance} from "./viewport-appearance";
-import { createDemandRender } from "./demand-render";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { decodeGeometryTriangles } from "../../src/geometry-validator";
@@ -12,8 +9,10 @@ import type { HumanoidProfile } from "../../src/humanoid";
 import type { Result, Session } from "./types";
 import { api } from "../lib/api";
 import { preparePreviewMaterial } from "./preview-material";
-import { createPreviewLighting } from "../shared/preview-lighting";
-import { createPreviewOrientation } from "../shared/preview-orientation";
+import {
+  createPreviewViewport,
+  type PreviewViewport,
+} from "../shared/preview-viewport";
 import { HoldOriginalButton } from "./HoldOriginalButton";
 import { captureCameraView, restoreCameraView, type CameraViewState } from "./camera-state";
 
@@ -73,27 +72,38 @@ export function Viewer({
     const el = host.current!;
     let disposed = false;
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#15191e");
-    const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 10000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    el.appendChild(renderer.domElement);
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    const lighting = createPreviewLighting(renderer, scene);
-    const grid = new THREE.GridHelper(64, 32, 0x46515b, 0x282f36);
-    scene.add(grid);
-    const orientation = createPreviewOrientation({
-      direction: -1,
-      label: "玩家正前方（−Z）",
-    });
-    scene.add(orientation.object);
-    const group = new THREE.Group();
-    scene.add(group);
     let poseController: ReturnType<typeof createPosePreview> | null = null;
     let poseSignature = "";
+    let modelDirty = true;
+    let beforeRender = () => {};
+
+    let view: PreviewViewport;
+    try {
+      view = createPreviewViewport({
+        host: el,
+        theme: true,
+        grid: {
+          size: 64,
+          divisions: 32,
+          color: 0x46515b,
+          centerColor: 0x282f36,
+        },
+        lit: !settings.current.unlit,
+        renderMode: "demand",
+        controls: { enableDamping: true },
+        orientation: { direction: -1, label: "玩家正前方（−Z）" },
+        onBeforeRender: () => beforeRender(),
+        onContextLost: () =>
+          setError("WebGL 上下文丢失，请刷新页面后重试。"),
+      });
+    } catch (e) {
+      setError(String(e));
+      setLoading(false);
+      return;
+    }
+    const { camera, controls, lighting, orientation } = view;
+    const group = new THREE.Group();
+    view.setObject(group, { frame: false });
 
     function applyPose() {
       if (!poseController) return;
@@ -117,7 +127,6 @@ export function Viewer({
     }
 
     function fit(part = "all", front = false) {
-      const object = part === "all" ? group : group.children.find((child) => child.name === part);
       const box = new THREE.Box3();
       if (part.startsWith("material:")) {
         group.traverse((object) => {
@@ -126,22 +135,12 @@ export function Viewer({
           }
         });
       } else {
+        const object = part === "all" ? group : group.children.find((child) => child.name === part);
         if (!object) return;
         box.setFromObject(object);
       }
       if (box.isEmpty()) return;
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3()).length();
-      controls.target.copy(center);
-      camera.position.copy(center).add(front
-        ? new THREE.Vector3(0, 0, -size * 1.65)
-        : new THREE.Vector3(size * 0.65, size * 0.25, size * 1.65));
-      camera.up.set(0, 1, 0);
-      camera.zoom = 1;
-      camera.near = Math.max(0.001, size / 1000);
-      camera.far = Math.max(100, size * 100);
-      camera.updateProjectionMatrix();
-      controls.update();
+      view.frameBox(box, front ? "front" : "angle", { resetZoom: true });
     }
     frameRef.current = (part) => fit(part ?? "all", !!previewUrl);
     frontRef.current = () => fit("all", true);
@@ -241,9 +240,9 @@ export function Viewer({
           }));
         });
         applyPose();
-        lighting.apply(!settings.current.unlit, group);
+        view.setLit(!settings.current.unlit, { invalidate: false });
         lighting.fit(group);
-        orientation.fit(group);
+        orientation?.fit(group);
         const saved = cameraState.current;
         if (saved?.sessionId === session.id) {
           restoreCameraView(saved, camera, controls);
@@ -262,13 +261,6 @@ export function Viewer({
     }
     void load();
 
-    const resize = new ResizeObserver(() => {
-      camera.aspect = el.clientWidth / el.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(el.clientWidth, el.clientHeight);
-      invalidate.current?.();
-    });
-    resize.observe(el);
     const ray = new THREE.Raycaster();
     let down = [0, 0];
     const pointerDown = (event: PointerEvent) => { down = [event.clientX, event.clientY]; };
@@ -286,43 +278,41 @@ export function Viewer({
         settings.current.onSelect(currentMode !== "result" ? (names?.[0] ?? hit.object.name) : hit.object.name);
       }
     };
-    renderer.domElement.addEventListener("pointerdown", pointerDown);
-    renderer.domElement.addEventListener("pointerup", pointerUp);
-    let modelDirty = true;
-    const render = createDemandRender(() => {
-      if(modelDirty) {
-        modelDirty = false;
-        applyPose();
-        const current = settings.current;
-        group.traverse((object) => {
-          if (!(object instanceof THREE.Mesh)) return;
-          object.visible = current.mode !== "result"
-            ? current.solo !== null
-              ? object.userData.materialNames?.includes(current.solo)
-              : !object.userData.materialNames?.some((name: string) => current.excluded.includes(name))
-            : current.focus === "all" || object.name === current.focus;
-          const materials = current.unlit ? object.userData.flat : object.userData.original;
-          if (materials) {
-            object.material = materials.length === 1 ? materials[0] : materials;
-            for (const material of materials) material.wireframe = current.wire;
-          }
-        });
-        // Lighting follows the posed bounds; unlit mode still shows the flat
-        // materials, so the rig just swaps to its ambient fill.
-        lighting.apply(!current.unlit, group);
-        lighting.fit(group);
-        orientation.fit(group);
-      }
-      const moving = controls.update();
-      renderer.render(scene, camera);
-      return moving;
-    });
-    invalidate.current = () => {modelDirty = true;render.request();};
-    controls.addEventListener("change",render.request);
-    render.request();
-    const unbindAppearance=bindViewportAppearance(scene, grid, render.request);
+    view.renderer.domElement.addEventListener("pointerdown", pointerDown);
+    view.renderer.domElement.addEventListener("pointerup", pointerUp);
+
+    beforeRender = () => {
+      if (!modelDirty) return;
+      modelDirty = false;
+      applyPose();
+      const current = settings.current;
+      group.traverse((object) => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.visible = current.mode !== "result"
+          ? current.solo !== null
+            ? object.userData.materialNames?.includes(current.solo)
+            : !object.userData.materialNames?.some((name: string) => current.excluded.includes(name))
+          : current.focus === "all" || object.name === current.focus;
+        const materials = current.unlit ? object.userData.flat : object.userData.original;
+        if (materials) {
+          object.material = materials.length === 1 ? materials[0] : materials;
+          for (const material of materials) material.wireframe = current.wire;
+        }
+      });
+      // Lighting follows the posed bounds; unlit mode still shows the flat
+      // materials, so the rig just swaps to its ambient fill.
+      view.setLit(!current.unlit, { invalidate: false });
+      lighting.fit(group);
+      orientation?.fit(group);
+    };
+
+    invalidate.current = () => {
+      modelDirty = true;
+      view.invalidate();
+    };
+    view.invalidate();
+
     return () => {
-      unbindAppearance();
       disposed = true;
       setLoading(false);
       cameraState.current = {
@@ -330,19 +320,10 @@ export function Viewer({
         ...captureCameraView(camera.position, controls.target, camera.up, camera.zoom),
       };
       invalidate.current = null;
-      controls.removeEventListener("change",render.request);
-      render.dispose();
-      resize.disconnect();
-      renderer.domElement.removeEventListener("pointerdown", pointerDown);
-      renderer.domElement.removeEventListener("pointerup", pointerUp);
-      controls.dispose();
+      view.renderer.domElement.removeEventListener("pointerdown", pointerDown);
+      view.renderer.domElement.removeEventListener("pointerup", pointerUp);
+      view.dispose();
       disposeObject(group);
-      orientation.dispose();
-      lighting.dispose();
-      grid.geometry.dispose();
-      (grid.material as THREE.Material).dispose();
-      renderer.dispose();
-      renderer.domElement.remove();
     };
   }, [previewUrl, session?.id, viewKind === "result" ? result?.id : undefined, viewKind]);
 

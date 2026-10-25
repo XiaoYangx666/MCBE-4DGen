@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   buildPolyMeshPreview,
-  fitPreviewCamera,
+  type PolyMeshPreview,
 } from "../shared/poly-mesh-preview";
-import { createPreviewLighting } from "../shared/preview-lighting";
-import { createPreviewOrientation } from "../shared/preview-orientation";
-import { createDemandRender } from "../workbench/demand-render";
+import {
+  createPreviewViewport,
+  type PreviewViewport,
+} from "../shared/preview-viewport";
 import type { Scene } from "./pack-types";
-import { bindViewportAppearance } from "../workbench/viewport-appearance";
 
 /** Full-size rotatable preview of a library pack's first skin. */
 export function PackPreview({
@@ -54,103 +53,59 @@ export function PackPreview({
   useEffect(() => {
     const el = host.current;
     if (!el || !scene?.geometry) return;
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    el.appendChild(renderer.domElement);
-    const world = new THREE.Scene();
-    world.background = new THREE.Color("#15191e");
-    const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 10000);
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.enablePan = false;
-    let userMoved = false;
-    controls.addEventListener("start", () => {
-      userMoved = true;
-    });
-    let requestRender = () => {};
-    // Pack previews are always lit; the rig also owns the soft ground shadow.
-    const lighting = createPreviewLighting(renderer, world, {
-      onChange: () => requestRender(),
-    });
-    const grid = new THREE.GridHelper(48, 24, 0x46515b, 0x282f36);
-    grid.position.y = -0.01;
-    world.add(grid);
-    const orientation = createPreviewOrientation({
-      direction: -1,
-      label: "玩家正前方（−Z）",
-    });
-    world.add(orientation.object);
-
-    const preview = buildPolyMeshPreview(scene.geometry, scene.texture, {
-      identifier: scene.identifier as `geometry.${string}`,
-      groupByBone: true,
-      mirrorX: true,
-      side: THREE.FrontSide,
-      alphaTest: 0.5,
-      onTextureLoad: () => requestRender(),
-    });
-    const group = preview.object;
-    world.add(group);
-    lighting.apply(true, group);
-    lighting.fit(group);
-    orientation.fit(group);
-
-    // Match the in-game forward direction: Bedrock packs face -Z, so the
-    // default camera sits in front of the model and looks back along +Z.
-    let currentView: "front" | "angle" = "angle";
-    const view = (kind: "front" | "angle") => {
-      currentView = kind;
-      fitPreviewCamera(camera, controls, group, {
-        view: kind,
-        strategy: "extent",
-        aspect: (el.clientWidth || 1) / (el.clientHeight || 1),
-        padding: 1.16,
+    setError("");
+    let view: PreviewViewport | null = null;
+    let preview: PolyMeshPreview | null = null;
+    try {
+      view = createPreviewViewport({
+        host: el,
+        theme: true,
+        grid: {
+          size: 48,
+          divisions: 24,
+          color: 0x46515b,
+          centerColor: 0x282f36,
+          y: -0.01,
+        },
+        lit: true,
+        renderMode: "demand",
+        controls: { enablePan: false },
+        orientation: { direction: -1, label: "玩家正前方（−Z）" },
+        // Pack previews stay framed until the user starts orbiting.
+        refitOnResize: "until-user-moves",
       });
-    };
-    fitRef.current = {
-      front: () => view("front"),
-      reset: () => view("angle"),
-    };
-    view("angle");
-
-    const resize = new ResizeObserver(() => {
-      const width = el.clientWidth || 1;
-      const height = el.clientHeight || 1;
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-      if (!userMoved) view(currentView);
-      render.request();
-    });
-    resize.observe(el);
-    const render = createDemandRender(() => {
-      const moving = controls.update();
-      renderer.render(world, camera);
-      return moving;
-    });
-    requestRender = render.request;
-    controls.addEventListener("change", render.request);
-    render.request();
-    const unbindAppearance = bindViewportAppearance(
-      world,
-      grid,
-      render.request,
-    );
+      preview = buildPolyMeshPreview(scene.geometry, scene.texture, {
+        identifier: scene.identifier as `geometry.${string}`,
+        groupByBone: true,
+        mirrorX: true,
+        side: THREE.FrontSide,
+        alphaTest: 0.5,
+        onTextureLoad: () => view?.invalidate(),
+      });
+      view.setObject(preview.object);
+      fitRef.current = {
+        front: () => {
+          view?.fit("front");
+        },
+        reset: () => {
+          view?.reset();
+        },
+      };
+    } catch (cause) {
+      preview?.dispose();
+      view?.dispose();
+      fitRef.current = null;
+      setError(
+        cause instanceof Error ? cause.message : "三维预览不可用",
+      );
+      return;
+    }
     return () => {
-      unbindAppearance();
-      controls.removeEventListener("change", render.request);
-      render.dispose();
-      resize.disconnect();
-      controls.dispose();
-      preview.dispose();
-      orientation.dispose();
-      lighting.dispose();
-      grid.geometry.dispose();
-      (grid.material as THREE.Material).dispose();
-      renderer.dispose();
-      renderer.domElement.remove();
+      fitRef.current = null;
+      view?.dispose();
+      preview?.dispose();
+      view = null;
+      preview = null;
     };
   }, [scene]);
 
@@ -166,7 +121,7 @@ export function PackPreview({
           <div className="packs-preview-hint">标准皮肤 · 仅贴图</div>
         </>
       )}
-      {scene?.geometry && (
+      {scene?.geometry && !error && (
         <>
           <div className="packs-preview-hint">
             初始视角：游戏正前方（−Z）· 拖动旋转 · 滚轮缩放

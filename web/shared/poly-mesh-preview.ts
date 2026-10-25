@@ -186,27 +186,52 @@ export interface FitPreviewCameraOptions {
   /** `angle` matches each caller's default framing; `front` looks along -Z. */
   view?: "angle" | "front";
   /**
-   * `max-dimension` is the web app's bounding-sphere framing (fits the largest
-   * side regardless of aspect). `extent` is the desktop's width/height framing.
+   * `max-dimension` is the legacy bounding-sphere framing (fits the largest
+   * side regardless of aspect). `extent` is the shared desktop-style
+   * width/height framing used by every preview shell.
    */
   strategy?: "max-dimension" | "extent";
   /** Width / height used by the `extent` strategy. Defaults to camera.aspect. */
   aspect?: number;
   /** Distance multiplier. Defaults to 1.45 for `max-dimension`, 1.16 for `extent`. */
   padding?: number;
+  /** Reset `camera.zoom` to 1 while framing. Defaults to false. */
+  resetZoom?: boolean;
+  /**
+   * Which Z side the `extent` angle/front camera sits on. Defaults to -1
+   * (Bedrock forward). Pass 1 for source models authored facing +Z.
+   */
+  directionZ?: 1 | -1;
 }
 
+/** Camera defaults shared by every preview shell. */
+export const PREVIEW_CAMERA = {
+  fov: 32,
+  near: 0.01,
+  far: 10_000,
+} as const;
+
+export type PreviewViewKind = "angle" | "front";
+
 /**
- * Frame an object with the camera. The two strategies intentionally keep their
- * original distance maths; only the shared plumbing lives here.
+ * The desktop pack preview's framing is the reference: a 3/4 angle and a
+ * straight-on check, both taken from the model's front (-Z) side.
  */
-export function fitPreviewCamera(
+export const PREVIEW_FRAMING: Record<PreviewViewKind, FitPreviewCameraOptions> = {
+  angle: { view: "angle", strategy: "extent", padding: 1.16 },
+  front: { view: "front", strategy: "extent", padding: 1.16 },
+};
+
+/**
+ * Frame a world-space box with the camera. The two strategies intentionally
+ * keep their original distance maths; only the shared plumbing lives here.
+ */
+export function fitPreviewBounds(
   camera: THREE.PerspectiveCamera,
   controls: PreviewCameraControls,
-  object: THREE.Object3D,
+  box: THREE.Box3,
   options: FitPreviewCameraOptions = {},
 ): boolean {
-  const box = new THREE.Box3().setFromObject(object);
   if (box.isEmpty()) return false;
 
   const center = box.getCenter(new THREE.Vector3());
@@ -222,10 +247,11 @@ export function fitPreviewCamera(
     const fitHeight = size.y / (2 * Math.tan(fov / 2));
     const fitWidth = Math.max(size.x, size.z) / (2 * Math.tan(fov / 2) * aspect);
     distance = Math.max(fitHeight, fitWidth) * (options.padding ?? 1.16);
+    const z = options.directionZ ?? -1;
     direction =
       view === "front"
-        ? new THREE.Vector3(0, 0.07, -1)
-        : new THREE.Vector3(0.42, 0.16, -1);
+        ? new THREE.Vector3(0, 0.07, z)
+        : new THREE.Vector3(0.42, 0.16, z);
     camera.near = Math.max(0.001, distance / 100);
     camera.far = Math.max(1000, distance * 100);
   } else {
@@ -245,7 +271,23 @@ export function fitPreviewCamera(
   camera.position
     .copy(center)
     .addScaledVector(direction.normalize(), distance);
+  if (options.resetZoom) camera.zoom = 1;
   camera.updateProjectionMatrix();
   controls.update();
   return true;
+}
+
+/** Frame an object with the camera. */
+export function fitPreviewCamera(
+  camera: THREE.PerspectiveCamera,
+  controls: PreviewCameraControls,
+  object: THREE.Object3D,
+  options: FitPreviewCameraOptions = {},
+): boolean {
+  return fitPreviewBounds(
+    camera,
+    controls,
+    new THREE.Box3().setFromObject(object),
+    options,
+  );
 }

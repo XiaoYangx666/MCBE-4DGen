@@ -920,7 +920,11 @@ button.text-danger:hover:not(:disabled) { background: transparent; color: var(--
   right: 12px;
   bottom: 12px;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
   gap: 6px;
+  max-width: calc(100% - 24px);
 }
 .viewport-reset {
   padding: 5px 9px;
