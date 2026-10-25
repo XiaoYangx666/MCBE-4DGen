@@ -89,8 +89,9 @@ npm run test:node
 - `library/`：模型库的 `ModelListPane`、`ImportModelDialog`、`RenameModelDialog`、`RelinkModelDialog`、`DeleteModelDialog` 与 `model-types.ts`。
 - `packs/`：`PackSidebar`、`PackHeader`、`SkinList`、`SkinDetail`、`PackDialogs`、`GameSkinsPanel`、`PersonaRecipePanel`、`PackPreview`、`SaveSkinDialog`、`GameStatusBadge`，以及 `use-pack-page.ts`、`pack-types.ts`、`pack-state.ts`、`pack-menu.ts`、`pack-ui.ts`、`game-skins-types.ts`。`PackPage` 只负责视图，数据加载和操作由 `usePackPage` 统一管理。
 - `ui/`：`AppBar`、`WebNav`、`AboutDialog`、`ContextMenu`、`InlineName`、`Modal`、`SelectableRow` 等跨页面组件。
+- `shared/`：与纯浏览器网页版共用的展示层，只依赖 Web 标准 API 与 React：`palettes.ts`（配色元数据）、`SourceDirectory.tsx`（模型站点目录）、`format.ts`（字节与文件名工具）、`clipboard.ts`（复制回退）、`useDialogDismiss.ts`（Esc/背景点击）。这里不放 API、IndexedDB 或服务端数据模型。
 - `lib/`：`api.ts`、`appearance.ts`、`navigation.ts`、`use-hash-route.ts` 等基础设施。
-- `styles/`：`style.css`、`workflow.css`、`theme.css`。
+- `styles/`：`style.css`、`workflow.css`、`theme.css`、`shared.css`。
 
 页面组件持有交互状态；跨页面共享的纯逻辑放到 `packs/`、`workbench/` 或 `lib/`，避免从页面文件反向导入类型或组件。
 
@@ -107,9 +108,10 @@ npm run test:node
 - `lib/output-preview.ts`：从导出的几何反向解码为 three.js 预览，自动识别皮肤包里的几何标识。
 - `lib/pack-types.ts`、`lib/pack-store.ts`、`lib/pack-context.tsx`：单包数据结构、IndexedDB 持久化与 React 状态。
 - `lib/pack-import.ts`：读取 legacy poly_mesh 皮肤包 ZIP 并转换成单包里的皮肤。
-- `components/`：图片模式、模型模式、`ModelSourcesDialog`（常用模型站点目录）、单包管理、`SkinPreview`（皮肤卡片的三维预览弹窗）、视口、拖放与下载。
+- `components/`：图片模式、模型模式、`ModelSourcesDialog`（获取模型弹窗外壳）、单包管理、`SkinPreview`（皮肤卡片的三维预览弹窗）、视口、拖放与下载。
 - 共享 `src/skin-pack-files.ts` 与 `src/geometry-validator.ts`；不导入 `sharp`、`node:fs` 或 `libassimp`。
-- 样式复用 `web/styles/theme.css` 的明暗主题变量，页面布局遵循本地工作台的顶栏、双栏卡片与紧凑表单。
+- 共享展示层 `web/shared/`：配色元数据、模型站点目录、`formatBytes` / `safeFilename` 与弹窗 Esc/背景点击行为。`webapp/lib/theme.ts`、`webapp/lib/download.ts` 只做再导出，持久化仍留在网页版本地。
+- 样式复用 `web/styles/theme.css` 的明暗主题变量与 `web/styles/shared.css` 的站点目录样式，页面布局遵循本地工作台的顶栏、双栏卡片与紧凑表单。
 
 ## 验证
 

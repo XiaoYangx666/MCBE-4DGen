@@ -1,24 +1,21 @@
-export type Palette = "graphite" | "ocean" | "sand" | "rose" | "violet";
+import {
+  DEFAULT_PALETTE,
+  isPalette,
+  type Palette,
+} from "../shared/palettes";
+
+export type { Palette } from "../shared/palettes";
 export type Appearance = "system" | "light" | "dark";
 
-const PALETTES: readonly Palette[] = [
-  "graphite",
-  "ocean",
-  "sand",
-  "rose",
-  "violet",
-];
 const APPEARANCES: readonly Appearance[] = ["system", "light", "dark"];
 
-let palette: Palette = "graphite";
+let palette: Palette = DEFAULT_PALETTE;
 let preference: Appearance = "system";
 const media = matchMedia("(prefers-color-scheme: dark)");
 
 export const getPalette = () => palette;
 export const getAppearance = () => preference;
 
-const isPalette = (value: unknown): value is Palette =>
-  typeof value === "string" && (PALETTES as readonly string[]).includes(value);
 const isAppearance = (value: unknown): value is Appearance =>
   typeof value === "string" &&
   (APPEARANCES as readonly string[]).includes(value);

@@ -17,7 +17,7 @@ npm run check:webapp    # 只检查网页版
 
 ## 功能
 
-界面复用桌面版的明暗主题与配色。首次打开跟随系统明暗，默认 graphite（中性灰）；顶栏的配色按钮可以切换中性灰 / 海盐蓝 / 暖砂 / 玫瑰灰 / 蓝紫五种配色，选择保存在当前浏览器。
+界面复用桌面版的明暗主题与配色。首次打开跟随系统明暗，默认 graphite（中性灰）；顶栏的配色按钮可以切换中性灰 / 海盐蓝 / 暖砂 / 玫瑰灰 / 蓝紫五种配色，选择保存在当前浏览器。配色名称与说明来自 `web/shared/palettes.ts`，与桌面端设置页共用同一份元数据；两边仍各自负责 localStorage 与桌面桥接的持久化。
 
 ### 图片皮肤
 
@@ -43,7 +43,7 @@ npm run check:webapp    # 只检查网页版
 4. 生成单骨骼 `body` 的 `poly_mesh`；背面跟随源材质的双面设置，不再单独提供策略选项。
 5. 用共享的 `src/skin-pack-files.ts` 打包，导出带顶层文件夹的 `.zip`。
 
-模型页拖放区下方的「获取模型」会打开常用模型站点目录，支持搜索和分类；网页版推荐下载 GLB / glTF / VRM / OBJ。
+模型页拖放区下方的「获取模型」会打开常用模型站点目录，支持搜索和分类；网页版推荐下载 GLB / glTF / VRM / OBJ。目录本体是 `web/shared/SourceDirectory.tsx`，与桌面端「获取模型」弹窗共用；两端只注入自己的图标渲染与复制实现（桌面走 `/api/source-icon` 和桌面桥接，网页版用字母头像和 `navigator.clipboard`）。
 
 ### 三维预览
 
@@ -89,14 +89,23 @@ npm run check:webapp    # 只检查网页版
 - `src/skin-pack-files.ts`：`manifest.json`、`skins.json`、语言文件与皮肤包身份，桌面版和网页版导出完全同源。
 - `src/geometry-validator.ts`、`src/bedrock-types.ts`：导出前后的 Bedrock 几何结构校验和类型。
 - `src/image-skin-geometry.ts`：图片平面皮肤的几何由桌面 sharp 路径和浏览器 Canvas 路径共用。
+- `src/source-sites.ts`：模型来源站点目录、分类与搜索数据。
 - `web/styles/theme.css`：明暗主题、调色板与 CSS 变量。
+- `web/styles/shared.css`：模型站点目录的卡片、搜索框、分类标签与响应式规则。
+- `web/shared/palettes.ts`：配色 key、名称、说明与默认配色。
+- `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态；图标和剪贴板通过 props 注入。
+- `web/shared/format.ts`：网页版使用的 `formatBytes` / `safeFilename` / `formatCount`。
+- `web/shared/useDialogDismiss.ts`：网页版弹窗共用的 Esc、背景点击与初始焦点行为。
 - 测试中的校验器：网页版导出的皮肤包会用桌面版同一套 `validateSkinPackFiles` / `validateSkinPackPath` 检查。
 
 没有直接共用：
 
 - 模型导入与导出。桌面版基于 `glTF-transform`、`sharp`、`libassimp`；浏览器版基于 three.js 加载器和 Canvas。强行抽象会把 Node 依赖带进浏览器。
 - 图集规划。桌面版有 UV 连通分岛、材质权重和逐岛重采样；网页版使用适合 128×128 的轻量 shelf packing。
-- 布局 CSS。桌面工作台是固定 `100dvh`、三栏、密集表单；网页版需要单列滚动和触控尺寸，只共用设计变量与视觉规范。
+- 布局 CSS。桌面工作台是固定 `100dvh`、三栏、密集表单；网页版需要单列滚动和触控尺寸，只共用设计变量与视觉规范。弹窗外壳（桌面 `web/ui/Modal.tsx`、网页 `.sources-dialog` / `.preview-dialog`）也各自保留。
+- 数据与持久化。`/api/...`、`window.desktop`、IndexedDB 和皮肤包模型都不进入 `web/shared/`。
+- 体积格式化。桌面设置页的 `formatSize` 使用 `zh-CN` 本地化数字并支持 TB，网页版 `formatBytes` 是紧凑格式（最多 MB、固定小数位）；语义不同，未合并。
+- 配色缩略图 CSS。桌面 `.palette-preview` 与网页版 `.palette-swatch` 尺寸不同，目前只共享配色元数据。
 - `bedrock-exporter.ts`。桌面版按 glTF primitive/骨骼流导出，网页版按三角面汤导出；两者共享输出格式、坐标约定和同一个校验器。以后如果两端都要改 poly_mesh 细节，可以再抽出纯写入器。
 
 ## 与桌面版的差异
@@ -137,7 +146,7 @@ webapp/
   components/
     ImageStudio.tsx       图片模式
     ModelStudio.tsx       模型模式
-    ModelSourcesDialog.tsx 常用模型站点目录
+    ModelSourcesDialog.tsx 获取模型弹窗外壳（目录本体在 web/shared）
     PackStudio.tsx        单包管理、导入与导出
     SkinPreview.tsx       导出的 poly_mesh 三维预览与弹窗
     Viewport.tsx          three.js 预览与轨道控制
@@ -162,7 +171,13 @@ webapp/
 - `src/skin-pack-files.ts`：无 Node 依赖的皮肤包构建器，桌面版与网页版共用。
 - `src/image-skin-geometry.ts`：图片平面皮肤的共享几何。
 - `src/geometry-validator.ts`：导出前后的 Bedrock 几何结构校验。
+- `src/source-sites.ts`：模型站点目录与分类数据。
+- `web/shared/palettes.ts`：配色 key、名称、说明与默认值。
+- `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态，图标和剪贴板由调用方注入。
+- `web/shared/format.ts`：`formatBytes`、`safeFilename`、`formatCount`。
+- `web/shared/useDialogDismiss.ts`：Esc、背景点击与初始焦点。
 - `web/styles/theme.css`：网页版直接复用本地工作台的配色变量，保持明暗主题一致。
+- `web/styles/shared.css`：站点目录的共享卡片与响应式样式。
 
 ## 隐私
 

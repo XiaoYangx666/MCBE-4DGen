@@ -18,6 +18,8 @@
     "../src/geometry-validator.ts",
     "../src/skin-pack-files.ts",
     "../src/source-sites.ts",
+    "../web/shared/**/*.ts",
+    "../web/shared/**/*.tsx",
     "../tests/webapp-geometry.test.ts",
     "../tests/webapp-atlas.test.ts",
     "../tests/webapp-pack-import.test.ts"

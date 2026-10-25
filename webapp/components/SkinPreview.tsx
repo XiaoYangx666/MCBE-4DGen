@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type * as THREE from 'three';
+import { useDialogDismiss } from '../../web/shared/useDialogDismiss';
 import { buildGeometryPreview } from '../lib/output-preview';
 import type { StoredSkin } from '../lib/pack-types';
 import { Icon } from './Icons';
@@ -63,6 +64,10 @@ interface SkinPreviewDialogProps {
 export function SkinPreviewDialog({ skin, onClose }: SkinPreviewDialogProps) {
   const [textureUrl, setTextureUrl] = useState('');
   const closeButton = useRef<HTMLButtonElement>(null);
+  const { backdropProps } = useDialogDismiss({
+    onDismiss: onClose,
+    initialFocus: closeButton,
+  });
 
   useEffect(() => {
     const copy = skin.png.slice();
@@ -72,22 +77,8 @@ export function SkinPreviewDialog({ skin, onClose }: SkinPreviewDialogProps) {
     return () => URL.revokeObjectURL(next);
   }, [skin.png]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    closeButton.current?.focus({ preventScroll: true });
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
   return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
+    <div className="dialog-backdrop" {...backdropProps}>
       <div
         className="preview-dialog"
         role="dialog"
