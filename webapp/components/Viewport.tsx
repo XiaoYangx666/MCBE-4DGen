@@ -8,21 +8,17 @@ import {
 } from '../../web/shared/preview-lighting';
 import { Icon } from './Icons';
 
-const LIGHTING_KEY = '4dgen:preview-lighting';
+// Lighting starts off on every page load. The toggle is remembered for the
+// current session only, so it survives mode switches without becoming sticky.
+let lightingPreference = false;
 
 /** Flat, texture-accurate rendering is the default; lighting is opt-in. */
 function initialLighting() {
-  try {
-    return localStorage.getItem(LIGHTING_KEY) === 'on';
-  } catch {
-    return false;
-  }
+  return lightingPreference;
 }
 
 function rememberLighting(value: boolean) {
-  try {
-    localStorage.setItem(LIGHTING_KEY, value ? 'on' : 'off');
-  } catch { /* storage can be unavailable in private mode */ }
+  lightingPreference = value;
 }
 
 interface ViewportProps {
