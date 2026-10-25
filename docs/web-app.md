@@ -94,6 +94,7 @@ npm run check:webapp    # 只检查网页版
 - `web/styles/shared.css`：模型站点目录的卡片、搜索框、分类标签与响应式规则。
 - `web/shared/palettes.ts`：配色 key、名称、说明与默认配色。
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态；图标和剪贴板通过 props 注入。
+- `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与相机取景；桌面端皮肤包预览和网页版 3D 预览共用。
 - `web/shared/format.ts`：网页版使用的 `formatBytes` / `safeFilename` / `formatCount`。
 - `web/shared/useDialogDismiss.ts`：网页版弹窗共用的 Esc、背景点击与初始焦点行为。
 - 测试中的校验器：网页版导出的皮肤包会用桌面版同一套 `validateSkinPackFiles` / `validateSkinPackPath` 检查。
@@ -158,7 +159,7 @@ webapp/
     bedrock.ts            poly_mesh 导出
     convert.ts            图集 → 几何 → 皮肤包流程
     image-skin.ts         图片平面皮肤
-    output-preview.ts     从导出的几何构建预览，自动识别几何标识
+    output-preview.ts     共享 poly_mesh 预览的薄封装
     pack-types.ts         单包与皮肤的数据结构
     pack-store.ts         IndexedDB 持久化
     pack-context.tsx      单包状态、添加、导入、导出
@@ -174,6 +175,7 @@ webapp/
 - `src/source-sites.ts`：模型站点目录与分类数据。
 - `web/shared/palettes.ts`：配色 key、名称、说明与默认值。
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态，图标和剪贴板由调用方注入。
+- `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与相机取景，桌面端与网页端共用。
 - `web/shared/format.ts`：`formatBytes`、`safeFilename`、`formatCount`。
 - `web/shared/useDialogDismiss.ts`：Esc、背景点击与初始焦点。
 - `web/styles/theme.css`：网页版直接复用本地工作台的配色变量，保持明暗主题一致。
