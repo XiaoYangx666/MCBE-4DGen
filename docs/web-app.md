@@ -51,6 +51,7 @@ npm run check:webapp    # 只检查网页版
 - **图片页**：生成后直接显示 3D 平面，不再单独展示或下载 128 × 128 贴图。
 - **皮肤包页**：每张皮肤卡片右下角的「3D」按钮打开预览弹窗，可旋转、缩放查看实际导出的 `poly_mesh`；导入的皮肤包同样支持，不要求几何标识是 `geometry.skin0`。
 - 预览默认关闭光照，直接按贴图原色显示；每次打开页面都会回到关闭状态，当前会话内的切换会保留。右上角「光照」按钮可切回立体明暗。
+- 预览左上角显示「正面 +Z」，场景内有绿色前向箭头；右下角「正面」按钮可切到角色正面视角。
 - 预览只重建静态几何，不播放骨骼动画、表情或源模型姿势。three.js 和预览代码按需加载，不打开预览不会下载这部分资源。
 - 导出 ZIP 的安装步骤不在生成页展示，后续会集中到一个统一的教程页面。
 
@@ -96,6 +97,7 @@ npm run check:webapp    # 只检查网页版
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态；图标和剪贴板通过 props 注入。
 - `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与相机取景；桌面端皮肤包预览和网页版 3D 预览共用。
 - `web/shared/preview-lighting.ts`：预览用的环境光、三点光、软阴影和自适应光位；网页版、桌面皮肤包预览和工作台共用。
+- `web/shared/preview-orientation.ts`：预览的绿色前向箭头和文字标签，方向和位置可配置；三个预览入口共用。
 - `web/shared/format.ts`：网页版使用的 `formatBytes` / `safeFilename` / `formatCount`。
 - `web/shared/useDialogDismiss.ts`：网页版弹窗共用的 Esc、背景点击与初始焦点行为。
 - 测试中的校验器：网页版导出的皮肤包会用桌面版同一套 `validateSkinPackFiles` / `validateSkinPackPath` 检查。
@@ -151,7 +153,7 @@ webapp/
     ModelSourcesDialog.tsx 获取模型弹窗外壳（目录本体在 web/shared）
     PackStudio.tsx        单包管理、导入与导出
     SkinPreview.tsx       导出的 poly_mesh 三维预览与弹窗
-    Viewport.tsx          three.js 预览与轨道控制
+    Viewport.tsx          three.js 预览、共享光照/正面指示与轨道控制
     DropZone.tsx          文件选择 / 拖放
   lib/
     import-model.ts       GLTF/OBJ/FBX/DAE/STL/PLY 加载
@@ -178,6 +180,7 @@ webapp/
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态，图标和剪贴板由调用方注入。
 - `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与相机取景，桌面端与网页端共用。
 - `web/shared/preview-lighting.ts`：预览环境光、三点光、软阴影与自适应光位，桌面端与网页端共用。
+- `web/shared/preview-orientation.ts`：预览的前向箭头与标签，桌面端与网页端共用。
 - `web/shared/format.ts`：`formatBytes`、`safeFilename`、`formatCount`。
 - `web/shared/useDialogDismiss.ts`：Esc、背景点击与初始焦点。
 - `web/styles/theme.css`：网页版直接复用本地工作台的配色变量，保持明暗主题一致。

@@ -6,6 +6,10 @@ import {
   createPreviewLighting,
   type PreviewLighting,
 } from '../../web/shared/preview-lighting';
+import {
+  createPreviewOrientation,
+  type PreviewOrientation,
+} from '../../web/shared/preview-orientation';
 import { Icon } from './Icons';
 
 // Lighting starts off on every page load. The toggle is remembered for the
@@ -35,7 +39,9 @@ interface ViewState {
   controls: OrbitControls;
   current: THREE.Object3D | null;
   lighting: PreviewLighting;
+  orientation: PreviewOrientation;
   fit: () => void;
+  front: () => void;
 }
 
 // Metalness is restored when lighting is switched back on. A WeakMap keeps the
@@ -98,6 +104,14 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
     element.append(renderer.domElement);
 
     const lighting = createPreviewLighting(renderer, scene);
+    const orientation = createPreviewOrientation({
+      direction: 1,
+      label: false,
+      offset: 'side',
+      elevation: 0.35,
+    });
+    scene.add(orientation.object);
+    orientation.object.visible = false;
 
     const helper = grid ? new THREE.GridHelper(64, 16, 0x3c4660, 0x252b38) : null;
     if (helper) {
@@ -123,6 +137,16 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       });
     };
 
+    const front = () => {
+      const view = state.current;
+      if (!view?.current) return;
+      fitPreviewCamera(view.camera, view.controls, view.current, {
+        view: 'front',
+        strategy: 'max-dimension',
+        padding: 1.45,
+      });
+    };
+
     const view: ViewState = {
       renderer,
       scene,
@@ -130,7 +154,9 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       controls,
       current: null,
       lighting,
+      orientation,
       fit,
+      front,
     };
     state.current = view;
     lighting.apply(litRef.current);
@@ -176,6 +202,7 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       renderer.domElement.remove();
       helper?.geometry.dispose();
       if (helper) (helper.material as THREE.Material).dispose();
+      orientation.dispose();
       lighting.dispose();
       state.current = null;
     };
@@ -188,6 +215,7 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       applyMetalness(view, true);
       view.scene.remove(view.current);
       view.current = null;
+      view.orientation.object.visible = false;
       view.lighting.apply(litRef.current);
     }
     view.current = object;
@@ -197,6 +225,8 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       view.lighting.fit(object);
       applyMetalness(view, litRef.current);
       view.fit();
+      view.orientation.object.visible = true;
+      view.orientation.fit(object);
     }
   }, [object]);
 
@@ -221,6 +251,7 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       ) : (
         <>
           <div className="viewport-hint">拖拽旋转 · 滚轮缩放</div>
+          <div className="viewport-orientation">正面 <b>+Z</b></div>
           <button
             type="button"
             className="viewport-toggle"
@@ -230,9 +261,19 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
           >
             <Icon name="sun" size={12} /> 光照 {lit ? '开' : '关'}
           </button>
-          <button type="button" className="viewport-reset" onClick={() => state.current?.fit()}>
-            重置视角
-          </button>
+          <div className="viewport-actions">
+            <button
+              type="button"
+              className="viewport-reset viewport-front"
+              title="切换到角色正面"
+              onClick={() => state.current?.front()}
+            >
+              正面
+            </button>
+            <button type="button" className="viewport-reset" onClick={() => state.current?.fit()}>
+              重置视角
+            </button>
+          </div>
         </>
       )}
     </div>

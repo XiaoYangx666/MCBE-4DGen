@@ -13,6 +13,7 @@ import type { Result, Session } from "./types";
 import { api } from "../lib/api";
 import { preparePreviewMaterial } from "./preview-material";
 import { createPreviewLighting } from "../shared/preview-lighting";
+import { createPreviewOrientation } from "../shared/preview-orientation";
 import { HoldOriginalButton } from "./HoldOriginalButton";
 import { captureCameraView, restoreCameraView, type CameraViewState } from "./camera-state";
 
@@ -84,21 +85,11 @@ export function Viewer({
     const lighting = createPreviewLighting(renderer, scene);
     const grid = new THREE.GridHelper(64, 32, 0x46515b, 0x282f36);
     scene.add(grid);
-    const forward = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0.1, 0), 18, 0xa8dfb8, 3, 1.5);
-    scene.add(forward);
-    const labelCanvas = document.createElement("canvas");
-    labelCanvas.width = 512;
-    labelCanvas.height = 80;
-    const labelContext = labelCanvas.getContext("2d")!;
-    labelContext.fillStyle = "#a8dfb8";
-    labelContext.font = "32px sans-serif";
-    labelContext.textAlign = "center";
-    labelContext.fillText("玩家正前方（−Z）", 256, 48);
-    const labelTexture = new THREE.CanvasTexture(labelCanvas);
-    const directionLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture, depthTest: false, depthWrite: false }));
-    directionLabel.position.set(0, 1, -21);
-    directionLabel.scale.set(18, 2.8, 1);
-    scene.add(directionLabel);
+    const orientation = createPreviewOrientation({
+      direction: -1,
+      label: "玩家正前方（−Z）",
+    });
+    scene.add(orientation.object);
     const group = new THREE.Group();
     scene.add(group);
     let poseController: ReturnType<typeof createPosePreview> | null = null;
@@ -252,6 +243,7 @@ export function Viewer({
         applyPose();
         lighting.apply(!settings.current.unlit, group);
         lighting.fit(group);
+        orientation.fit(group);
         const saved = cameraState.current;
         if (saved?.sessionId === session.id) {
           restoreCameraView(saved, camera, controls);
@@ -319,6 +311,7 @@ export function Viewer({
         // materials, so the rig just swaps to its ambient fill.
         lighting.apply(!current.unlit, group);
         lighting.fit(group);
+        orientation.fit(group);
       }
       const moving = controls.update();
       renderer.render(scene, camera);
@@ -343,13 +336,8 @@ export function Viewer({
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
       controls.dispose();
-      forward.line.geometry.dispose();
-      forward.cone.geometry.dispose();
-      (forward.line.material as THREE.Material).dispose();
-      (forward.cone.material as THREE.Material).dispose();
-      directionLabel.material.dispose();
-      labelTexture.dispose();
       disposeObject(group);
+      orientation.dispose();
       lighting.dispose();
       grid.geometry.dispose();
       (grid.material as THREE.Material).dispose();
