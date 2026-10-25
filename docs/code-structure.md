@@ -104,8 +104,10 @@ npm run test:node
 - `lib/bedrock.ts`：静态整体绑定、镜像与 `poly_mesh` 导出。
 - `lib/convert.ts`：图集 → 几何 → 皮肤包 → ZIP 流程。
 - `lib/image-skin.ts`：图片平面皮肤。
-- `lib/output-preview.ts`：从导出的 `geometry.json` 反向解码为 three.js 预览。
-- `components/`：图片模式、模型模式、视口、拖放与下载。
+- `lib/output-preview.ts`：从导出的几何反向解码为 three.js 预览，自动识别皮肤包里的几何标识。
+- `lib/pack-types.ts`、`lib/pack-store.ts`、`lib/pack-context.tsx`：单包数据结构、IndexedDB 持久化与 React 状态。
+- `lib/pack-import.ts`：读取 legacy poly_mesh 皮肤包 ZIP 并转换成单包里的皮肤。
+- `components/`：图片模式、模型模式、`ModelSourcesDialog`（常用模型站点目录）、单包管理、`SkinPreview`（皮肤卡片的三维预览弹窗）、视口、拖放与下载。
 - 共享 `src/skin-pack-files.ts` 与 `src/geometry-validator.ts`；不导入 `sharp`、`node:fs` 或 `libassimp`。
 - 样式复用 `web/styles/theme.css` 的明暗主题变量，页面布局遵循本地工作台的顶栏、双栏卡片与紧凑表单。
 

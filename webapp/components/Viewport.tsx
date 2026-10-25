@@ -1,6 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Icon } from './Icons';
+
+const LIGHTING_KEY = '4dgen:preview-lighting';
+
+/** Flat, texture-accurate rendering is the default; lighting is opt-in. */
+function initialLighting() {
+  try {
+    return localStorage.getItem(LIGHTING_KEY) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+function rememberLighting(value: boolean) {
+  try {
+    localStorage.setItem(LIGHTING_KEY, value ? 'on' : 'off');
+  } catch { /* storage can be unavailable in private mode */ }
+}
 
 interface ViewportProps {
   object: THREE.Object3D | null;
@@ -15,13 +33,58 @@ interface ViewState {
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
   current: THREE.Object3D | null;
+  lights: {
+    hemi: THREE.HemisphereLight;
+    key: THREE.DirectionalLight;
+    fill: THREE.DirectionalLight;
+    ambient: THREE.AmbientLight;
+  };
   fit: () => void;
+}
+
+// Metalness is restored when lighting is switched back on. A WeakMap keeps the
+// original value next to materials shared by several meshes.
+const metalnessBackup = new WeakMap<THREE.Material, number>();
+
+function applyLighting(view: ViewState, lit: boolean) {
+  view.lights.hemi.visible = lit;
+  view.lights.key.visible = lit;
+  view.lights.fill.visible = lit;
+  // AmbientLight at PI cancels the 1/PI Lambert factor, so the texture keeps
+  // its authored colours instead of turning grey.
+  view.lights.ambient.visible = !lit;
+
+  const root = view.current;
+  if (!root) return;
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      const standard = material as THREE.MeshStandardMaterial;
+      if (typeof standard.metalness !== 'number') continue;
+      if (!lit) {
+        if (!metalnessBackup.has(material)) metalnessBackup.set(material, standard.metalness);
+        // Metals have no diffuse response to ambient light and would go black.
+        standard.metalness = 0;
+      } else {
+        const saved = metalnessBackup.get(material);
+        if (saved !== undefined) {
+          standard.metalness = saved;
+          metalnessBackup.delete(material);
+        }
+      }
+    }
+  });
 }
 
 export function Viewport({ object, className, grid = false, autoRotate = false }: ViewportProps) {
   const host = useRef<HTMLDivElement>(null);
   const state = useRef<ViewState | null>(null);
   const [failed, setFailed] = useState(false);
+  const [lit, setLit] = useState(initialLighting);
+  const litRef = useRef(lit);
+  litRef.current = lit;
 
   useEffect(() => {
     const element = host.current;
@@ -44,13 +107,17 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
     renderer.setClearColor(0x000000, 0);
     element.append(renderer.domElement);
 
-    scene.add(new THREE.HemisphereLight(0xdce8ff, 0x151a24, 2.4));
+    const hemi = new THREE.HemisphereLight(0xdce8ff, 0x151a24, 2.4);
+    scene.add(hemi);
     const key = new THREE.DirectionalLight(0xffffff, 2.3);
     key.position.set(3, 6, 5);
     scene.add(key);
     const fill = new THREE.DirectionalLight(0x92aeff, 1.1);
     fill.position.set(-5, 2, -4);
     scene.add(fill);
+    const ambient = new THREE.AmbientLight(0xffffff, Math.PI);
+    ambient.visible = false;
+    scene.add(ambient);
 
     const helper = grid ? new THREE.GridHelper(64, 16, 0x3c4660, 0x252b38) : null;
     if (helper) {
@@ -85,8 +152,17 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       view.controls.update();
     };
 
-    const view: ViewState = { renderer, scene, camera, controls, current: null, fit };
+    const view: ViewState = {
+      renderer,
+      scene,
+      camera,
+      controls,
+      current: null,
+      lights: { hemi, key, fill, ambient },
+      fit,
+    };
     state.current = view;
+    applyLighting(view, litRef.current);
 
     const resize = () => {
       const width = Math.max(1, element.clientWidth);
@@ -120,7 +196,10 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       observer.disconnect();
       controls.dispose();
-      if (view.current) scene.remove(view.current);
+      if (view.current) {
+        applyLighting(view, true);
+        scene.remove(view.current);
+      }
       renderer.dispose();
       renderer.domElement.remove();
       helper?.geometry.dispose();
@@ -132,13 +211,25 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
   useEffect(() => {
     const view = state.current;
     if (!view) return;
-    if (view.current && view.current !== object) view.scene.remove(view.current);
+    if (view.current && view.current !== object) {
+      applyLighting(view, true);
+      view.scene.remove(view.current);
+    }
     view.current = object;
     if (object) {
       view.scene.add(object);
+      applyLighting(view, litRef.current);
       view.fit();
     }
   }, [object]);
+
+  const toggleLighting = () => {
+    const next = !lit;
+    setLit(next);
+    rememberLighting(next);
+    const view = state.current;
+    if (view) applyLighting(view, next);
+  };
 
   return (
     <div className={`viewport ${className ?? ''}`} ref={host}>
@@ -150,6 +241,15 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
       ) : (
         <>
           <div className="viewport-hint">拖拽旋转 · 滚轮缩放</div>
+          <button
+            type="button"
+            className="viewport-toggle"
+            aria-pressed={lit}
+            title={lit ? '关闭光照，按贴图原色显示' : '开启光照，查看立体明暗'}
+            onClick={toggleLighting}
+          >
+            <Icon name="sun" size={12} /> 光照 {lit ? '开' : '关'}
+          </button>
           <button type="button" className="viewport-reset" onClick={() => state.current?.fit()}>
             重置视角
           </button>

@@ -1,7 +1,12 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { ImageStudio } from './components/ImageStudio';
+import { PackStudio } from './components/PackStudio';
 import { Icon } from './components/Icons';
-import { applyTheme, initialTheme, rememberTheme, type Theme } from './lib/theme';
+import { SkinPackProvider, useSkinPack } from './lib/pack-context';
+import {
+  applyAppearance, initialPalette, initialTheme, PALETTES,
+  rememberPalette, rememberTheme, type Palette, type Theme,
+} from './lib/theme';
 
 // three.js and the model loaders are only needed after switching to model mode.
 const ModelStudio = lazy(async () => {
@@ -9,18 +14,31 @@ const ModelStudio = lazy(async () => {
   return { default: module.ModelStudio };
 });
 
-type Mode = 'image' | 'model';
+type Mode = 'image' | 'model' | 'pack';
 
 const REPO = 'https://github.com/XiaoYangx666/MCBE-4DGen';
 
 function readMode(): Mode {
-  return window.location.hash.replace('#', '') === 'model' ? 'model' : 'image';
+  const value = window.location.hash.replace('#', '').split('?')[0];
+  return value === 'model' ? 'model' : value === 'pack' ? 'pack' : 'image';
 }
 
 export function App() {
+  return (
+    <SkinPackProvider>
+      <AppShell />
+    </SkinPackProvider>
+  );
+}
+
+function AppShell() {
+  const { pack } = useSkinPack();
   const [mode, setMode] = useState<Mode>(readMode);
   const [modelVisited, setModelVisited] = useState(() => readMode() === 'model');
   const [theme, setTheme] = useState<Theme>(initialTheme);
+  const [palette, setPalette] = useState<Palette>(initialPalette);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteControl = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const change = () => {
@@ -33,12 +51,31 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    applyTheme(theme);
+    applyAppearance(theme, palette);
     rememberTheme(theme);
-  }, [theme]);
+    rememberPalette(palette);
+  }, [theme, palette]);
 
   useEffect(() => {
-    document.title = mode === 'image' ? '4DGen Web · 图片皮肤' : '4DGen Web · 3D 模型';
+    if (!paletteOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!paletteControl.current?.contains(event.target as Node)) setPaletteOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPaletteOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [paletteOpen]);
+
+  useEffect(() => {
+    document.title = mode === 'image'
+      ? '4DGen Web · 图片皮肤'
+      : mode === 'model' ? '4DGen Web · 3D 模型' : '4DGen Web · 我的皮肤包';
     if (mode === 'model') setModelVisited(true);
   }, [mode]);
 
@@ -52,6 +89,7 @@ export function App() {
     <div className="app">
       <header className="app-nav">
         <a className="brand" href="#image" onClick={() => setMode('image')}>
+          <Icon name="cube" size={22} />
           4D<span>Gen</span>
           <i>WEB STUDIO</i>
         </a>
@@ -70,9 +108,56 @@ export function App() {
           >
             3D 模型 <em>BETA</em>
           </button>
+          <button
+            type="button"
+            className={mode === 'pack' ? 'active' : ''}
+            onClick={() => switchMode('pack')}
+          >
+            皮肤包
+            {!!pack?.skins.length && <span className="nav-count">{pack.skins.length}</span>}
+          </button>
         </nav>
         <div className="header-right">
           <span className="local"><b /> 本机处理</span>
+          <div className="palette-control" ref={paletteControl}>
+            <button
+              type="button"
+              className="icon-button"
+              title="界面配色"
+              aria-label="界面配色"
+              aria-haspopup="menu"
+              aria-expanded={paletteOpen}
+              onClick={() => setPaletteOpen((open) => !open)}
+            >
+              <Icon name="palette" size={16} />
+            </button>
+            {paletteOpen && (
+              <div className="palette-popover" role="menu" aria-label="界面配色">
+                {PALETTES.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={palette === item.key}
+                    className={palette === item.key ? 'selected' : ''}
+                    onClick={() => {
+                      setPalette(item.key);
+                      setPaletteOpen(false);
+                    }}
+                  >
+                    <span className={`palette-swatch ${item.key}`} aria-hidden="true">
+                      <i /><i /><i />
+                    </span>
+                    <span className="palette-copy">
+                      <b>{item.label}</b>
+                      <small>{item.hint}</small>
+                    </span>
+                    {palette === item.key && <Icon name="check" size={13} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className="icon-button"
@@ -92,19 +177,22 @@ export function App() {
         <div className="page-heading">
           <div>
             <div className="eyebrow">
-              {mode === 'image' ? 'TEMPLATE / IMAGE' : 'CONVERT / 3D MODEL'}
+              {mode === 'image' ? 'TEMPLATE / IMAGE' : mode === 'model' ? 'CONVERT / 3D MODEL' : 'COLLECTION / SKIN PACK'}
             </div>
-            <h1>{mode === 'image' ? '图片皮肤' : '3D 模型'}</h1>
+            <h1>{mode === 'image' ? '图片皮肤' : mode === 'model' ? '3D 模型' : '我的皮肤包'}</h1>
             <p>
               {mode === 'image'
-                ? '把立绘、表情包或透明 PNG 做成双面平面皮肤，不需要三维模型。'
-                : '导入模型，自动拼贴贴图并生成基岩版 poly_mesh 皮肤。'}
+                ? '把图片做成双面平面皮肤。'
+                : mode === 'model'
+                  ? '导入模型，生成基岩版 poly_mesh 皮肤。'
+                  : '把生成的皮肤收进一个包，导出一个 ZIP。'}
             </p>
           </div>
-          <div className="page-heading-actions">
-            <span className="badge">128 × 128 贴图</span>
-            <span className="badge">静态整体绑定</span>
-          </div>
+          {mode === 'pack' && (
+            <div className="page-heading-actions">
+              <span className="badge">{pack?.skins.length ?? 0} 个皮肤</span>
+            </div>
+          )}
         </div>
 
         <div className="studio-host">
@@ -116,6 +204,7 @@ export function App() {
               </Suspense>
             </div>
           )}
+          <div hidden={mode !== 'pack'}><PackStudio /></div>
         </div>
       </main>
 

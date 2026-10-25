@@ -2,6 +2,13 @@ import * as THREE from 'three';
 import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 import { decodeGeometryTriangles } from '../../src/geometry-validator.ts';
 
+/** Exported packs may use any identifier, so preview the first geometry in the file. */
+export function firstGeometryIdentifier(geometry: BedrockGeometryFile): `geometry.${string}` {
+  const identifier = Object.keys(geometry).find((key) => key.startsWith('geometry.'));
+  if (!identifier) throw new Error('文件里没有可预览的 poly_mesh 几何');
+  return identifier as `geometry.${string}`;
+}
+
 /**
  * Build a three.js preview from the exact exported poly_mesh. Bedrock UVs use
  * a bottom-left origin, matching three's default texture flipY behaviour.
@@ -9,8 +16,9 @@ import { decodeGeometryTriangles } from '../../src/geometry-validator.ts';
 export function buildGeometryPreview(
   geometry: BedrockGeometryFile,
   textureUrl: string,
+  identifier: `geometry.${string}` = firstGeometryIdentifier(geometry),
 ): { object: THREE.Group; dispose: () => void } {
-  const triangles = decodeGeometryTriangles(geometry, 'geometry.skin0');
+  const triangles = decodeGeometryTriangles(geometry, identifier);
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];

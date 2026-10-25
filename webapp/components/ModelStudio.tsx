@@ -1,15 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type * as THREE from 'three';
 import { DropZone } from './DropZone';
-import { DownloadButtons, InstallHelp, WarningList } from './Common';
+import { DownloadButtons, WarningList } from './Common';
 import { Icon } from './Icons';
 import { Viewport } from './Viewport';
 import { loadModelFiles, formatOf, MODEL_ACCEPT, type LoadedModel } from '../lib/import-model';
 import { extractModel } from '../lib/extract';
 import { convertBatches, nextFrame, type ConvertResult } from '../lib/convert';
-import type { DoubleSidedPolicy } from '../lib/bedrock';
 import { buildGeometryPreview } from '../lib/output-preview';
+import { useSkinPack } from '../lib/pack-context';
 import { formatBytes, isCompactViewport } from '../lib/download';
+
+const ModelSourcesDialog = lazy(async () => {
+  const module = await import('./ModelSourcesDialog');
+  return { default: module.ModelSourcesDialog };
+});
 
 const DEFAULT_NAME = '我的 4D 皮肤';
 
@@ -18,7 +23,6 @@ export function ModelStudio() {
   const [files, setFiles] = useState<File[]>([]);
   const [name, setName] = useState(DEFAULT_NAME);
   const [height, setHeight] = useState(32);
-  const [doubleSided, setDoubleSided] = useState<DoubleSidedPolicy>('source');
   const [result, setResult] = useState<ConvertResult | null>(null);
   const [resultKey, setResultKey] = useState('');
   const [preview, setPreview] = useState<THREE.Object3D | null>(null);
@@ -28,15 +32,26 @@ export function ModelStudio() {
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [packBusy, setPackBusy] = useState(false);
+  const [packMessage, setPackMessage] = useState('');
+  const [packError, setPackError] = useState('');
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const { addSkin } = useSkinPack();
   const modelRef = useRef<LoadedModel | null>(null);
   const loadId = useRef(0);
   const customName = useRef(false);
   const resultRef = useRef<HTMLElement>(null);
+  const closeSources = useCallback(() => setSourcesOpen(false), []);
 
   useEffect(() => () => {
     modelRef.current?.dispose();
     modelRef.current = null;
   }, []);
+
+  useEffect(() => {
+    setPackMessage('');
+    setPackError('');
+  }, [result]);
 
   useEffect(() => {
     if (!result) {
@@ -109,11 +124,11 @@ export function ModelStudio() {
       const converted = await convertBatches(extracted.batches, {
         name: name.trim(),
         height,
-        doubleSided,
+        doubleSided: 'source',
         onPhase: setPhase,
       });
       setResult(converted);
-      setResultKey(`${name.trim()}|${height}|${doubleSided}|${model.stats.triangles}`);
+      setResultKey(`${name.trim()}|${height}|${model.stats.triangles}`);
       setWarnings([...new Set([...merged, ...converted.report.warnings])]);
       setViewMode('output');
     } catch (cause) {
@@ -124,8 +139,32 @@ export function ModelStudio() {
     }
   };
 
-  const key = `${name.trim()}|${height}|${doubleSided}|${model?.stats.triangles ?? 0}`;
+  const key = `${name.trim()}|${height}|${model?.stats.triangles ?? 0}`;
   const stale = !!result && resultKey !== key;
+
+  const addToPack = async () => {
+    if (!result || packBusy) return;
+    setPackBusy(true);
+    setPackError('');
+    try {
+      const added = await addSkin({
+        name: name.trim() || '模型皮肤',
+        geometry: result.geometry,
+        png: result.png,
+        triangles: result.report.triangles,
+        source: 'model',
+      });
+      setPackMessage(
+        added.createdPack
+          ? `已创建「${added.packName}」并加入，共 ${added.count} 个皮肤`
+          : `已加入「${added.packName}」，共 ${added.count} 个皮肤`,
+      );
+    } catch (cause) {
+      setPackError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPackBusy(false);
+    }
+  };
   const viewObject = viewMode === 'output' && preview ? preview : model?.scene ?? null;
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
 
@@ -135,7 +174,6 @@ export function ModelStudio() {
         <div className="settings-body">
         <div className="template-icon"><Icon name="cube" size={30} /></div>
         <h2>3D 模型 · 4D 皮肤</h2>
-        <p>导入模型后自动拼贴材质、生成 poly_mesh，并打包为基岩版皮肤。</p>
 
         <fieldset disabled={loading || busy}>
           <DropZone
@@ -148,11 +186,11 @@ export function ModelStudio() {
             onFiles={(next) => void choose(next)}
             disabled={loading || busy}
           />
-          {!model && (
-            <p className="help model-formats">
-              推荐 GLB / glTF / VRM 与带 MTL 的 OBJ；FBX / DAE / STL / PLY 为实验支持。PMX / PMD 请使用桌面版。
-            </p>
-          )}
+          <div className="model-source-entry">
+            <button type="button" className="text-button" onClick={() => setSourcesOpen(true)}>
+              获取模型 <span aria-hidden="true">↗</span>
+            </button>
+          </div>
 
           <label className="field-label">
             皮肤名称
@@ -187,26 +225,6 @@ export function ModelStudio() {
             aria-label="模型高度"
             onChange={(event) => setHeight(Number(event.target.value))}
           />
-
-          <div className="choice-field">
-            <span>背面渲染 <small>全部双面会使面数翻倍</small></span>
-            <div className="choice-row">
-              {([
-                ['source', '跟随材质'],
-                ['all', '全部双面'],
-                ['front', '仅正面'],
-              ] as const).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={doubleSided === value ? 'active' : ''}
-                  onClick={() => setDoubleSided(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
         </fieldset>
         </div>
 
@@ -216,7 +234,6 @@ export function ModelStudio() {
             <Icon name={busy ? 'reset' : 'spark'} size={15} className={busy ? 'spin' : undefined} />
             {busy ? phase || '正在转换…' : result ? '重新转换' : '转换为 4D 皮肤'}
           </button>
-          <p className="privacy-note"><Icon name="shield" size={14} /> 模型与贴图只在浏览器内处理，不会上传。</p>
         </div>
       </section>
 
@@ -229,7 +246,7 @@ export function ModelStudio() {
                 ? '实际导出的 poly_mesh 与 128 × 128 贴图。'
                 : model
                   ? `${model.stats.triangles.toLocaleString('zh-CN')} 三角面 · ${model.stats.materials} 材质 · ${model.stats.textures} 贴图`
-                  : '导入模型后会在这里显示三维预览。'}
+                  : '导入模型后在这里预览。'}
             </p>
           </div>
           <div className="tabs">
@@ -261,7 +278,7 @@ export function ModelStudio() {
                 <>
                   <Icon name="cube" size={42} />
                   <h2>还没有导入模型</h2>
-                  <p>支持 GLB / glTF / VRM，其他格式尽力而为。</p>
+                  <p>先拖入一个模型。</p>
                 </>
               )}
             </div>
@@ -278,30 +295,49 @@ export function ModelStudio() {
         <div className="result-body model-details">
           <WarningList warnings={warnings} />
           {result ? (
-            <>
-              <div className="report-stats">
-                <div><span>输出三角面</span><b>{result.report.triangles.toLocaleString('zh-CN')}</b></div>
-                <div><span>源三角面</span><b>{result.report.sourceTriangles.toLocaleString('zh-CN')}</b></div>
-                <div><span>材质</span><b>{result.report.materials.length}</b></div>
-                <div><span>贴图覆盖</span><b>{Math.round(result.textureCoverage * 100)}%</b></div>
-              </div>
-              <InstallHelp />
-            </>
-          ) : (
-            <div className="inline-note">
-              转换完成后会显示面数、贴图覆盖率与导出按钮。当前贴图固定 128 × 128，材质会自动拼进一张图集。
+            <div className="report-stats">
+              <div><span>输出三角面</span><b>{result.report.triangles.toLocaleString('zh-CN')}</b></div>
+              <div><span>源三角面</span><b>{result.report.sourceTriangles.toLocaleString('zh-CN')}</b></div>
+              <div><span>材质</span><b>{result.report.materials.length}</b></div>
+              <div><span>贴图覆盖</span><b>{Math.round(result.textureCoverage * 100)}%</b></div>
             </div>
+          ) : (
+            <div className="inline-note">转换后显示面数与贴图覆盖率。</div>
           )}
         </div>
         {result && (
           <div className="result-footer">
             {stale && (
-              <p className="stale-note" role="status"><Icon name="alert" size={14} /> 名称或转换设置已修改，请重新转换。</p>
+              <p className="stale-note" role="status"><Icon name="alert" size={14} /> 名称或高度已修改，请重新转换。</p>
             )}
+            <div className="pack-add-row">
+              <button type="button" className="button-link" disabled={packBusy || stale} onClick={() => void addToPack()}>
+                <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
+                {packBusy ? '正在加入…' : '加入皮肤包'}
+              </button>
+              {packMessage && (
+                <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
+              )}
+            </div>
+            {packError && <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>}
             <DownloadButtons files={result.files} name={name.trim()} compact />
           </div>
         )}
       </section>
+
+      {sourcesOpen && (
+        <Suspense
+          fallback={(
+            <div className="dialog-backdrop">
+              <div className="preview-dialog preview-dialog-loading" role="status">
+                <span className="spinner" /> 正在加载模型站点…
+              </div>
+            </div>
+          )}
+        >
+          <ModelSourcesDialog onClose={closeSources} />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { DropZone } from './DropZone';
-import { DownloadButtons, InstallHelp } from './Common';
+import { DownloadButtons } from './Common';
 import { Icon } from './Icons';
 import { createImageSkin, type ImageSkinResult } from '../lib/image-skin';
 import { nextFrame } from '../lib/convert';
+import { useSkinPack } from '../lib/pack-context';
 import { formatBytes, isCompactViewport } from '../lib/download';
+
+const GeometryPreview = lazy(async () => {
+  const module = await import('./SkinPreview');
+  return { default: module.GeometryPreview };
+});
 
 const DEFAULT_NAME = '我的 4D 皮肤';
 
@@ -18,8 +24,12 @@ export function ImageStudio() {
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [packBusy, setPackBusy] = useState(false);
+  const [packMessage, setPackMessage] = useState('');
+  const [packError, setPackError] = useState('');
   const customName = useRef(false);
   const resultRef = useRef<HTMLElement>(null);
+  const { addSkin } = useSkinPack();
 
   useEffect(() => {
     if (!file) {
@@ -32,6 +42,11 @@ export function ImageStudio() {
   }, [file]);
 
   useEffect(() => {
+    setPackMessage('');
+    setPackError('');
+  }, [result]);
+
+  useEffect(() => {
     if (!result || !isCompactViewport()) return;
     const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
     requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior, block: 'start' }));
@@ -39,6 +54,30 @@ export function ImageStudio() {
 
   const key = `${name.trim()}|${height}`;
   const stale = !!result && resultKey !== key;
+
+  const addToPack = async () => {
+    if (!result || packBusy) return;
+    setPackBusy(true);
+    setPackError('');
+    try {
+      const added = await addSkin({
+        name: name.trim() || '图片皮肤',
+        geometry: result.geometry,
+        png: result.png,
+        triangles: 4,
+        source: 'image',
+      });
+      setPackMessage(
+        added.createdPack
+          ? `已创建「${added.packName}」并加入，共 ${added.count} 个皮肤`
+          : `已加入「${added.packName}」，共 ${added.count} 个皮肤`,
+      );
+    } catch (cause) {
+      setPackError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPackBusy(false);
+    }
+  };
 
   const choose = (files: File[]) => {
     const next = files[0];
@@ -81,7 +120,6 @@ export function ImageStudio() {
         <div className="settings-body">
           <div className="template-icon"><Icon name="image" size={30} /></div>
           <h2>图片 · 平面皮肤</h2>
-          <p>完整图片贴到竖直平面，两面可见。保留比例和透明背景，跟随身体移动。</p>
 
           <fieldset disabled={busy}>
             {file && sourceUrl ? (
@@ -136,7 +174,6 @@ export function ImageStudio() {
               aria-label="平面高度"
               onChange={(event) => setHeight(Number(event.target.value))}
             />
-            <p className="help">默认 32，约为玩家身高。宽度按图片比例计算，输出贴图固定 128 × 128。</p>
           </fieldset>
         </div>
 
@@ -146,7 +183,6 @@ export function ImageStudio() {
             <Icon name={busy ? 'reset' : 'spark'} size={15} className={busy ? 'spin' : undefined} />
             {busy ? phase || '正在生成…' : result ? '重新生成' : '生成图片皮肤'}
           </button>
-          <p className="privacy-note"><Icon name="shield" size={14} /> 图片只在浏览器内处理，不会上传。</p>
         </div>
       </section>
 
@@ -157,7 +193,7 @@ export function ImageStudio() {
             <p>
               {result
                 ? `${result.width.toFixed(1)} × ${result.height} · 4 三角面 · 双面 · 源图 ${result.sourceWidth}×${result.sourceHeight}`
-                : '导入图片并生成后，在这里检查平面比例与透明区域。'}
+                : '生成后在这里显示 3D 预览。'}
             </p>
           </div>
           {result && <span className="badge">128 × 128</span>}
@@ -166,23 +202,40 @@ export function ImageStudio() {
         {result ? (
           <>
           <div className="result-body">
-            <div className="skin-stage">
-              <img src={result.pngUrl} alt="生成的皮肤贴图" />
+            <div className="skin-stage is-3d">
+              <Suspense
+                fallback={(
+                  <div className="preview-loading">
+                    <span className="spinner" /> 正在加载三维预览…
+                  </div>
+                )}
+              >
+                <GeometryPreview geometry={result.geometry} textureUrl={result.pngUrl} />
+              </Suspense>
             </div>
-            <InstallHelp />
           </div>
           <div className="result-footer">
             {stale && (
               <p className="stale-note" role="status"><Icon name="alert" size={14} /> 名称或高度已修改，请重新生成。</p>
             )}
+            <div className="pack-add-row">
+              <button type="button" className="button-link" disabled={packBusy || stale} onClick={() => void addToPack()}>
+                <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
+                {packBusy ? '正在加入…' : '加入皮肤包'}
+              </button>
+              {packMessage && (
+                <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
+              )}
+            </div>
+            {packError && <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>}
             <DownloadButtons files={result.files} name={name.trim()} />
           </div>
           </>
         ) : (
           <div className="empty-state">
             <Icon name="image" size={42} />
-            <h2>一张图片，一张平面皮肤</h2>
-            <p>适合立绘、表情包、标志与透明 PNG。生成后可直接下载 .mcpack。</p>
+            <h2>选择一张图片</h2>
+            <p>立绘、表情包、透明 PNG 都可以。</p>
           </div>
         )}
       </section>

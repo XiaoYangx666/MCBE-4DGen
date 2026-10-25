@@ -8,8 +8,8 @@ interface IconProps {
 
 export type IconName =
   | 'image' | 'cube' | 'upload' | 'download' | 'spark' | 'check'
-  | 'alert' | 'reset' | 'arrow' | 'shield' | 'github' | 'pixel' | 'close'
-  | 'sun' | 'moon';
+  | 'alert' | 'reset' | 'arrow' | 'github' | 'close'
+  | 'sun' | 'moon' | 'palette';
 
 const paths: Record<IconName, ReactNode> = {
   image: (
@@ -57,24 +57,18 @@ const paths: Record<IconName, ReactNode> = {
     </>
   ),
   arrow: <path d="M5 12h14m0 0-5-5m5 5-5 5" />,
-  shield: (
-    <>
-      <path d="M12 3 20 6v6c0 5-3.4 8.2-8 9.5C7.4 20.2 4 17 4 12V6z" />
-      <path d="m8.8 12 2.2 2.2 4.4-4.4" />
-    </>
-  ),
   github: (
     <path d="M9 19c-4.5 1.4-4.5-2.2-6-2.7m12 5.2v-3.3c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.7 4.7 0 0 0-1.3-3.2 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6 0C6.8 2.5 5.8 2.8 5.8 2.8a4.3 4.3 0 0 0-.1 3.2A4.7 4.7 0 0 0 4.4 9.2c0 4.6 2.7 5.7 5.5 6-.4.4-.6 1-.6 1.8V21" />
   ),
-  pixel: (
+  close: <path d="m6 6 12 12M18 6 6 18" />,
+  palette: (
     <>
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
-      <rect x="14" y="14" width="7" height="7" rx="1" />
+      <path d="M12 3a9 9 0 1 0 0 18h1.4a2 2 0 0 0 1.6-3.2 1.7 1.7 0 0 1 1.4-2.8H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3Z" />
+      <circle cx="7.5" cy="12" r="1" />
+      <circle cx="9.5" cy="7.5" r="1" />
+      <circle cx="14.5" cy="7" r="1" />
     </>
   ),
-  close: <path d="m6 6 12 12M18 6 6 18" />,
   sun: (
     <>
       <circle cx="12" cy="12" r="4" />
