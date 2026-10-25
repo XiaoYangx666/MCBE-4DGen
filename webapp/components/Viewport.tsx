@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { fitPreviewCamera } from '../../web/shared/poly-mesh-preview';
 import { Icon } from './Icons';
 
 const LIGHTING_KEY = '4dgen:preview-lighting';
@@ -136,20 +137,11 @@ export function Viewport({ object, className, grid = false, autoRotate = false }
     const fit = () => {
       const view = state.current;
       if (!view?.current) return;
-      const box = new THREE.Box3().setFromObject(view.current);
-      if (box.isEmpty()) return;
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const max = Math.max(size.x, size.y, size.z, 0.001);
-      const distance = max / (2 * Math.tan((view.camera.fov * Math.PI) / 360)) * 1.45;
-      view.camera.position.copy(center).add(new THREE.Vector3(0.62, 0.28, 1).normalize().multiplyScalar(distance));
-      view.camera.near = Math.max(distance / 2000, 0.01);
-      view.camera.far = Math.max(distance * 60, 100);
-      view.camera.updateProjectionMatrix();
-      view.controls.target.copy(center);
-      view.controls.minDistance = Math.max(max * 0.03, 0.01);
-      view.controls.maxDistance = Math.max(max * 30, 10);
-      view.controls.update();
+      fitPreviewCamera(view.camera, view.controls, view.current, {
+        view: 'angle',
+        strategy: 'max-dimension',
+        padding: 1.45,
+      });
     };
 
     const view: ViewState = {
