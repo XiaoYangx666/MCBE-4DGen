@@ -236,30 +236,17 @@ code {
   flex-direction: column;
 }
 
-.page-heading {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 20px;
-  width: 100%;
-  max-width: 1400px;
-  margin: 0 auto 22px;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
-.eyebrow { color: var(--muted); font-size: 10px; letter-spacing: 2.4px; }
-.page-heading h1 {
-  font-size: 27px;
-  letter-spacing: -0.5px;
-  margin: 9px 0 8px;
-  font-weight: 600;
-}
-.page-heading p {
-  color: var(--muted);
-  margin: 0;
-  line-height: 1.65;
-  font-size: 12.5px;
-}
-.page-heading-actions { display: flex; gap: 7px; flex-wrap: wrap; padding-bottom: 3px; }
 .badge {
   background: var(--selected);
   color: var(--accent);
@@ -1265,10 +1252,6 @@ footer a { color: var(--accent); }
   .palette-popover { top: calc(100% + 56px); width: min(210px, calc(100vw - 24px)); right: -44px; }
   .header-link { font-size: 12px; }
   .page-content { display: block; padding: 20px 14px; overflow: visible; }
-  .page-heading { flex-direction: column; align-items: flex-start; gap: 13px; }
-  .page-heading h1 { font-size: 24px; }
-  .page-heading p { font-size: 13.5px; }
-  .page-heading-actions { padding: 0; }
   .studio-host, .studio-host > div { height: auto; }
   .studio-layout { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
   .studio-settings { padding: 0; height: auto; overflow: visible; }
