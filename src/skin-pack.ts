@@ -75,8 +75,15 @@ export interface PackValidation {
   files: string[];
 }
 
-/** Independent cross-file validator: parses the actual JSON and PNG data, never calls the exporter. */
-export async function validateSkinPackFiles(files: Readonly<SkinPackFiles>): Promise<PackValidation> {
+/**
+ * Independent cross-file validator: parses the actual JSON and PNG data, never
+ * calls the exporter. `light` skips the deep geometry parse; use it only for
+ * content copied from an already-validated pack, such as a game-slot export.
+ */
+export async function validateSkinPackFiles(
+  files: Readonly<SkinPackFiles>,
+  options: { light?: boolean } = {},
+): Promise<PackValidation> {
   for (const name of Object.keys(files)) {
     assert(rootFile.test(name), 'unexpected or unsafe filename ' + name);
   }
@@ -108,21 +115,31 @@ export async function validateSkinPackFiles(files: Readonly<SkinPackFiles>): Pro
     required(files, entry.texture);
   }
   const builtin = new Set(['geometry.humanoid.custom', 'geometry.humanoid.customSlim']);
-  const rawGeometry = files['geometry.json'] ? JSON.parse(decoder.decode(files['geometry.json'])) : null;
-  const external = rawGeometry && (rawGeometry.format_version !== '1.8.0' || Object.values(rawGeometry).some((g:any)=>g?.bones?.some((b:any)=>b.cubes?.length)));
-  const parsed = rawGeometry ? external ? validateImportedGeometry(rawGeometry) : parseGeometryJSON(JSON.stringify(rawGeometry), { atlasUVs: true }) : null;
-  const available = new Set<string>([...builtin, ...(parsed?.geometries.map((g) => g.identifier) ?? [])]);
-  for (const id of geometries) assert(available.has(id), 'missing referenced geometry ' + id);
+  let parsed: {
+    file: BedrockGeometryFile;
+    geometries: { identifier: string }[];
+  } | null = null;
+  let external = false;
+  if (!options.light) {
+    const geometryBytes = files['geometry.json'];
+    const rawGeometry = geometryBytes ? JSON.parse(decoder.decode(geometryBytes)) : null;
+    external = !!rawGeometry && (rawGeometry.format_version !== '1.8.0' || Object.values(rawGeometry).some((g:any)=>g?.bones?.some((b:any)=>b.cubes?.length)));
+    parsed = rawGeometry ? external ? validateImportedGeometry(rawGeometry) : parseGeometryJSON(JSON.stringify(rawGeometry), { atlasUVs: true }) : null;
+    const available = new Set<string>([...builtin, ...(parsed?.geometries.map((g) => g.identifier) ?? [])]);
+    for (const id of geometries) assert(available.has(id), 'missing referenced geometry ' + id);
+  }
   for (const texture of textures) {
     const image = await sharp(required(files, texture)).metadata();
     assert(image.format === 'png' && !!image.width && !!image.height, 'invalid PNG ' + texture);
     for (const entry of skins.skins) {
       if (entry.texture !== texture) continue;
       const identifier = entry.geometry as string;
-      if (builtin.has(identifier) && !parsed?.file[identifier as `geometry.${string}`]) {
+      if (builtin.has(identifier)) {
         assert(image.width! >= 64 && (image.width! & (image.width! - 1)) === 0 && [image.width, image.width! / 2].includes(image.height!), 'unsupported standard skin dimensions');
         continue;
       }
+      // Light validation trusts custom geometry copied from a validated pack.
+      if (options.light) continue;
       const item = parsed?.file[identifier as `geometry.${string}`];
       assert(external || (item?.texturewidth === image.width && item.textureheight === image.height),
         'geometry dimensions do not match ' + texture);
@@ -137,11 +154,28 @@ export async function validateSkinPackFiles(files: Readonly<SkinPackFiles>): Pro
   };
 }
 
-export async function zipSkinPack(files: Readonly<SkinPackFiles>): Promise<Uint8Array> {
-  await validateSkinPackFiles(files);
+export async function zipSkinPack(
+  files: Readonly<SkinPackFiles>,
+  options: { fast?: boolean; light?: boolean } = {},
+): Promise<Uint8Array> {
+  await validateSkinPackFiles(files, options.light ? { light: true } : {});
   const zip = new JSZip();
-  for (const [name, bytes] of Object.entries(files)) zip.file(name, bytes);
-  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  for (const [name, bytes] of Object.entries(files)) {
+    if (!options.fast) zip.file(name, bytes);
+    else if (/\.png$/i.test(name))
+      // PNG data is already compressed; storing it avoids a second pass.
+      zip.file(name, bytes, { compression: 'STORE' });
+    else
+      zip.file(name, bytes, {
+        compression: 'DEFLATE',
+        compressionOptions: { level: 1 },
+      });
+  }
+  return zip.generateAsync({
+    type: 'uint8array',
+    compression: 'DEFLATE',
+    compressionOptions: { level: options.fast ? 1 : 6 },
+  });
 }
 
 /** Read supported root assets and texts/ only; reject unsafe or unexpected ZIP paths. */

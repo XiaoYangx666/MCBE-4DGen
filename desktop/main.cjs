@@ -96,6 +96,54 @@ async function start(){
     const result=await dialog.showOpenDialog(window,{title:value.kind==='game'?'选择 Minecraft skin_packs 目录':'选择数据目录',defaultPath:value.initial||app.getPath('documents'),properties:['openDirectory','createDirectory'],buttonLabel:'选择此文件夹'});
     return {path:result.canceled?null:result.filePaths[0]??null};
   });
+  function writableSaveDir(){
+    const home=resolve(app.getPath('home')).toLowerCase();
+    for(const dir of [app.getPath('downloads'),app.getPath('documents'),app.getPath('desktop')]){
+      try{
+        if(!dir)continue;
+        const full=resolve(dir);
+        if(full.toLowerCase()===home||!fs.statSync(full).isDirectory())continue;
+        const probe=join(full,'.4dgen-write-'+process.pid+'.tmp');
+        fs.writeFileSync(probe,'');
+        fs.unlinkSync(probe);
+        return full;
+      }catch{}
+    }
+    return app.getPath('documents')||app.getPath('home');
+  }
+  ipcMain.handle('desktop:save-file',async(event,value)=>{
+    trusted(event);
+    const data=value?.bytes instanceof Uint8Array?value.bytes:value?.bytes instanceof ArrayBuffer?new Uint8Array(value.bytes):null;
+    if(!data||!data.byteLength||typeof value.suggestedName!=='string')throw Error('文件参数无效');
+    if(data.byteLength>512*1024*1024)throw Error('ZIP 文件过大');
+    const name=(value.suggestedName.replace(/[\\/:*?"<>|\x00-\x1f]/g,' ').replace(/\s+/g,' ').trim().replace(/\.zip$/i,'').slice(0,100))||'game-skin-pack';
+    const result=await dialog.showOpenDialog(window,{
+      title:'选择 ZIP 保存文件夹',
+      defaultPath:writableSaveDir(),
+      properties:['openDirectory','createDirectory'],
+      buttonLabel:'保存到此文件夹',
+    });
+    if(result.canceled||!result.filePaths[0])return {path:null};
+    const target=join(result.filePaths[0],name+'.zip');
+    if(fs.existsSync(target)){
+      const answer=await dialog.showMessageBox(window,{
+        type:'question',
+        buttons:['覆盖','取消'],
+        defaultId:1,
+        cancelId:1,
+        message:'同名文件已存在',
+        detail:target+'\n要覆盖它吗？',
+      });
+      if(answer.response!==0)return {path:null};
+    }
+    try{
+      await fs.promises.writeFile(target,Buffer.from(data.buffer,data.byteOffset,data.byteLength));
+    }catch(error){
+      const code=error&&error.code?'（'+error.code+'）':'';
+      throw Error('无法写入所选文件夹'+code+'。请选择桌面、文档、下载或其它当前用户可写的文件夹。');
+    }
+    return {path:target};
+  });
   ipcMain.handle('desktop:copy-text',(event,text)=>{trusted(event);clipboard.writeText(String(text).slice(0,4096));return true;});
   ipcMain.handle('desktop:restart',event=>{trusted(event);setImmediate(()=>{app.relaunch();app.quit();});return true;});
   const template=[{label:'4DGen',submenu:[{label:'关于 4DGen',click:()=>window.webContents.send('desktop:about')},{type:'separator'},{label:'设置',click:()=>void window.loadURL(origin+'/#/settings')},{label:'重新启动',click:()=>{app.relaunch();app.quit();}},{type:'separator'},{role:'quit',label:'退出'}]},{label:'视图',submenu:[{role:'reload',label:'刷新界面'},{role:'togglefullscreen',label:'全屏'},{role:'resetzoom',label:'实际大小'},{role:'zoomin',label:'放大'},{role:'zoomout',label:'缩小'},...(!packaged?[{role:'toggleDevTools',label:'开发者工具'}]:[])]}];
