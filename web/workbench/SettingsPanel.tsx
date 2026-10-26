@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { HumanoidProfile } from "../../src/humanoid";
 import type { Result, Session } from "./types";
-import { FACE_GREEN_MAX, FACE_YELLOW_MAX, triangleBudget } from "./estimate";
+import { PoseControls } from "../shared/PoseControls";
+import { RatioField } from "../shared/RatioField";
 
 type SettingsPanelProps = {
   session: Session | null;
@@ -38,7 +39,6 @@ export function SettingsPanel(props: SettingsPanelProps) {
     result, stale, maxError, setMaxError, height, setHeight, setMode, profile,
     updateProfile, profileText, setProfileText, setProfile, setError, convert,
     error, message, elapsed, openPacks } = props;
-  const budget = triangleBudget(estimate.target);
   const actual = result && !stale ? (result.report.triangles ?? null) : null;
   const [heightText, setHeightText] = useState(String(height));
   useEffect(() => setHeightText(String(height)), [height]);
@@ -48,18 +48,6 @@ export function SettingsPanel(props: SettingsPanelProps) {
     Number.isFinite(heightValue) &&
     heightValue >= 1 &&
     heightValue <= 128;
-  const faceLabels = { green: "轻量", yellow: "可接受", red: "偏高" } as const;
-  const source = Math.max(1, estimate.source);
-  const zone = (faces: number) =>
-    Math.max(
-      0,
-      Math.min(100, ((Math.min(1, faces / source) - 0.01) / 0.99) * 100),
-    );
-  const ratioTrack = `linear-gradient(90deg,
-    color-mix(in srgb, var(--face-green) 55%, transparent) 0 ${zone(FACE_GREEN_MAX)}%,
-    color-mix(in srgb, var(--face-yellow) 55%, transparent) ${zone(FACE_GREEN_MAX)}% ${zone(FACE_YELLOW_MAX)}%,
-    color-mix(in srgb, var(--face-red) 55%, transparent) ${zone(FACE_YELLOW_MAX)}% 100%)`;
-  const actualBudget = actual !== null ? triangleBudget(actual) : null;
   return (
     <aside className="inspector">
       <div className="section-label">02 / 转换设置</div>
@@ -84,50 +72,20 @@ export function SettingsPanel(props: SettingsPanelProps) {
         ? "使用源骨骼映射，跟随原版玩家动作。"
         : "整个模型绑定身体，适合物件与静态皮肤。"}
         </p>
-        <div className="field ratio-field">
-          <span className="ratio-label">
-            保留面数比例 <b>{Math.round(ratio * 100)}%</b>
-          </span>
-          <div className="ratio-slider" style={{ background: ratioTrack }}>
-            <input
-              type="range"
-              aria-label="保留面数比例"
-              min=".01"
-              max="1"
-              step=".01"
-              value={ratio}
-              onChange={(e) => {
-                setRatio(+e.target.value);
-                changed();
-              }}
-            />
-          </div>
-          <div className="ratio-legend">
-            <span className="green">轻量 &lt; 2 万</span>
-            <span className="yellow">2–5 万</span>
-            <span className="red">&gt; 5 万</span>
-          </div>
+        <div className="field">
+          <RatioField
+            ratio={ratio}
+            onChange={(value) => {
+              setRatio(value);
+              changed();
+            }}
+            sourceTriangles={estimate.source}
+            targetFaces={estimate.target}
+            actualFaces={actual}
+            disabled={busy || !session}
+            showBudget={!!session}
+          />
         </div>
-        {session && (
-          <div className={"face-estimate face-" + budget.level}>
-            <div className="face-row">
-              <strong>目标约 {estimate.target.toLocaleString()} 面</strong>
-              <span className={"face-chip " + budget.level}>
-                {faceLabels[budget.level]}
-              </span>
-            </div>
-            {actual !== null && actualBudget && (
-              <div className="face-row">
-                <span className="face-actual">
-                  上次实际 {actual.toLocaleString()} 面
-                </span>
-                <span className={"face-chip " + actualBudget.level}>
-                  {faceLabels[actualBudget.level]}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
         <details className="advanced-reduction">
           <summary>高级减面设置（通常保持默认）</summary>{" "}
           <label className="field">
@@ -171,39 +129,27 @@ export function SettingsPanel(props: SettingsPanelProps) {
         </label>
         {!heightValid && <p className="field-error">模型高度需为 1–128</p>}
         <div className="subheading">姿势与朝向</div>
-        <label className="field">
-          Y 轴旋转 <b>{profile.rotationYDegrees ?? 0}°</b>
-          <input
-        type="range"
-        min="-180"
-        max="180"
-        step="5"
-        value={profile.rotationYDegrees ?? 0}
-        onChange={(e) =>
-          updateProfile("rotationYDegrees", +e.target.value)
-        }
-          />
-        </label>
-        <div className="rotation-presets">
-          {[0, 90, 180, -90].map((angle) => (
-            <button key={angle} type="button" onClick={() => updateProfile("rotationYDegrees", angle)}>{angle}°</button>
-          ))}
-        </div>
-        <p className="help">点右下角「正面检查」，让角色正面朝向绿色箭头。</p>
+        <PoseControls
+          rotationY={profile.rotationYDegrees ?? 0}
+          onRotationY={(value) => {
+            updateProfile("rotationYDegrees", value);
+            changed();
+          }}
+          armSpread={profile.armSpreadDegrees ?? 0}
+          onArmSpread={(value) => {
+            updateProfile("armSpreadDegrees", value);
+            changed();
+          }}
+          showArm={binding === "humanoid"}
+          armMin={0}
+          armMax={45}
+          armLabel="手臂外展"
+          disabled={busy || !session}
+          rotationHelp="点右下角「正面检查」，让角色正面朝向绿色箭头。"
+          armHelp="0° 为自然下垂，数值越大手臂越向外展开。"
+        />
         {binding === "humanoid" && (
           <>
-        <label className="field">
-          手臂外展 <b>{profile.armSpreadDegrees ?? 0}°</b>
-          <input
-            type="range"
-            min="0"
-            max="45"
-            value={profile.armSpreadDegrees ?? 0}
-            onChange={(e) =>
-              updateProfile("armSpreadDegrees", +e.target.value)
-            }
-          />
-        </label>
         <label className="field">
           肩部外移
           <input

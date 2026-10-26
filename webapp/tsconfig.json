@@ -16,12 +16,20 @@
     "./**/*.tsx",
     "../src/bedrock-types.ts",
     "../src/geometry-validator.ts",
+    "../src/pmx-metadata.ts",
     "../src/skin-pack-files.ts",
     "../src/source-sites.ts",
+    "../src/tga.ts",
     "../web/shared/**/*.ts",
     "../web/shared/**/*.tsx",
     "../tests/webapp-geometry.test.ts",
+    "../tests/webapp-extract.test.ts",
     "../tests/webapp-atlas.test.ts",
+    "../tests/webapp-model-zip.test.ts",
+    "../tests/webapp-pmx.test.ts",
+    "../tests/webapp-pose.test.ts",
+    "../tests/webapp-materials.test.ts",
+    "../tests/webapp-reduce.test.ts",
     "../tests/webapp-pack-import.test.ts"
   ]
 }

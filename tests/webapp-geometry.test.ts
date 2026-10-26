@@ -64,8 +64,12 @@ describe('webapp bedrock export', () => {
   it('shares the flat image geometry between desktop and browser', () => {
     const file = buildImageSkinGeometry({ width: 24, height: 32, u0: 0.25, v0: 0.25, u1: 0.75, v1: 0.75 });
     const geometry = file['geometry.skin0'];
-    expect(geometry.bones[0]!.poly_mesh!.polys).toHaveLength(4);
-    expect(geometry.bones[0]!.poly_mesh!.uvs[0]).toEqual([0.25, 0.25]);
+    const mesh = geometry.bones[0]!.poly_mesh!;
+    expect(mesh.polys).toHaveLength(4);
+    // From the -Z front view world +X is on the left, so it carries u0.
+    expect(mesh.positions[1]![0]).toBeGreaterThan(0);
+    expect(mesh.uvs[1]).toEqual([0.25, 0.25]);
+    expect(mesh.uvs[0]).toEqual([0.75, 0.25]);
     expect(() => validateGeometry(file, {
       expectedIdentifier: 'geometry.skin0',
       textureSize: { width: 128, height: 128 },

@@ -9,7 +9,7 @@ interface IconProps {
 export type IconName =
   | 'image' | 'cube' | 'upload' | 'download' | 'spark' | 'check'
   | 'alert' | 'reset' | 'arrow' | 'github' | 'close'
-  | 'sun' | 'moon' | 'palette';
+  | 'sun' | 'moon' | 'palette' | 'menu' | 'archive';
 
 const paths: Record<IconName, ReactNode> = {
   image: (
@@ -76,6 +76,13 @@ const paths: Record<IconName, ReactNode> = {
     </>
   ),
   moon: <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z" />,
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  archive: (
+    <>
+      <rect x="3" y="4" width="18" height="5" rx="1.5" />
+      <path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 18, className }: IconProps) {

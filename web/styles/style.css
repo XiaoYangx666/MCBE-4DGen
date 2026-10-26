@@ -423,21 +423,8 @@ main {
   min-height: 175px;
   background: var(--surface);
 }
-.panel-title {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-}
-.panel-title span {
-  font-size: 8px;
-  letter-spacing: 2px;
-  color: var(--muted);
-}
-.panel-empty {
-  padding: 40px 0;
-  color: var(--muted);
-  font-size: 11px;
-}
+/* panel-title, panel-empty, metric and report text live in shared.css. */
+
 .atlas-body {
   display: flex;
   gap: 16px;
@@ -454,11 +441,8 @@ main {
   font-size: 16px;
   font-weight: 500;
 }
-.atlas-body p,
-.report-panel p {
-  font-size: 10px;
-  color: var(--accent);
-}
+/* report text styles live in shared.css. */
+
 .atlas-body small {
   font-size: 9px;
   color: var(--muted);
@@ -469,22 +453,8 @@ main {
   margin-top: 10px;
   font-size: 10px;
 }
-.metric {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 22px 0 15px;
-}
-.metric strong {
-  font-size: 30px;
-  font-weight: 400;
-  letter-spacing: -1px;
-  color: var(--ink);
-}
-.metric span {
-  font-size: 10px;
-  color: var(--accent);
-}
+/* report metric lives in shared.css. */
+
 details {
   font-size: 10px;
   color: var(--accent);
@@ -1117,25 +1087,8 @@ button.packs-chip:hover:not(:disabled) { background: var(--selected); }
   color: var(--ink) !important;
   background: var(--selected) !important;
 }
-.face-estimate {
-  border: 1px solid var(--line);
-  background: var(--surface);
-  padding: 10px;
-  border-radius: 5px;
-  margin-top: 10px;
-}
-.face-estimate strong {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.face-estimate small {
-  display: block;
-  font-size: 9px;
-  line-height: 1.7;
-  color: var(--accent);
-  margin-top: 5px;
-}
+/* Ratio/face-estimate styles live in shared.css. */
+
 
 .drop-overlay {
   position: fixed;
@@ -1396,14 +1349,8 @@ button.danger-button { color:var(--danger); border-color:var(--danger); backgrou
 .skin-copy-list { max-height:250px; overflow:auto; background:var(--surface); border:1px solid var(--line); padding:5px 12px; border-radius:6px; margin-top:15px; }
 .skin-copy-list label { display:flex; gap:10px; align-items:center; margin:11px 0; }
 @media(max-width:760px) { .organized-packs { max-height:290px; }.pack-sidebar-head { padding:13px; }.pack-top-actions { flex-wrap:wrap; width:100%; margin:0; }.pack-top-actions button { flex:1; padding:8px; font-size:11px; }.pack-detail-bar { flex-wrap:wrap; gap:12px; }.pack-detail-actions { width:100%; }.pack-library-row.text-only>span:first-child { flex:1 1 160px; } }
-.material-allocation h3 { margin: 18px 0 8px; font-size: 15px; }
-.allocation-row { display: grid; grid-template-columns: minmax(65px, 1fr) minmax(80px, 2fr) minmax(140px, auto); align-items:center; gap:12px; width:100%; border:1px solid transparent; background:transparent; padding:9px 8px; text-align:left; }
-.allocation-row.selected { border-color:var(--accent, var(--accent)); background:color-mix(in srgb,var(--accent) 7.1%,transparent); }
-.allocation-track { height:10px; background:color-mix(in srgb,var(--hover) 6.3%,transparent); border-radius:5px; overflow:hidden; }
-.allocation-track > span { display:block; height:100%; background:var(--accent); border-radius:5px; }
-.allocation-value { text-align:right; font-size:12px; color:var(--accent); font-variant-numeric:tabular-nums; }
-.allocation-label { overflow-wrap:anywhere; }
-@media(max-width:600px) { .allocation-row { grid-template-columns: 1fr 2fr; } .allocation-value { grid-column:2; } }
+/* material coverage rows live in shared.css (shared with the browser studio). */
+
 .sidebar { padding-top:12px; }
 .material-tools { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; margin-bottom:10px; }
 .material-tools label { display:flex; align-items:center; gap:5px; }

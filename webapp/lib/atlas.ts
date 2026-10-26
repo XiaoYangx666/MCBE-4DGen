@@ -163,6 +163,88 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
   return { canvas, size, rects, coverage: coverageOf(context, size) };
 }
 
+export interface AtlasMaterialUsage {
+  name: string;
+  pixels: number;
+}
+
+export interface AtlasUsage {
+  /** Share of atlas pixels covered by at least one non-transparent triangle. */
+  sampledUtilization: number;
+  /** Pixel count per material name; shared pixels count for every material. */
+  materials: AtlasMaterialUsage[];
+}
+
+/**
+ * Rasterize the final atlas UVs to measure how many pixels each material
+ * actually covers. Mirrors the desktop workbench's texture report.
+ */
+export function measureAtlasUsage(
+  canvas: HTMLCanvasElement,
+  batches: readonly { name: string; positions: Float32Array; uvs: Float32Array | null }[],
+  size: number,
+): AtlasUsage {
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return { sampledUtilization: 0, materials: [] };
+  const alpha = context.getImageData(0, 0, size, size).data;
+  const used = new Uint8Array(size * size);
+  const masks = new Map<string, Uint8Array>();
+  const maskFor = (name: string) => {
+    let mask = masks.get(name);
+    if (!mask) {
+      mask = new Uint8Array(size * size);
+      masks.set(name, mask);
+    }
+    return mask;
+  };
+
+  for (const batch of batches) {
+    const mask = maskFor(batch.name);
+    const uvs = batch.uvs;
+    if (!uvs) continue;
+    const triangles = Math.min(batch.positions.length / 9, uvs.length / 6);
+    for (let t = 0; t < triangles; t++) {
+      const a = t * 3;
+      const ax = uvs[a * 2]! * size;
+      const ay = uvs[a * 2 + 1]! * size;
+      const bx = uvs[(a + 1) * 2]! * size;
+      const by = uvs[(a + 1) * 2 + 1]! * size;
+      const cx = uvs[(a + 2) * 2]! * size;
+      const cy = uvs[(a + 2) * 2 + 1]! * size;
+      const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+      if (Math.abs(area) < 1e-8) continue;
+      const x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx)));
+      const x1 = Math.min(size - 1, Math.ceil(Math.max(ax, bx, cx)));
+      const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy)));
+      const y1 = Math.min(size - 1, Math.ceil(Math.max(ay, by, cy)));
+      for (let y = y0; y <= y1; y++) {
+        const py = y + 0.5;
+        for (let x = x0; x <= x1; x++) {
+          const px = x + 0.5;
+          const e0 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+          const e1 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
+          const e2 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
+          if (!((e0 >= 0 && e1 >= 0 && e2 >= 0) || (e0 <= 0 && e1 <= 0 && e2 <= 0))) continue;
+          const index = y * size + x;
+          if (alpha[index * 4 + 3]! === 0) continue;
+          mask[index] = 1;
+          used[index] = 1;
+        }
+      }
+    }
+  }
+
+  let covered = 0;
+  for (const value of used) covered += value;
+  return {
+    sampledUtilization: covered / (size * size),
+    materials: [...masks].map(([name, mask]) => ({
+      name,
+      pixels: mask.reduce((sum, value) => sum + value, 0),
+    })),
+  };
+}
+
 const rgba = (color: Vec3, alpha: number) =>
   `rgba(${Math.round(color[0] * 255)},${Math.round(color[1] * 255)},${Math.round(color[2] * 255)},${clamp(alpha, 0, 1)})`;
 

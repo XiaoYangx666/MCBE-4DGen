@@ -15,6 +15,8 @@ export interface GeometryOptions {
   height: number;
   doubleSided: DoubleSidedPolicy;
   identifier?: `geometry.${string}`;
+  /** Pre-reduction triangle count, for the report only. */
+  sourceTriangles?: number;
 }
 
 export interface GeometryReport {
@@ -195,7 +197,7 @@ export function buildBedrockGeometry(batches: readonly SourceBatch[], options: G
   });
 
   const report: GeometryReport = {
-    sourceTriangles,
+    sourceTriangles: options.sourceTriangles ?? sourceTriangles,
     triangles,
     addedBackfaces,
     skippedDegenerate,

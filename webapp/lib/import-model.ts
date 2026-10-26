@@ -30,7 +30,7 @@ const FORMATS: { extension: string; format: ModelFormat }[] = [
   { extension: 'ply', format: 'ply' },
 ];
 
-export const MODEL_ACCEPT = '.glb,.gltf,.vrm,.fbx,.obj,.dae,.stl,.ply';
+export const MODEL_ACCEPT = '.glb,.gltf,.vrm,.pmx,.fbx,.obj,.dae,.stl,.ply,.zip';
 
 export function formatOf(name: string): ModelFormat | null {
   const extension = name.split('.').pop()?.toLowerCase() ?? '';
@@ -84,6 +84,7 @@ export async function loadModelFiles(files: File[]): Promise<LoadedModel> {
     if (activeLoads === 0) resolveIdle();
   };
   manager.onError = (url) => { warnings.push(`资源读取失败：${url}`); };
+  const registered = [...urls.keys()];
   manager.setURLModifier((url) => {
     if (/^data:/i.test(url)) return url;
     // A blob URL created here is already the final resource. GLTFLoader also
@@ -94,7 +95,12 @@ export async function loadModelFiles(files: File[]): Promise<LoadedModel> {
     try { decoded = decodeURIComponent(url); } catch { /* keep raw */ }
     const clean = normalizePath(decoded.split(/[?#]/)[0] ?? '');
     const base = clean.slice(clean.lastIndexOf('/') + 1);
-    return urls.get(clean) ?? urls.get(base) ?? url;
+    const exact = urls.get(clean) ?? urls.get(base);
+    if (exact) return exact;
+    // Archives often wrap assets in an extra folder, so a reference like
+    // "textures/body.png" may only exist as "model/textures/body.png".
+    const suffix = registered.find((key) => key.endsWith(`/${clean}`));
+    return suffix ? urls.get(suffix)! : url;
   });
 
   const revoke = () => { for (const url of created) URL.revokeObjectURL(url); };

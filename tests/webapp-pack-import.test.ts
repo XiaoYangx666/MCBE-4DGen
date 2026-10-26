@@ -5,6 +5,7 @@ import type { BedrockGeometryFile } from '../src/bedrock-types.ts';
 import { buildImageSkinGeometry } from '../src/image-skin-geometry.ts';
 import { buildSkinPackCollection, type SkinPackCollectionSkin } from '../src/skin-pack-files.ts';
 import { importSkinPackZip } from '../webapp/lib/pack-import.ts';
+import { zipSkinPack } from '../webapp/lib/convert.ts';
 import { firstGeometryIdentifier } from '../webapp/lib/output-preview.ts';
 
 const png = await sharp({
@@ -63,5 +64,21 @@ describe('webapp skin pack import', () => {
     } as unknown as BedrockGeometryFile;
     expect(firstGeometryIdentifier(renamed)).toBe('geometry.imported_model');
     expect(() => firstGeometryIdentifier({ format_version: '1.8.0' })).toThrow(/poly_mesh/);
+  });
+
+  it('exports a flat ZIP with every pack file at the root', async () => {
+    const collection = buildSkinPackCollection({
+      packName: 'Shared Pack',
+      headerId: '33333333-3333-4333-8333-333333333333',
+      moduleId: '44444444-4444-4444-8444-444444444444',
+      skins: [skin('Skin A', 24)],
+    });
+    const blob = await zipSkinPack(collection.files);
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const files = Object.keys(zip.files).filter((name) => !zip.files[name]?.dir).sort();
+    expect(files).toEqual(Object.keys(collection.files).sort());
+    expect(files).toContain('manifest.json');
+    expect(files).toContain('texts/en_US.lang');
+    expect(files.every((name) => !name.includes('/') || name.startsWith('texts/'))).toBe(true);
   });
 });

@@ -40,7 +40,9 @@ export function buildImageSkinGeometry(input: ImageSkinGeometryInput): BedrockGe
             [width / 2, height, 0], [-width / 2, height, 0],
           ],
           normals: [[0, 0, -1], [0, 0, 1]],
-          uvs: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]],
+          // Viewed from the player's front (-Z) world +X appears on the left,
+          // so +X must carry the image's left edge to avoid a mirrored skin.
+          uvs: [[u1, v0], [u0, v0], [u0, v1], [u1, v1]],
           polys: [
             refs(0, 2, 1, 0),
             refs(0, 3, 2, 0),

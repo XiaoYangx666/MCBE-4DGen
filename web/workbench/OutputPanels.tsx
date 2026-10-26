@@ -1,5 +1,6 @@
 import type { TextureMaterialUsage } from "../../src/api-types";
 import type { Result, Session } from "./types";
+import { MaterialCoverage } from "../shared/MaterialCoverage";
 
 export function OutputPanels({
   result,
@@ -97,49 +98,26 @@ export function OutputPanels({
                 %
               </p>
             )}
-            <div className="material-allocation">
-              <h3>材质像素覆盖</h3>
-              <p>
-                与材质筛选逐项对应，点击选中材质。占比以整张贴图为基准；共享像素会分别计入相关材质，各项不一定合计为
-                100%。
+            {stale && (
+              <p className="inline-note">
+                以下为上次转换结果，重新转换后更新。
               </p>
-              {stale && (
-                <p className="inline-note">
-                  以下为上次转换结果，重新转换后更新。
-                </p>
-              )}
-              {!texture?.materials?.length && (
-                <p className="inline-note">
-                  重新转换后可查看按材质统计的像素覆盖。
-                </p>
-              )}
-              {materials.map((m) => (
-                <button
-                  key={m.name}
-                  className={
-                    "allocation-row" + (selected === m.name ? " selected" : "")
-                  }
-                  onClick={() => onSelect(m.name)}
-                  aria-pressed={selected === m.name}
-                >
-                  <span className="allocation-label">{m.name}</span>
-                  <span className="allocation-track">
-                    <span
-                      style={{
-                        width: `${Math.min(100, ((m.measurement?.pixels ?? 0) / total) * 100)}%`,
-                      }}
-                    />
-                  </span>
-                  <span className="allocation-value">
-                    {m.excluded
-                      ? "已移除"
-                      : m.measurement
-                        ? `${m.measurement.pixels.toLocaleString()} 像素 · ${((m.measurement.pixels / total) * 100).toFixed(1)}%`
-                        : "待统计"}
-                  </span>
-                </button>
-              ))}
-            </div>
+            )}
+            {!texture?.materials?.length && (
+              <p className="inline-note">
+                重新转换后可查看按材质统计的像素覆盖。
+              </p>
+            )}
+            <MaterialCoverage
+              materials={materials.map((m) => ({
+                name: m.name,
+                pixels: m.measurement?.pixels ?? null,
+                excluded: m.excluded,
+              }))}
+              total={total}
+              selected={selected}
+              onSelect={onSelect}
+            />
             <details>
               <summary>图集区域与尺寸明细</summary>
               <p>共享区域列出全部材质。面积指图集矩形，不等同于可见像素。</p>

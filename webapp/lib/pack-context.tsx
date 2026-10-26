@@ -6,7 +6,7 @@ import {
   buildSkinPackCollection,
   randomUuid,
 } from '../../src/skin-pack-files.ts';
-import { packFolderName, zipSkinPack } from './convert.ts';
+import { zipSkinPack } from './convert.ts';
 import { safeFilename, saveOrShare } from './download.ts';
 import { importSkinPackZip } from './pack-import.ts';
 import { deleteSkinPack, loadSkinPack, saveSkinPack } from './pack-store.ts';
@@ -46,7 +46,7 @@ export interface PackContextValue {
   renameSkin: (id: string, name: string) => Promise<void>;
   removeSkin: (id: string) => Promise<void>;
   clearPack: () => Promise<void>;
-  exportPack: () => Promise<{ folder: string; bytes: number }>;
+  exportPack: () => Promise<{ file: string; bytes: number }>;
 }
 
 const PackContext = createContext<PackContextValue | null>(null);
@@ -210,10 +210,11 @@ export function SkinPackProvider({ children }: { children: ReactNode }) {
         png: skin.png,
       })),
     });
-    const folder = packFolderName(current.headerId);
-    const blob = await zipSkinPack(collection.files, { folder });
-    await saveOrShare(blob, `${safeFilename(current.name)}.zip`, current.name);
-    return { folder, bytes: blob.size };
+    // Flat archive: every pack file is at the ZIP root, with no wrapper folder.
+    const blob = await zipSkinPack(collection.files);
+    const file = `${safeFilename(current.name)}.zip`;
+    await saveOrShare(blob, file, current.name);
+    return { file, bytes: blob.size };
   }), [enqueue]);
 
   const withBusy = useCallback(async <T,>(task: () => Promise<T>): Promise<T> => {

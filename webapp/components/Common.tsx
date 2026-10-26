@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { safeFilename, saveOrShare } from '../lib/download';
-import { packFolderFromFiles, zipSkinPack } from '../lib/convert';
+import { zipSkinPack } from '../lib/convert';
 import { Icon } from './Icons';
 
 interface DownloadButtonsProps {
@@ -17,7 +17,7 @@ export function DownloadButtons({ files, name, compact }: DownloadButtonsProps) 
     setBusy(true);
     setError(null);
     try {
-      const blob = await zipSkinPack(files, { folder: packFolderFromFiles(files) });
+      const blob = await zipSkinPack(files);
       await saveOrShare(blob, `${safeFilename(name)}.zip`, name);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -40,13 +40,19 @@ export function DownloadButtons({ files, name, compact }: DownloadButtonsProps) 
 export function WarningList({ warnings }: { warnings: string[] }) {
   if (!warnings.length) return null;
   return (
-    <ul className="warning-list">
-      {warnings.map((warning) => (
-        <li key={warning}>
-          <Icon name="alert" size={14} />
-          <span>{warning}</span>
-        </li>
-      ))}
-    </ul>
+    <details className="warning-list">
+      <summary>
+        <Icon name="alert" size={14} />
+        <span>转换提示 {warnings.length} 条</span>
+      </summary>
+      <ul>
+        {warnings.map((warning) => (
+          <li key={warning}>
+            <Icon name="alert" size={14} />
+            <span>{warning}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
