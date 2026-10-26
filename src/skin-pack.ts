@@ -150,7 +150,14 @@ export async function readSkinPack(path: string, options: { external?: boolean }
   };
   assert(!(await lstat(path)).isSymbolicLink(), 'symbolic links are not supported');
   if ((await lstat(path)).isDirectory()) {
-    for (const entry of await readdir(path, { withFileTypes: true })) {
+    const entries = await readdir(path, { withFileTypes: true });
+    const files = entries.filter((entry) => entry.isFile());
+    const directories = entries.filter((entry) => entry.isDirectory());
+    // Accept a single wrapper folder, e.g. an extracted 4DGen-xxxxxxxx pack.
+    if (!files.length && directories.length === 1 && directories[0]!.name !== 'texts') {
+      return readSkinPack(join(path, directories[0]!.name), options);
+    }
+    for (const entry of entries) {
       if (entry.isDirectory() && entry.name === 'texts') {
         for (const nested of await readdir(join(path, 'texts'), { withFileTypes: true })) {
           assert(nested.isFile(), 'non-file in texts');
@@ -163,11 +170,28 @@ export async function readSkinPack(path: string, options: { external?: boolean }
     }
   } else {
     const zip = await JSZip.loadAsync(await readFile(path), { checkCRC32: true, createFolders: false });
-    for (const entry of Object.values(zip.files)) {
-      if (entry.dir) { assert(entry.name === 'texts/', 'unexpected directory in archive'); continue; }
+    const entries = Object.values(zip.files);
+    const fileEntries = entries.filter((entry) => !entry.dir);
+    const roots = new Set(fileEntries.map((entry) => {
+      const index = entry.name.indexOf('/');
+      return index < 0 ? '' : entry.name.slice(0, index);
+    }));
+    const wrapper = roots.size === 1 && !roots.has('') ? [...roots][0]! : '';
+    const prefix = wrapper ? wrapper + '/' : '';
+    for (const entry of entries) {
+      let name = entry.name;
+      if (prefix) {
+        if (name === prefix) {
+          assert(entry.dir, 'unexpected file path in archive');
+          continue;
+        }
+        assert(name.startsWith(prefix), 'unexpected or unsafe filename ' + name);
+        name = name.slice(prefix.length);
+      }
+      if (entry.dir) { assert(name === 'texts/', 'unexpected directory in archive'); continue; }
       assert(!entry.unsafeOriginalName || entry.unsafeOriginalName === entry.name,
         'unexpected or unsafe filename ' + entry.unsafeOriginalName);
-      add(entry.name, await entry.async('uint8array'));
+      add(name, await entry.async('uint8array'));
     }
   }
   return result;

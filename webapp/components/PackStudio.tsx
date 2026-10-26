@@ -47,7 +47,7 @@ export function PackStudio() {
       <input
         ref={importInput}
         type="file"
-        accept=".zip,application/zip"
+        accept=".zip,.mcpack,application/zip,application/octet-stream"
         className="file-hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];
@@ -61,7 +61,7 @@ export function PackStudio() {
         disabled={busy}
         onClick={() => importInput.current?.click()}
       >
-        <Icon name="upload" size={14} /> 导入皮肤包 ZIP
+        <Icon name="upload" size={14} /> 导入皮肤包
       </button>
     </>
   );
@@ -157,7 +157,7 @@ export function PackStudio() {
     setActionError('');
     setMessage('');
     void exportPack()
-      .then((result) => setMessage(`已导出 ${result.folder}.zip · ${formatBytes(result.bytes)}`))
+      .then((result) => setMessage(`已导出 ${result.file} · ${formatBytes(result.bytes)}`))
       .catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)));
   };
 

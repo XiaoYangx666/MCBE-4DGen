@@ -24,6 +24,8 @@ interface ViewportProps {
   className?: string;
   grid?: boolean;
   autoRotate?: boolean;
+  /** Source models are authored +Z; exported packs and image skins face -Z. */
+  facing?: 'source' | 'output';
 }
 
 export function Viewport({
@@ -31,6 +33,7 @@ export function Viewport({
   className,
   grid = false,
   autoRotate = false,
+  facing = 'output',
 }: ViewportProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<PreviewViewport | null>(null);
@@ -67,9 +70,9 @@ export function Viewport({
           maxPolarAngle: Math.PI * 0.92,
         },
         orientation: { direction: -1, label: '玩家正前方（−Z）' },
-        // Source models are usually authored facing +Z; the front check still
-        // uses the Bedrock -Z side.
-        framing: { angle: { directionZ: 1 } },
+        // Source models are usually authored facing +Z; exported skins use the
+        // Bedrock -Z front, so their default angle must also start there.
+        framing: { angle: { directionZ: facing === 'source' ? 1 : -1 } },
         onContextLost: () => setFailed(true),
       });
     } catch {
@@ -82,7 +85,7 @@ export function Viewport({
       view.current = null;
       created.dispose();
     };
-  }, [grid, autoRotate]);
+  }, [grid, autoRotate, facing]);
 
   useEffect(() => {
     view.current?.setObject(object);

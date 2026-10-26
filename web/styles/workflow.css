@@ -287,27 +287,7 @@ a[aria-disabled="true"] { opacity:.4; cursor:default; }
 .context-menu button.danger { color:var(--danger); }
 .context-menu-separator { height:1px; margin:5px 4px; background:var(--line); }
 
-/* Face-count bands: green under 20k, yellow 20k–50k, red above 50k. */
-.ratio-field { display:block; }
-.ratio-label { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:6px; }
-.ratio-slider { position:relative; height:8px; margin:18px 0 8px; border-radius:999px; }
-.ratio-slider input[type="range"] { position:absolute; inset:-7px 0; width:100%; height:22px; margin:0; padding:0; appearance:none; -webkit-appearance:none; background:transparent; cursor:pointer; }
-.ratio-slider input[type="range"]::-webkit-slider-runnable-track { height:8px; border-radius:999px; background:transparent; }
-.ratio-slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px; margin-top:-5px; border-radius:50%; border:2px solid var(--ink); background:var(--surface); box-shadow:0 1px 5px color-mix(in srgb,var(--canvas) 70%,transparent); }
-.ratio-slider input[type="range"]::-moz-range-track { height:8px; border-radius:999px; background:transparent; }
-.ratio-slider input[type="range"]::-moz-range-thumb { width:14px; height:14px; border-radius:50%; border:2px solid var(--ink); background:var(--surface); box-shadow:0 1px 5px color-mix(in srgb,var(--canvas) 70%,transparent); }
-.ratio-legend { display:flex; justify-content:space-between; gap:8px; font-size:10px; color:var(--muted); }
-.ratio-legend .green { color:var(--face-green); }.ratio-legend .yellow { color:var(--face-yellow); }.ratio-legend .red { color:var(--face-red); }
-.face-estimate.face-green { border-left:3px solid var(--face-green); }
-.face-estimate.face-yellow { border-left:3px solid var(--face-yellow); }
-.face-estimate.face-red { border-left:3px solid var(--face-red); }
-.face-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-.face-row + .face-row { margin-top:7px; padding-top:7px; border-top:1px solid var(--line); }
-.face-actual { color:var(--muted); font-size:11px; }
-.face-chip { flex:none; padding:2px 7px; border-radius:999px; border:1px solid; font-size:10px; line-height:1.6; }
-.face-chip.green { color:var(--face-green); border-color:color-mix(in srgb,var(--face-green) 45%,transparent); background:color-mix(in srgb,var(--face-green) 10%,transparent); }
-.face-chip.yellow { color:var(--face-yellow); border-color:color-mix(in srgb,var(--face-yellow) 45%,transparent); background:color-mix(in srgb,var(--face-yellow) 10%,transparent); }
-.face-chip.red { color:var(--face-red); border-color:color-mix(in srgb,var(--face-red) 45%,transparent); background:color-mix(in srgb,var(--face-red) 10%,transparent); }
+/* Face-count bands live in shared.css so the browser studio can reuse them. */
 .field-error { margin:6px 0 0; color:var(--danger); font-size:11px; }
 
 /* Template gallery: pick a template first, then open its editor. */

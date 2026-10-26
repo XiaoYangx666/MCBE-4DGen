@@ -46,12 +46,33 @@ interface MaterialFields {
 
 const IDENTITY_NORMAL = new THREE.Matrix3();
 
+export interface ExtractOptions {
+  /** Rotate the whole model around its origin before baking, in degrees. */
+  rotationYDegrees?: number;
+  /** Bake the current skeleton pose (used for arm/pose adjustments). */
+  bakeSkinning?: boolean;
+}
+
 /**
  * Bake the loaded scene's bind pose into flat triangle soup grouped by
- * material. Skinning, morphs and animation are deliberately not evaluated.
+ * material. Skinning, morphs and animation are deliberately not evaluated
+ * unless `bakeSkinning` is set for an explicit pose adjustment.
  */
-export function extractModel(scene: THREE.Object3D): ExtractedModel {
+export function extractModel(
+  scene: THREE.Object3D,
+  options: ExtractOptions = {},
+): ExtractedModel {
   scene.updateMatrixWorld(true);
+  if (options.bakeSkinning) {
+    scene.traverse((object) => {
+      const mesh = object as THREE.SkinnedMesh;
+      if (mesh.isSkinnedMesh) mesh.skeleton.update();
+    });
+  }
+  const angle = ((options.rotationYDegrees ?? 0) * Math.PI) / 180;
+  const rotation = Math.abs(angle) > 1e-6
+    ? new THREE.Matrix4().makeRotationY(angle)
+    : null;
   const accumulators = new Map<string, Accumulator>();
   const warnings = new Set<string>();
   let sourceTriangles = 0;
@@ -81,11 +102,16 @@ export function extractModel(scene: THREE.Object3D): ExtractedModel {
       ? geometry.groups
       : [{ start: 0, count: indexCount, materialIndex: 0 }];
 
-    const matrix = mesh.matrixWorld;
+    const matrix = rotation
+      ? new THREE.Matrix4().multiplyMatrices(rotation, mesh.matrixWorld)
+      : mesh.matrixWorld;
     const normalMatrix = geometry.getAttribute('normal')
       ? new THREE.Matrix3().getNormalMatrix(matrix)
       : IDENTITY_NORMAL;
     const mirrored = matrix.determinant() < 0;
+    const skinned = mesh as THREE.SkinnedMesh;
+    const bake = !!options.bakeSkinning && skinned.isSkinnedMesh &&
+      !!geometry.getAttribute('skinIndex') && !!geometry.getAttribute('skinWeight');
 
     for (const group of groups) {
       const material = materials[group.materialIndex ?? 0] as (THREE.Material & MaterialFields) | undefined;
@@ -100,9 +126,9 @@ export function extractModel(scene: THREE.Object3D): ExtractedModel {
         let ic = index ? index.getX(i + 2) : i + 2;
         if (mirrored) [ib, ic] = [ic, ib];
 
-        const a = vertex(position, ia, matrix);
-        const b = vertex(position, ib, matrix);
-        const c = vertex(position, ic, matrix);
+        const a = cornerPosition(position, ia, matrix, skinned, bake);
+        const b = cornerPosition(position, ib, matrix, skinned, bake);
+        const c = cornerPosition(position, ic, matrix, skinned, bake);
         const face = faceNormal(a, b, c);
         const corners = [
           { index: ia, position: a },
@@ -113,9 +139,18 @@ export function extractModel(scene: THREE.Object3D): ExtractedModel {
           accumulator.positions.push(corner.position[0], corner.position[1], corner.position[2]);
           let n: Vec3;
           if (normal) {
-            n = vertex(normal, corner.index, null, normalMatrix);
-            const length = Math.hypot(n[0], n[1], n[2]);
-            n = length > 0 ? [n[0] / length, n[1] / length, n[2] / length] : face;
+            const posed = bake ? skinnedNormal(skinned, corner.index) : null;
+            if (posed) {
+              skinnedNormalVector.set(posed[0], posed[1], posed[2]).applyMatrix3(normalMatrix);
+              const length = skinnedNormalVector.length();
+              n = length > 0
+                ? [skinnedNormalVector.x / length, skinnedNormalVector.y / length, skinnedNormalVector.z / length]
+                : face;
+            } else {
+              n = vertex(normal, corner.index, null, normalMatrix);
+              const length = Math.hypot(n[0], n[1], n[2]);
+              n = length > 0 ? [n[0] / length, n[1] / length, n[2] / length] : face;
+            }
           } else {
             n = face;
           }
@@ -282,6 +317,61 @@ function imageUv(
 
 const matrixVector = new THREE.Vector3();
 const normalVector = new THREE.Vector3();
+const skinnedPosition = new THREE.Vector3();
+const skinnedNormalVector = new THREE.Vector3();
+const skinAccumulator = new THREE.Matrix4();
+const skinBoneMatrix = new THREE.Matrix4();
+const skinNormalMatrix = new THREE.Matrix3();
+
+function cornerPosition(
+  attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
+  index: number,
+  matrix: THREE.Matrix4,
+  mesh: THREE.SkinnedMesh,
+  bake: boolean,
+): Vec3 {
+  if (bake) {
+    skinnedPosition.set(attribute.getX(index), attribute.getY(index), attribute.getZ(index));
+    mesh.applyBoneTransform(index, skinnedPosition);
+    skinnedPosition.applyMatrix4(matrix);
+    return [skinnedPosition.x, skinnedPosition.y, skinnedPosition.z];
+  }
+  return vertex(attribute, index, matrix);
+}
+
+/** Skinned normal in mesh-local space, matching three's skinning shader. */
+function skinnedNormal(mesh: THREE.SkinnedMesh, index: number): Vec3 | null {
+  const geometry = mesh.geometry;
+  const skinIndex = geometry.getAttribute('skinIndex');
+  const skinWeight = geometry.getAttribute('skinWeight');
+  const normal = geometry.getAttribute('normal');
+  if (!skinIndex || !skinWeight || !normal || !mesh.skeleton) return null;
+
+  skinAccumulator.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  const accumulated = skinAccumulator.elements;
+  for (let i = 0; i < 4; i++) {
+    const weight = skinWeight.getComponent(index, i);
+    if (!weight) continue;
+    const boneIndex = skinIndex.getComponent(index, i);
+    const bone = mesh.skeleton.bones[boneIndex];
+    const inverse = mesh.skeleton.boneInverses[boneIndex];
+    if (!bone || !inverse) continue;
+    skinBoneMatrix
+      .multiplyMatrices(bone.matrixWorld, inverse)
+      .premultiply(mesh.bindMatrixInverse)
+      .multiply(mesh.bindMatrix);
+    const elements = skinBoneMatrix.elements;
+    for (let j = 0; j < 16; j++) accumulated[j]! += elements[j]! * weight;
+  }
+
+  skinNormalMatrix.setFromMatrix4(skinAccumulator);
+  skinnedNormalVector
+    .set(normal.getX(index), normal.getY(index), normal.getZ(index))
+    .applyMatrix3(skinNormalMatrix);
+  if (skinnedNormalVector.lengthSq() < 1e-12) return null;
+  skinnedNormalVector.normalize();
+  return [skinnedNormalVector.x, skinnedNormalVector.y, skinnedNormalVector.z];
+}
 
 function vertex(
   attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,

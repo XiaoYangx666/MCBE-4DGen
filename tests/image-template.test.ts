@@ -18,9 +18,10 @@ test('image template preserves portrait ratio, alpha, front orientation and vali
   expect(pixels.data[3]).toBe(0); // Transparent space outside the narrow image.
   expect(pixels.data[(64*128+64)*4+3]).toBeGreaterThan(100);
   expect(pixels.data[(64*128+64)*4+3]).toBeLessThan(150);
-  // Front view follows the existing Bedrock preview convention; image U grows with X.
+  // Viewed from the -Z front, world +X is on the left and must carry the
+  // image's left edge (u0); otherwise the skin reads mirrored.
   const mesh=image.geometry['geometry.skin0']!.bones[0]!.poly_mesh!;
-  expect(mesh.uvs[0]![0]).toBeLessThan(mesh.uvs[1]![0]);
+  expect(mesh.uvs[0]![0]).toBeGreaterThan(mesh.uvs[1]![0]);
   expect(mesh.uvs[2]![1]).toBeGreaterThan(mesh.uvs[1]![1]);
 });
 

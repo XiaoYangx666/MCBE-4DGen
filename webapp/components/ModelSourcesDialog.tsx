@@ -37,7 +37,7 @@ export function ModelSourcesDialog({ onClose }: { onClose: () => void }) {
         <SourceDirectory
           allLabel="全部"
           searchPlaceholder="搜索网站、格式或地区"
-          note={<>网页版推荐 GLB / glTF / VRM / OBJ；PMX 请使用桌面版。</>}
+          note={<>网页版推荐 GLB / glTF / VRM / OBJ；PMX 会先在浏览器内转换为 GLB，PMD 请使用桌面版。</>}
         />
       </div>
     </div>

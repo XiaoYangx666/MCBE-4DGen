@@ -1,66 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { MaterialRow, Session, Result } from "./types";
-
-function MaterialWeightInput({
-  name,
-  value,
-  disabled,
-  onCommit,
-}: {
-  name: string;
-  value: number;
-  disabled: boolean;
-  onCommit: (value: number) => void;
-}) {
-  const [draft, setDraft] = useState(String(value));
-  const cancelCommit = useRef(false);
-  useEffect(() => setDraft(String(value)), [value]);
-
-  function commit() {
-    if (cancelCommit.current) {
-      cancelCommit.current = false;
-      setDraft(String(value));
-      return;
-    }
-    const parsed = Number(draft);
-    if (
-      draft.trim() !== "" &&
-      Number.isFinite(parsed) &&
-      parsed >= 0 &&
-      parsed <= 20
-    ) {
-      onCommit(parsed);
-      setDraft(String(parsed));
-    } else {
-      setDraft(String(value));
-    }
-  }
-
-  return (
-    <input
-      className="material-weight"
-      type="number"
-      min={0}
-      max={20}
-      step={0.05}
-      inputMode="decimal"
-      aria-label={name + " 像素权重"}
-      title="相对像素权重，默认 1；0 表示最低像素预算，材质仍会保留"
-      disabled={disabled}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape") {
-          cancelCommit.current = true;
-          setDraft(String(value));
-          e.currentTarget.blur();
-        }
-      }}
-    />
-  );
-}
+import { MaterialList, type MaterialListItem } from "../shared/MaterialList";
 
 export function MaterialPanel({
   session,
@@ -234,79 +174,44 @@ export function MaterialPanel({
       )}
       <div className="materials">
         {session ? (
-          materials
-            .filter((m) => !hideUnchecked || !excluded.includes(m.name))
-            .map((material, index) => (
-              <label
-                key={index}
-                className={
-                  "material " + (selected === material.name ? "selected" : "")
-                }
-              >
-                <input
-                  disabled={busy}
-                  type="checkbox"
-                  checked={!excluded.includes(material.name)}
-                  onChange={() => {
-                    setExcluded((items) =>
-                      items.includes(material.name)
-                        ? items.filter((name) => name !== material.name)
-                        : [...items, material.name],
-                    );
-                    changed();
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelected(material.name);
-                    setMode(() => "pose");
-                  }}
-                >
-                  {material.name || "未命名"}
-                  <small>
-                    {material.triangles.toLocaleString()} 面
-                    {material.alpha < 1 ? " · α " + material.alpha : ""}
-                  </small>
-                </button>
-                <button
-                  type="button"
-                  className={
-                    "solo-button " + (solo === material.name ? "active" : "")
-                  }
-                  title="仅用于观察，不影响转换时保留的材质"
-                  onClick={() => {
-                    setSolo((current) =>
-                      current === material.name ? null : material.name,
-                    );
-                    setSelected(material.name);
-                    setMode(() => "pose");
-                  }}
-                >
-                  {solo === material.name ? "还原" : "只看"}
-                </button>
-                <MaterialWeightInput
-                  name={material.name}
-                  value={
-                    Object.hasOwn(materialWeights, material.name)
-                      ? materialWeights[material.name]!
-                      : 1
-                  }
-                  disabled={busy || excluded.includes(material.name)}
-                  onCommit={(value) => {
-                    setMaterialWeights((weights) => ({
-                      ...weights,
-                      [material.name]: value,
-                    }));
-                    changed();
-                  }}
-                />
-                <span
-                  className="material-dot"
-                  style={{ background: `hsl(${index * 31},25%,60%)` }}
-                />
-              </label>
-            ))
+          <MaterialList
+            items={materials
+              .filter((m) => !hideUnchecked || !excluded.includes(m.name))
+              .map((material, index): MaterialListItem => ({
+                id: material.name,
+                name: material.name || "未命名",
+                meta: `${material.triangles.toLocaleString()} 面${material.alpha < 1 ? ` · α ${material.alpha}` : ""}`,
+                color: `hsl(${index * 31},25%,60%)`,
+                included: !excluded.includes(material.name),
+                weight: Object.hasOwn(materialWeights, material.name)
+                  ? materialWeights[material.name]!
+                  : 1,
+                soloed: solo === material.name,
+                selected: selected === material.name,
+              }))}
+            disabled={busy}
+            onToggle={(name) => {
+              setExcluded((items) =>
+                items.includes(name)
+                  ? items.filter((item) => item !== name)
+                  : [...items, name],
+              );
+              changed();
+            }}
+            onSelect={(name) => {
+              setSelected(name);
+              setMode(() => "pose");
+            }}
+            onSolo={(name) => {
+              setSolo((current) => (current === name ? null : name));
+              setSelected(name);
+              setMode(() => "pose");
+            }}
+            onWeight={(name, value) => {
+              setMaterialWeights((weights) => ({ ...weights, [name]: value }));
+              changed();
+            }}
+          />
         ) : (
           <div className="empty-list">从模型管理打开模型后检查材质</div>
         )}
