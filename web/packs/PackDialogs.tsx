@@ -9,6 +9,7 @@ const titles: Record<Exclude<PackDialogKind, null>, string> = {
   "remove-skin": "移除这个皮肤？",
   delete: "删除皮肤包？",
   add: "添加皮肤",
+  export: "导出游戏皮肤包",
 };
 
 export function PackDialogs({
@@ -31,6 +32,7 @@ export function PackDialogs({
     sourceId: string;
     setSourceId: Dispatch<SetStateAction<string>>;
     sourceContents: Contents | null;
+    contents: Contents | null;
     indices: number[];
     setIndices: Dispatch<SetStateAction<number[]>>;
     sourceOptions: LibraryPack[];
@@ -44,6 +46,7 @@ export function PackDialogs({
     onRemoveSkin: () => void;
     onDelete: () => void;
     onAdd: () => void;
+    onExport: () => void;
   };
 }) {
   const { kind: dialog, row, skin, busy, error } = state;
@@ -55,6 +58,7 @@ export function PackDialogs({
     sourceId,
     setSourceId,
     sourceContents,
+    contents,
     indices,
     setIndices,
     sourceOptions,
@@ -68,6 +72,7 @@ export function PackDialogs({
     onRemoveSkin,
     onDelete,
     onAdd,
+    onExport,
   } = actions;
   if (!dialog) return null;
   return (
@@ -246,6 +251,81 @@ export function PackDialogs({
                 onClick={onAdd}
               >
                 添加 {indices.length || ""} 套皮肤
+              </button>
+            </div>
+          </>
+        )}
+        {dialog === "export" && row && (
+          <>
+            <p>
+              勾选要导出的游戏皮肤，默认全选。ZIP 只包含勾选的皮肤，不会修改游戏目录。
+            </p>
+            <label>
+              皮肤包名称
+              <input
+                aria-label="皮肤包名称"
+                autoFocus
+                maxLength={120}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
+            <div className="skin-copy-list">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={
+                    !!contents?.skins.length &&
+                    indices.length === contents.skins.length
+                  }
+                  disabled={!!busy || !contents?.skins.length}
+                  onChange={(event) =>
+                    setIndices(
+                      event.target.checked
+                        ? (contents?.skins.map((item) => item.index) ?? [])
+                        : [],
+                    )
+                  }
+                />
+                <b>全选</b>
+                <span className="muted">
+                  {indices.length} / {contents?.skins.length ?? 0} 套
+                </span>
+              </label>
+              {contents?.skins.map((item) => (
+                <label key={item.index}>
+                  <input
+                    type="checkbox"
+                    checked={indices.includes(item.index)}
+                    disabled={!!busy}
+                    onChange={(event) =>
+                      setIndices((current) =>
+                        event.target.checked
+                          ? [...current, item.index]
+                          : current.filter((index) => index !== item.index),
+                      )
+                    }
+                  />
+                  {item.name}
+                </label>
+              ))}
+              {!contents?.skins.length && (
+                <p className="muted">游戏中还没有可导出的皮肤。</p>
+              )}
+            </div>
+            <p className="muted">
+              保存时会先选择文件夹；请选择桌面、文档、下载等当前用户可写的文件夹。
+            </p>
+            <div className="pick-actions">
+              <button disabled={!!busy} onClick={onClose}>
+                取消
+              </button>
+              <button
+                className="primary"
+                disabled={!!busy || !indices.length || !name.trim()}
+                onClick={onExport}
+              >
+                选择文件夹并保存…
               </button>
             </div>
           </>

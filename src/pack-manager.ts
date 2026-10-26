@@ -52,6 +52,25 @@ export interface ManagerConfig {
   slots: Record<string, { manifestFormat: 1 | 2 }>;
 }
 type Active = ActivePack[];
+const BUILTIN_GEOMETRY = new Set([
+  'geometry.humanoid.custom',
+  'geometry.humanoid.customSlim',
+]);
+function readLabels(bytes: Uint8Array | undefined) {
+  const labels = new Map<string, string>();
+  if (!bytes) return labels;
+  for (const line of new TextDecoder().decode(bytes).split(/\r?\n/)) {
+    const at = line.indexOf('=');
+    if (at > 0) labels.set(line.slice(0, at), line.slice(at + 1));
+  }
+  return labels;
+}
+/** Read only the small header of a geometry document; meshes stay unparsed. */
+function geometryVersion(bytes: Uint8Array) {
+  const head = new TextDecoder().decode(bytes.subarray(0, 512));
+  const match = /"format_version"\s*:\s*(?:"([^"]+)"|([0-9.]+))/.exec(head);
+  return match?.[1] ?? match?.[2] ?? '1.8.0';
+}
 interface SlotEdits { name?: string; skins: Record<string, { name?: string; removed?: boolean }> }
 interface Snapshot { edits?: SlotEdits; id: string; slot: string; target: string; created: string; hashes: Hashes; directories: string[]; active: Active }
 interface TargetState {
@@ -453,6 +472,133 @@ export class PackManager {
       await noLinks(output);
       await writeFile(output, await zipSkinPack(files), { flag: 'wx' });
       return { id, output, skins: pack.skins };
+    });
+  }
+  /**
+   * Export the pack currently installed in a game slot as a standalone ZIP.
+   * Selected skins keep their labels and geometry; identity fields get new
+   * UUIDs so importing the result never collides with the installed copy.
+   */
+  async exportInstalled(slot: string, indices: number[] = [], options: { name?: string } = {}) {
+    return this.locked(async () => {
+      const files = await readSkinPack(this.target(slot));
+      const manifest = decode<{
+        format_version: number;
+        header: { name?: string; version?: number[]; uuid?: string };
+        modules?: { type: string; uuid?: string; version?: number[] }[];
+      }>(files['manifest.json']!);
+      const data = decode<{
+        serialize_name: string;
+        localization_name?: string;
+        skins: Record<string, unknown>[];
+      }>(files['skins.json']!);
+      const selectedIndices = indices.length
+        ? [...new Set(indices)].sort((a, b) => a - b)
+        : data.skins.map((_, index) => index);
+      if (
+        !selectedIndices.length ||
+        selectedIndices.some(
+          (index) =>
+            !Number.isInteger(index) || index < 0 || index >= data.skins.length,
+        )
+      )
+        throw new Error('请选择有效皮肤');
+      const selected = selectedIndices.map((index) => data.skins[index]!);
+      const name =
+        options.name?.trim() ||
+        (manifest.header.name ?? slot) + ' 导出';
+      if (!name || name.length > 120 || /[\r\n\x00]/.test(name))
+        throw new Error('名称需为 1–120 个字符');
+
+      const output: SkinPackFiles = Object.create(null) as SkinPackFiles;
+      const textures = new Set(selected.map((entry) => String(entry.texture)));
+      for (const [path, bytes] of Object.entries(files)) {
+        if (
+          path === 'manifest.json' ||
+          path === 'skins.json' ||
+          path === 'geometry.json' ||
+          path === 'texts/languages.json' ||
+          /^texts\/.*\.lang$/.test(path)
+        )
+          continue;
+        if (textures.has(path)) output[path] = bytes;
+        else if (path === 'pack_icon.png') output[path] = bytes;
+      }
+
+      const geometries = new Set(
+        selected.map((entry) => String(entry.geometry)),
+      );
+      const geometryBytes = files['geometry.json'];
+      if (geometryBytes) {
+        if (selectedIndices.length === data.skins.length)
+          output['geometry.json'] = geometryBytes;
+        else {
+          const included = new Set<string>();
+          const raw = (value: string) => new TextEncoder().encode(value);
+          const parts: Uint8Array[] = [raw('{"format_version":' + JSON.stringify(geometryVersion(geometryBytes)))];
+          for (const entry of geometryEntries(geometryBytes)) {
+            if (!geometries.has(entry.id)) continue;
+            included.add(entry.id);
+            parts.push(raw(',' + JSON.stringify(entry.id) + ':'), entry.value);
+          }
+          for (const id of geometries)
+            if (!BUILTIN_GEOMETRY.has(id) && !included.has(id))
+              throw new Error('缺少引用的几何：' + id);
+          if (parts.length > 1) {
+            parts.push(raw('}'));
+            output['geometry.json'] = concatBytes(parts);
+          }
+        }
+      }
+
+      const sourceKey = data.localization_name ?? data.serialize_name;
+      const labels = new Map<string, Map<string, string>>();
+      for (const locale of ['en_US', 'zh_CN'])
+        labels.set(locale, readLabels(files[`texts/${locale}.lang`]));
+      const key = 'FourDGenExport_' + randomUUID().replaceAll('-', '');
+      for (const locale of ['en_US', 'zh_CN']) {
+        const source = labels.get(locale)!;
+        const lines = [`skinpack.${key}=${name}`];
+        for (const [index, entry] of selected.entries()) {
+          const label =
+            source.get(
+              `skin.${sourceKey}.${String(entry.localization_name)}`,
+            ) ?? `皮肤 ${selectedIndices[index]! + 1}`;
+          lines.push(
+            `skin.${key}.${String(entry.localization_name)}=${label.replace(/[\r\n\x00]/g, ' ')}`,
+          );
+        }
+        output[`texts/${locale}.lang`] = new TextEncoder().encode(
+          lines.join('\n') + '\n',
+        );
+      }
+      output['texts/languages.json'] = encode(['en_US', 'zh_CN']);
+      output['skins.json'] = encode({
+        ...data,
+        serialize_name: key,
+        localization_name: key,
+        skins: selected,
+      });
+      output['manifest.json'] = encode({
+        ...manifest,
+        header: {
+          ...manifest.header,
+          name,
+          uuid: randomUUID(),
+          version: [1, 0, 0],
+        },
+        modules: (manifest.modules ?? []).map((module) => ({
+          ...module,
+          uuid: randomUUID(),
+          version: [1, 0, 0],
+        })),
+      });
+      return {
+        slot,
+        name,
+        skins: selected.length,
+        bytes: await zipSkinPack(output, { fast: true, light: true }),
+      };
     });
   }
   async status() {

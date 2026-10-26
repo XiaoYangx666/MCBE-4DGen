@@ -66,6 +66,51 @@ test('library merges colliding IDs, disables individual packs, and restores exac
   } finally { await cleanup(f.dir); }
 });
 
+test('exports selected skins from the installed game slot with a fresh identity', async () => {
+  const f = await fixture();
+  try {
+    await f.manager.importPack('first', f.source);
+    await f.manager.importPack('second', f.source);
+    const target = await f.manager.createPack('Multi');
+    await f.manager.addSkins(target.id, 'first', [0]);
+    await f.manager.addSkins(target.id, 'second', [0]);
+    await f.manager.renameNames(target.id, { skinIndex: 0, skinName: 'First Skin' });
+    await f.manager.renameNames(target.id, { skinIndex: 1, skinName: 'Second Skin' });
+    await f.manager.enable('custom', target.id);
+    const installedUUID = JSON.parse(
+      await readFile(join(f.root, 'custom/manifest.json'), 'utf8'),
+    ).header.uuid;
+    const before = await readSkinPack(join(f.root, 'custom'));
+
+    const all = await f.manager.exportInstalled('custom');
+    assert.equal(all.skins, 2);
+    const exported = await f.manager.exportInstalled('custom', [1], { name: 'Only Second' });
+    assert.equal(exported.skins, 1);
+    const zip = join(f.dir, 'game-export.zip');
+    await writeFile(zip, exported.bytes);
+    const validation = await validateSkinPackPath(zip);
+    assert.equal(validation.skins, 1);
+    assert.equal(validation.geometries.length, 1);
+    const files = await readSkinPack(zip);
+    const manifest = JSON.parse(new TextDecoder().decode(files['manifest.json']!));
+    assert.equal(manifest.header.name, 'Only Second');
+    assert.notEqual(manifest.header.uuid, installedUUID);
+    const skins = JSON.parse(new TextDecoder().decode(files['skins.json']!)).skins;
+    assert.equal(skins.length, 1);
+    assert.equal(skins[0].texture, `${target.id}_1.png`);
+    assert.match(new TextDecoder().decode(files['texts/zh_CN.lang']!), /Second Skin/);
+    assert.doesNotMatch(new TextDecoder().decode(files['texts/zh_CN.lang']!), /First Skin/);
+
+    await f.manager.importPack('from-game', zip);
+    assert.deepEqual(
+      (await f.manager.contents('from-game')).skins.map((skin) => skin.name),
+      ['Second Skin'],
+    );
+    assert.deepEqual(await readSkinPack(join(f.root, 'custom')), before);
+    await assert.rejects(f.manager.exportInstalled('custom', [9]), /有效皮肤/);
+  } finally { await cleanup(f.dir); }
+});
+
 test('installs and removes individual skins from a multi-skin pack', async () => {
   const f = await fixture();
   try {

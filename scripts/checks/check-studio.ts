@@ -46,6 +46,12 @@ try {
   await post('/api/settings/game-directory',{path:gameRoot});
   await post('/api/packs/edit-installed',{slot:'custom',name:'游戏包名',skinIndex:0,skinName:'游戏皮肤名'});
   const gameContents:any=await(await fetch(base+'/api/preset-packs/custom/skins')).json();assert.equal(gameContents.name,'游戏包名');assert.equal(gameContents.skins[0].name,'游戏皮肤名');
+  const gameExport=await fetch(base+'/api/preset-packs/custom/export?skins=0&name='+encodeURIComponent('游戏导出'));
+  assert.equal(gameExport.status,200);assert.match(gameExport.headers.get('Content-Disposition')??'',/filename\*=UTF-8''/);
+  const gameZip=await JSZip.loadAsync(await gameExport.arrayBuffer());
+  const gameSkins=JSON.parse(await gameZip.file('skins.json')!.async('string'));
+  assert.equal(gameSkins.skins.length,1);assert.equal(JSON.parse(await gameZip.file('manifest.json')!.async('string')).header.name,'游戏导出');
+  assert.equal((await fetch(base+'/api/preset-packs/custom/export?skins=9')).status,400);
   await post('/api/packs/edit-installed',{slot:'custom',skinIndex:0,remove:true,revision:gameContents.revision});
   assert.equal(((await(await fetch(base+'/api/preset-packs/custom/skins')).json()) as any).skins.length,0);
   await post('/api/packs/restore',{slot:'custom'});
