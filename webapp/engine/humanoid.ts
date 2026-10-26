@@ -1,28 +1,10 @@
 import * as THREE from 'three';
+import {
+  HUMANOID_PART_ROLES,
+  HUMANOID_REQUIRED_ROLES,
+  partForHumanoidRole,
+} from '../../src/humanoid-binding.ts';
 import type { HumanoidPart, Vec3 } from './types.ts';
-
-/** Player part driven by each source humanoid role. */
-const ROLE_PART: Record<string, HumanoidPart> = {
-  hips: 'body',
-  head: 'head',
-  neck: 'head',
-  leftUpperArm: 'leftArm',
-  rightUpperArm: 'rightArm',
-  leftUpperLeg: 'leftLeg',
-  rightUpperLeg: 'rightLeg',
-};
-
-/** Roles that must exist before six-part binding is used. */
-const REQUIRED_ROLES = [
-  'hips',
-  'head',
-  'leftUpperArm',
-  'rightUpperArm',
-  'leftHand',
-  'rightHand',
-  'leftUpperLeg',
-  'rightUpperLeg',
-] as const;
 
 /** Exact, normalized aliases. Ambiguous matches are never guessed. */
 const ROLE_ALIASES: Record<string, readonly string[]> = {
@@ -149,7 +131,7 @@ export function detectHumanoidRig(
     if (found) selected.set(role, found);
   }
 
-  for (const role of REQUIRED_ROLES)
+  for (const role of HUMANOID_REQUIRED_ROLES)
     if (!selected.has(role)) return null;
   for (const side of ['left', 'right']) {
     const arm = selected.get(side + 'UpperArm')!;
@@ -165,15 +147,14 @@ export function detectHumanoidRig(
   }
 
   const partNodes = {} as Record<HumanoidPart, THREE.Object3D>;
-  for (const role of REQUIRED_ROLES) {
-    const part = ROLE_PART[role];
-    if (!part) continue;
-    if (!partNodes[part]) partNodes[part] = selected.get(role)!;
+  for (const [part, role] of Object.entries(HUMANOID_PART_ROLES) as [HumanoidPart, string][]) {
+    const node = selected.get(role);
+    if (node) partNodes[part] = node;
   }
 
   const roleByObject = new Map<THREE.Object3D, HumanoidPart>();
   for (const [role, object] of Object.entries(roles)) {
-    const part = ROLE_PART[role];
+    const part = partForHumanoidRole(role);
     if (part) roleByObject.set(object, part);
   }
   const cache = new WeakMap<THREE.Object3D, HumanoidPart>();

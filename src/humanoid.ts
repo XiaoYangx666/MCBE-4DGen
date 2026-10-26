@@ -3,6 +3,15 @@ import { cloneDocument } from "@gltf-transform/functions";
 import { mat4, quat, vec3 } from "gl-matrix";
 import type { IntermediateModel } from "./model.ts";
 import type { V3 } from "./bedrock-types.ts";
+import {
+  createBoundsFitter,
+  dominantHumanoidPart,
+  HUMANOID_PART_ROLES,
+  HUMANOID_PARTS,
+  HUMANOID_REQUIRED_ROLES,
+  partForHumanoidRole,
+  type HumanoidPart,
+} from "./humanoid-binding.ts";
 import { measureFrozenBounds, prepareStaticModel } from "./prepare-model.ts";
 import { optimizeTextures } from "./texture-optimizer.ts";
 import { bindStatic } from "./bone-mapper.ts";
@@ -10,15 +19,7 @@ import { exportBedrockGeometry } from "./bedrock-exporter.ts";
 import { validateGeometry } from "./geometry-validator.ts";
 import { reduceRigidModel } from "./rigid-mesh-reducer.ts";
 
-const roles = {
-  body: "hips",
-  head: "head",
-  leftArm: "leftUpperArm",
-  rightArm: "rightUpperArm",
-  leftLeg: "leftUpperLeg",
-  rightLeg: "rightUpperLeg",
-} as const;
-type Part = keyof typeof roles;
+type Part = HumanoidPart;
 export interface HumanoidProfile {
   /** Source orientation alignment before posing and fitting. */
   rotationYDegrees?: number;
@@ -43,10 +44,8 @@ function partForJoint(node: Node): Part {
     current;
     current = current.getParentNode()
   ) {
-    const role = nodeRole(current);
-    for (const [part, human] of Object.entries(roles))
-      if (role === human) return part as Part;
-    if (role === "neck") return "head";
+    const part = partForHumanoidRole(nodeRole(current));
+    if (part) return part;
   }
   return "body";
 }
@@ -177,7 +176,7 @@ export async function exportHumanoid(
       roleNodes.set(role, node);
     }
   }
-  for (const role of [...Object.values(roles), "leftHand", "rightHand"]) {
+  for (const role of HUMANOID_REQUIRED_ROLES) {
     if (!roleNodes.has(role))
       throw new Error(
         "Humanoid binding requires source role (VRM metadata or boneMap): " +
@@ -313,8 +312,7 @@ export async function exportHumanoid(
         for (let c = 0; c < 3; c++)
           for (const [part, weight] of vertexScores(indices[i + c]!, false))
             scores.set(part, (scores.get(part) ?? 0) + weight);
-        const weightedPart =
-          [...scores].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "body";
+        const weightedPart = dominantHumanoidPart(scores);
         const part: Part =
           rule?.mode === "body"
             ? "body"
@@ -418,13 +416,12 @@ export async function exportHumanoid(
     center: "ground",
   });
   const { before, heightScale } = prepared.report;
-  const fit = (point: number[]): V3 => [
-    (point[0]! - (before.min[0] + before.max[0]) / 2) * heightScale,
-    (point[1]! - before.min[1]) * heightScale,
-    (point[2]! - (before.min[2] + before.max[2]) / 2) * heightScale,
-  ];
+  const fit = createBoundsFitter(before, heightScale);
   const pivots = Object.fromEntries(
-    Object.entries(roles).map(([part, role]) => [part, fit(points.get(role)!)]),
+    Object.entries(HUMANOID_PART_ROLES).map(([part, role]) => {
+      const point = points.get(role)!;
+      return [part, fit(point[0]!, point[1]!, point[2]!)];
+    }),
   ) as Record<Part, V3>;
   phase("reduction");
   const reduced = options.reduction
@@ -455,7 +452,7 @@ async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:nu
   });
   const geometry = full.file["geometry.skin0"]!;
   const counts: Record<string, number> = {};
-  for (const part of Object.keys(roles) as Part[]) {
+  for (const part of HUMANOID_PARTS) {
     const count = optimized.model.document
       .getRoot()
       .listMeshes()

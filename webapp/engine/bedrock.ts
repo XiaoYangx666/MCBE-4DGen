@@ -6,6 +6,10 @@ import type {
 } from '../../src/bedrock-types.ts';
 import { validateGeometry } from '../../src/geometry-validator.ts';
 import {
+  createBoundsFitter,
+  PLAYER_SKELETON,
+} from '../../src/humanoid-binding.ts';
+import {
   createPolyMeshStreams,
   mirrorX,
   visibleBounds,
@@ -43,19 +47,7 @@ export interface GeometryReport {
   warnings: string[];
 }
 
-const defaultPivot = (): V3 => [0, 24, 0];
-
-/** Player skeleton shared by static and six-part exports. */
-const PLAYER_SKELETON: { name: string; parent?: string; pivot: V3 }[] = [
-  { name: 'root', pivot: [0, 0, 0] },
-  { name: 'waist', parent: 'root', pivot: [0, 12, 0] },
-  { name: 'body', parent: 'waist', pivot: [0, 24, 0] },
-  { name: 'head', parent: 'body', pivot: [0, 24, 0] },
-  { name: 'leftArm', parent: 'body', pivot: [-5, 22, 0] },
-  { name: 'rightArm', parent: 'body', pivot: [5, 22, 0] },
-  { name: 'leftLeg', parent: 'root', pivot: [-1.9, 12, 0] },
-  { name: 'rightLeg', parent: 'root', pivot: [1.9, 12, 0] },
-];
+const STATIC_BODY = PLAYER_SKELETON.find((bone) => bone.name === 'body')!;
 
 function isDegenerate(a: V3, b: V3, c: V3) {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
@@ -95,9 +87,10 @@ export function buildBedrockGeometry(batches: readonly SourceBatch[], options: G
   if (!Number.isFinite(minX) || !(maxY - minY > 1e-9))
     throw new Error('模型高度为 0，无法生成 4D 皮肤');
   const scale = height / (maxY - minY);
-  const centerX = -(minX + maxX) / 2;
-  const centerZ = -(minZ + maxZ) / 2;
-  const groundY = -minY;
+  const fit = createBoundsFitter(
+    { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] },
+    scale,
+  );
 
   const streams = new Map<HumanoidPart, ReturnType<typeof createPolyMeshStreams>>();
   const streamFor = (part: HumanoidPart) => {
@@ -113,11 +106,6 @@ export function buildBedrockGeometry(batches: readonly SourceBatch[], options: G
   let skippedDegenerate = 0;
   const materials: { name: string; triangles: number }[] = [];
 
-  const fit = (x: number, y: number, z: number): V3 => [
-    (x + centerX) * scale,
-    (y + groundY) * scale,
-    (z + centerZ) * scale,
-  ];
   const addPosition = (stream: ReturnType<typeof createPolyMeshStreams>, point: V3): number =>
     stream.positions.add(mirrorX(point));
   const addNormal = (
@@ -198,7 +186,7 @@ export function buildBedrockGeometry(batches: readonly SourceBatch[], options: G
           ...(stream ? { poly_mesh: stream.polyMesh } : {}),
         };
       })
-    : [{ name: 'body', pivot: defaultPivot(), poly_mesh: mainStream.polyMesh }];
+    : [{ name: 'body', pivot: [...STATIC_BODY.pivot], poly_mesh: mainStream.polyMesh }];
 
   if (rig) {
     const waist = bones.find((bone) => bone.name === 'waist');
