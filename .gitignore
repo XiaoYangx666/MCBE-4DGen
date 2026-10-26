@@ -1,4 +1,8 @@
 node_modules/
+webapp/dist/
+# Wrangler local state and local-only secrets.
+.wrangler/
+.dev.vars
 # Local scratch only: generated artifacts and caches. Reusable benchmark and
 # diagnostic sources live in scripts/diagnostics/bench/, never in outputs/.
 outputs/

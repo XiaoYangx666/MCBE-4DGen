@@ -9,6 +9,7 @@
 | `src/cli.ts` | `inspect`、`convert`、`validate`、`preview` 命令行 |
 | `src/pack-cli.ts` | 皮肤包库与游戏目录的启用、备份、恢复 |
 | `server/start.ts` | 本地网页/桌面后台的启动、Web 构建、HTTP 服务 |
+| `webapp/` | 纯浏览器的静态网页版，无 Node 后台；图片皮肤与模型转换 |
 | `scripts/` | 按职责分组的检查、工作流、桌面打包、样本与诊断工具；稳定入口见 `scripts/README.md` |
 | `desktop/` | Electron 主进程、预加载脚本与桌面冒烟测试 |
 
@@ -22,10 +23,10 @@ Importer -> IntermediateModel -> Optimizer -> BoneMapper -> BedrockExporter -> S
 
 - `importer.ts`、`avatar-import.ts`、`tga.ts`、`pmx-metadata.ts`：读取 GLB/glTF、Assimp 格式与 PMX/VRM 元数据。
 - `prepare-model.ts`、`optimizer.ts`、`mesh-optimizer.ts`、`rigid-mesh-reducer.ts`：变换、姿势冻结、减面。
-- `texture-optimizer.ts`、`texture-charts.ts`、`image-template.ts`：图集、UV 连通分岛与图片模板。
+- `texture-optimizer.ts`、`texture-charts.ts`、`image-template.ts`、`image-skin-geometry.ts`：图集、UV 连通分岛、图片模板与两端共用的平面皮肤几何。
 - `bone-mapper.ts`、`humanoid.ts`、`auto-profile.ts`：Static 与六部位人形绑定。
-- `bedrock-exporter.ts`、`bedrock-types.ts`、`geometry-validator.ts`：Bedrock 1.8.0 poly_mesh 导出与校验。
-- `skin-pack.ts`、`pack-cli.ts`、`import-skin-pack.ts`：ZIP、皮肤包校验、不可变库与可恢复部署。
+- `bedrock-exporter.ts`、`bedrock-types.ts`、`geometry-validator.ts`、`poly-mesh-writer.ts`：Bedrock 1.8.0 poly_mesh 导出与校验。`poly-mesh-writer.ts` 提供两端共用的顶点去重、X 镜像与可见包围盒计算。
+- `skin-pack.ts`、`skin-pack-files.ts`、`skin-pack-zip.ts`、`pack-cli.ts`、`import-skin-pack.ts`：ZIP、皮肤包校验、不可变库与可恢复部署。`skin-pack-files.ts` 只依赖 Web 标准 API，桌面版与网页版共用皮肤包构建器、PNG 签名/尺寸与 UUID 校验；`skin-pack-zip.ts` 共用平铺 ZIP 的写入与压缩策略。
 - `pack-manager.ts`：皮肤包库与游戏槽位的领域操作；文件树的安全遍历、写入、校验和统计放在 `pack-tree.ts`。
 - `pack-tree.ts`：受管目录的读取/增量写入、SHA256 校验、几何 JSON 片段扫描与包体统计。
 - `pack-types.ts`：服务端、管理器和前端共用的皮肤包领域类型。
@@ -88,16 +89,41 @@ npm run test:node
 - `library/`：模型库的 `ModelListPane`、`ImportModelDialog`、`RenameModelDialog`、`RelinkModelDialog`、`DeleteModelDialog` 与 `model-types.ts`。
 - `packs/`：`PackSidebar`、`PackHeader`、`SkinList`、`SkinDetail`、`PackDialogs`、`GameSkinsPanel`、`PersonaRecipePanel`、`PackPreview`、`SaveSkinDialog`、`GameStatusBadge`，以及 `use-pack-page.ts`、`pack-types.ts`、`pack-state.ts`、`pack-menu.ts`、`pack-ui.ts`、`game-skins-types.ts`。`PackPage` 只负责视图，数据加载和操作由 `usePackPage` 统一管理。
 - `ui/`：`AppBar`、`WebNav`、`AboutDialog`、`ContextMenu`、`InlineName`、`Modal`、`SelectableRow` 等跨页面组件。
+- `shared/`：与纯浏览器网页版共用的展示层，只依赖 Web 标准 API 与 React：`palettes.ts`（配色元数据）、`appearance.ts`（主题/配色写入文档并广播 `appearancechange`）、`SourceDirectory.tsx`（模型站点目录）、`PoseControls.tsx`（Y 轴旋转与手臂外展/下放控件）、`MaterialList.tsx`（材质行、缩略图、勾选、像素权重、只看）、`MaterialCoverage.tsx`（逐材质像素覆盖）、`ConversionSummary.tsx`（转换报告摘要）、`RatioField.tsx`（保留面数比例与面数区间）、`poly-mesh-preview.ts`（导出的 poly_mesh → three.js 网格、纹理与统一取景 preset）、`preview-viewport.ts`（renderer / scene / camera / OrbitControls / 渲染循环 / 光照与正面指示的共享外壳）、`preview-lighting.ts`（预览环境光、三点光与软阴影）、`preview-orientation.ts`（前向箭头与标签）、`demand-render.ts`（按需渲染合并）、`viewport-appearance.ts`（主题背景与网格着色）、`format.ts`（字节与文件名工具）、`file-save.ts`（浏览器下载与 ZIP 文件名）、`clipboard.ts`（复制回退）、`useDialogDismiss.ts`（Esc/背景点击）。这里不放 API、IndexedDB 或服务端数据模型。
 - `lib/`：`api.ts`、`appearance.ts`、`navigation.ts`、`use-hash-route.ts` 等基础设施。
-- `styles/`：`style.css`、`workflow.css`、`theme.css`。
+- `styles/`：`style.css`、`workflow.css`、`theme.css`、`shared.css`。
 
 页面组件持有交互状态；跨页面共享的纯逻辑放到 `packs/`、`workbench/` 或 `lib/`，避免从页面文件反向导入类型或组件。
+
+## 纯浏览器网页版（`webapp/`）
+
+网页版是独立的 Vite + React 静态应用，构建产物在 `webapp/dist/`，不需要 `server/`。
+
+- `engine/import-model.ts`：GLTF/OBJ/FBX/DAE/STL/PLY 加载与多文件资源映射。
+- `engine/extract.ts`：世界变换、材质分组、UV 归一化与包围数据。
+- `engine/atlas.ts`：128 × 128 图集规划、绘制、UV 重映射。
+- `engine/bedrock.ts`：静态整体绑定、镜像与 `poly_mesh` 导出。
+- `engine/convert.ts`：图集 → 几何 → 皮肤包 → ZIP 流程。
+- `engine/image-skin.ts`：图片平面皮肤。
+- `engine/model-zip.ts`、`engine/pmx.ts`、`engine/textures.ts`、`engine/pose.ts`、`engine/reduce.ts`、`engine/model-job.ts`、`engine/types.ts`：模型 ZIP、PMX→GLB、TGA→PNG、手臂姿势、按材质减面、导入/转换编排与转换数据类型。
+- `engine/frame.ts`、`engine/canvas.ts`、`engine/names.ts`：帧让步、Canvas PNG 编码与皮肤名称校验。
+- `lib/output-preview.ts`：共享 poly_mesh 预览的薄封装，自动识别皮肤包里的几何标识。
+- `lib/pack-types.ts`、`lib/pack-store.ts`、`lib/pack-context.tsx`：单包数据结构、IndexedDB 持久化与 React 状态。
+- `lib/pack-import.ts`：读取 legacy poly_mesh 皮肤包 ZIP 并转换成单包里的皮肤。
+- `lib/download.ts`、`lib/theme.ts`、`lib/links.ts`、`lib/use-compact-viewport.ts`、`lib/material-visibility.ts`：保存/分享、主题、外链、紧凑视口和预览材质显隐等应用基础设施。
+- `components/`：图片模式、模型模式、`ConversionReport`（转换结果摘要）、`ModelSourcesDialog`（获取模型弹窗外壳）、单包管理、`SkinPreview`（皮肤卡片的三维预览弹窗）、视口、拖放与下载。
+- 共享 `src/skin-pack-files.ts`、`src/skin-pack-zip.ts`、`src/poly-mesh-writer.ts`、`src/geometry-validator.ts`、`src/image-skin-geometry.ts`、`src/tga.ts` 与 `src/pmx-metadata.ts`；不导入 `sharp`、`node:fs` 或 `libassimp`。
+- 共享展示层 `web/shared/`：配色元数据与主题写入（`palettes`、`appearance`）、模型站点目录、`formatBytes` / `safeFilename` / ZIP 文件名与浏览器下载（`format`、`file-save`）、弹窗 Esc/背景点击行为、姿势控件（`PoseControls`）、材质列表与像素覆盖（`MaterialList`、`MaterialCoverage`）、转换报告摘要（`ConversionSummary`）、保留面数比例（`RatioField`），以及预览外壳（`preview-viewport`、`poly-mesh-preview`、`preview-lighting`、`preview-orientation`、`demand-render`、`viewport-appearance`）。`webapp/lib/theme.ts` 保留主题持久化并再导出共享写入逻辑。
+- 样式复用 `web/styles/theme.css` 的明暗主题变量与 `web/styles/shared.css` 的站点目录、姿势控件和材质行样式，页面布局遵循本地工作台的顶栏、三栏卡片与紧凑表单。
+
+`engine/` 只放不依赖界面的浏览器转换管线，不导入 React、`components/`、`pack-context`、IndexedDB、主题或下载；`lib/` 负责单包状态与应用基础设施；`components/` 只负责界面。`tests/architecture.test.ts` 会检查这条边界。
 
 ## 验证
 
 ```powershell
 npm run check
 npm run check:web
+npm run check:webapp
 npm run test:workflow
 npm run test:studio
 npm run test:desktop

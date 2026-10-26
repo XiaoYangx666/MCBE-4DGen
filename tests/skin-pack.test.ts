@@ -2,6 +2,8 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import JSZip from 'jszip';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -77,6 +79,35 @@ test('pack reader rejects archive names that JSZip would otherwise silently norm
     const path = join(dir, 'unsafe.mcpack');
     await writeFile(path, await zip.generateAsync({ type: 'uint8array' }));
     await assert.rejects(readSkinPack(path), /unsafe filename/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('reads a skin pack ZIP wrapped in one top-level folder', async () => {
+  const files = await fixturePack();
+  const zip = new JSZip();
+  const root = zip.folder('4DGen-12345678')!;
+  for (const [name, bytes] of Object.entries(files)) root.file(name, bytes);
+  const dir = await mkdtemp(join(tmpdir(), '4d-wrapped-'));
+  try {
+    const path = join(dir, 'wrapped.mcpack');
+    await writeFile(path, await zip.generateAsync({ type: 'uint8array' }));
+    const read = await readSkinPack(path);
+    assert.deepEqual(Object.keys(read).sort(), Object.keys(files).sort());
+    assert.equal((await validateSkinPackPath(path)).skins, 1);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('reads an extracted pack from its parent folder', async () => {
+  const files = await fixturePack();
+  const dir = await mkdtemp(join(tmpdir(), '4d-extracted-'));
+  try {
+    const pack = join(dir, '4DGen-12345678');
+    for (const [name, bytes] of Object.entries(files)) {
+      const target = join(pack, name);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, bytes);
+    }
+    assert.equal((await validateSkinPackPath(dir)).skins, 1);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

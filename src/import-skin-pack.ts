@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 import { randomUUID } from 'node:crypto';
 import { decodeTGA } from './tga.ts';
-import type { SkinPackFiles } from './skin-pack.ts';
+import type { SkinPackFiles } from './skin-pack-files.ts';
 
 /** JSON with comments/trailing commas, without rewriting quoted text. */
 export function parsePackJSON(bytes: Uint8Array): any {

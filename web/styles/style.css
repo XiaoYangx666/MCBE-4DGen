@@ -423,21 +423,8 @@ main {
   min-height: 175px;
   background: var(--surface);
 }
-.panel-title {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-}
-.panel-title span {
-  font-size: 8px;
-  letter-spacing: 2px;
-  color: var(--muted);
-}
-.panel-empty {
-  padding: 40px 0;
-  color: var(--muted);
-  font-size: 11px;
-}
+/* panel-title, panel-empty, metric and report text live in shared.css. */
+
 .atlas-body {
   display: flex;
   gap: 16px;
@@ -454,11 +441,8 @@ main {
   font-size: 16px;
   font-weight: 500;
 }
-.atlas-body p,
-.report-panel p {
-  font-size: 10px;
-  color: var(--accent);
-}
+/* report text styles live in shared.css. */
+
 .atlas-body small {
   font-size: 9px;
   color: var(--muted);
@@ -469,22 +453,8 @@ main {
   margin-top: 10px;
   font-size: 10px;
 }
-.metric {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 22px 0 15px;
-}
-.metric strong {
-  font-size: 30px;
-  font-weight: 400;
-  letter-spacing: -1px;
-  color: var(--ink);
-}
-.metric span {
-  font-size: 10px;
-  color: var(--accent);
-}
+/* report metric lives in shared.css. */
+
 details {
   font-size: 10px;
   color: var(--accent);
@@ -1117,25 +1087,8 @@ button.packs-chip:hover:not(:disabled) { background: var(--selected); }
   color: var(--ink) !important;
   background: var(--selected) !important;
 }
-.face-estimate {
-  border: 1px solid var(--line);
-  background: var(--surface);
-  padding: 10px;
-  border-radius: 5px;
-  margin-top: 10px;
-}
-.face-estimate strong {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink);
-}
-.face-estimate small {
-  display: block;
-  font-size: 9px;
-  line-height: 1.7;
-  color: var(--accent);
-  margin-top: 5px;
-}
+/* Ratio/face-estimate styles live in shared.css. */
+
 
 .drop-overlay {
   position: fixed;
@@ -1309,48 +1262,8 @@ button.danger-button { color:var(--danger); border-color:var(--danger); backgrou
 .library-toolbar>input { width:auto!important; flex:1 1 360px!important; min-width:180px!important; }
 .library-toolbar>select { width:150px!important; max-width:170px; flex:0 0 150px; }
 .page-content .pick-box.model-sources { width:min(840px,calc(100vw - 28px))!important; max-height:80vh; overflow:hidden; display:flex; flex-direction:column; }
-.model-sources .source-toolbar { flex:none; padding-bottom:10px; border-bottom:1px solid var(--line); }
-.model-sources .source-lead { margin:0 0 10px!important; color:var(--muted)!important; font-size:11.5px!important; line-height:1.7!important; }
-.source-search-row { display:flex; gap:7px; }
-.source-search-row input { flex:1; min-width:0; padding:8px 10px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--ink); font:inherit; font-size:11.5px; }
-.source-search-row button { flex:none; padding:0 11px; border:1px solid var(--line); border-radius:7px; background:transparent; color:var(--muted); font-size:10.5px; cursor:pointer; }
-.source-search-row button:hover { color:var(--ink); border-color:var(--accent); }
-.source-tabs { display:flex; flex-wrap:wrap; gap:5px; margin-top:9px; }
-.source-tabs button { display:inline-flex; align-items:center; gap:5px; padding:6px 9px; border:1px solid var(--line); border-radius:999px; background:transparent; color:var(--muted); font-size:10.5px; cursor:pointer; }
-.source-tabs button:hover { color:var(--ink); border-color:var(--accent); }
-.source-tabs button.active { background:var(--selected); border-color:var(--accent); color:var(--ink); }
-.source-tabs small { opacity:.7; font-size:9px; }
-.source-scroll { flex:1; min-height:0; overflow:auto; padding:14px 2px 2px; }
-.source-section { margin-bottom:20px; }
-.source-section-head { display:flex; align-items:baseline; gap:8px; margin-bottom:9px; flex-wrap:wrap; }
-.source-section-head h3 { margin:0; font-size:13.5px; color:var(--ink); }
-.source-section-head span { color:var(--muted); font-size:10px; }
-.source-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-.source-card-wrap { position:relative; display:flex; min-width:0; }
-.source-card-wrap .source-card { flex:1; }
-.source-card { display:flex; gap:10px; padding:11px; border:1px solid var(--line); border-radius:9px; background:var(--surface); color:inherit; text-decoration:none; min-width:0; transition:border-color .15s,background .15s,transform .15s; }
-.source-card:hover { border-color:var(--accent); background:var(--hover); transform:translateY(-1px); }
-.source-icon { flex:none; width:36px; height:36px; border-radius:9px; background:var(--hover); border:1px solid var(--line); display:grid; place-items:center; overflow:hidden; }
-.source-icon img { width:100%; height:100%; object-fit:contain; padding:5px; }
-.source-icon-fallback { font-weight:700; font-size:15px; color:var(--accent); }
-.source-card-body { min-width:0; flex:1; display:flex; flex-direction:column; }
-.source-card-head { display:flex; justify-content:space-between; gap:7px; align-items:baseline; }
-.source-card-head>div { display:flex; align-items:baseline; gap:6px; min-width:0; }
-.source-card-head b { font-size:13px; color:var(--ink); }
-.source-region { font-size:8.5px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:1px 4px; white-space:nowrap; }
-.source-rating { flex:none; color:var(--face-yellow); font-size:9.5px; }
-.model-sources .source-card p { margin:5px 0 6px!important; font-size:10.5px!important; line-height:1.55!important; color:var(--muted)!important; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.source-chips { display:flex; flex-wrap:wrap; gap:3px; }
-.source-chip { font-size:8.5px; padding:1px 5px; border:1px solid transparent; border-radius:4px; background:var(--hover); color:var(--muted); }
-.source-chip.price { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 24%,transparent); }
-.source-chip.category { color:var(--muted); }
-.source-card-foot { display:flex; justify-content:space-between; gap:7px; margin-top:auto; padding-top:6px; padding-right:40px; }
-.source-card-foot small { color:var(--muted); font-size:9px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.source-copy { position:absolute; right:9px; bottom:9px; z-index:2; padding:2px 6px; border:1px solid var(--line); border-radius:4px; background:var(--surface); color:var(--muted); font-size:8.5px; cursor:pointer; opacity:.75; }
-.source-copy:hover { opacity:1; border-color:var(--accent); color:var(--accent); }
-.model-sources .source-format-hint { padding-top:10px; border-top:1px solid var(--line); color:var(--muted)!important; font-size:10px!important; line-height:1.7!important; }
-@media(max-width:900px) { .source-grid { grid-template-columns:1fr; } }
-@media(max-width:760px) { .page-content .pick-box.model-sources { width:calc(100vw - 16px); max-height:90vh; } .source-tabs { flex-wrap:nowrap; overflow-x:auto; padding-bottom:4px; } .source-tabs button { flex:none; } }
+/* The source directory itself (toolbar, tabs, cards) lives in styles/shared.css. */
+@media(max-width:760px) { .page-content .pick-box.model-sources { width:calc(100vw - 16px); max-height:90vh; } }
 .pack-manager-page { display:flex; flex-direction:column; overflow:hidden; padding:20px 28px; }
 .pack-toolbar { display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-shrink:0; }
 .pack-toolbar>div { flex-shrink:0; margin-right:18px; }
@@ -1436,14 +1349,8 @@ button.danger-button { color:var(--danger); border-color:var(--danger); backgrou
 .skin-copy-list { max-height:250px; overflow:auto; background:var(--surface); border:1px solid var(--line); padding:5px 12px; border-radius:6px; margin-top:15px; }
 .skin-copy-list label { display:flex; gap:10px; align-items:center; margin:11px 0; }
 @media(max-width:760px) { .organized-packs { max-height:290px; }.pack-sidebar-head { padding:13px; }.pack-top-actions { flex-wrap:wrap; width:100%; margin:0; }.pack-top-actions button { flex:1; padding:8px; font-size:11px; }.pack-detail-bar { flex-wrap:wrap; gap:12px; }.pack-detail-actions { width:100%; }.pack-library-row.text-only>span:first-child { flex:1 1 160px; } }
-.material-allocation h3 { margin: 18px 0 8px; font-size: 15px; }
-.allocation-row { display: grid; grid-template-columns: minmax(65px, 1fr) minmax(80px, 2fr) minmax(140px, auto); align-items:center; gap:12px; width:100%; border:1px solid transparent; background:transparent; padding:9px 8px; text-align:left; }
-.allocation-row.selected { border-color:var(--accent, var(--accent)); background:color-mix(in srgb,var(--accent) 7.1%,transparent); }
-.allocation-track { height:10px; background:color-mix(in srgb,var(--hover) 6.3%,transparent); border-radius:5px; overflow:hidden; }
-.allocation-track > span { display:block; height:100%; background:var(--accent); border-radius:5px; }
-.allocation-value { text-align:right; font-size:12px; color:var(--accent); font-variant-numeric:tabular-nums; }
-.allocation-label { overflow-wrap:anywhere; }
-@media(max-width:600px) { .allocation-row { grid-template-columns: 1fr 2fr; } .allocation-value { grid-column:2; } }
+/* material coverage rows live in shared.css (shared with the browser studio). */
+
 .sidebar { padding-top:12px; }
 .material-tools { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; margin-bottom:10px; }
 .material-tools label { display:flex; align-items:center; gap:5px; }

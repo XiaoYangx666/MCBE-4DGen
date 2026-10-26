@@ -4,6 +4,7 @@ import "./styles/style.css";
 import "./styles/workflow.css";
 
 import "./styles/theme.css";
+import "./styles/shared.css";
 import {initializeAppearance} from "./lib/appearance";
 await initializeAppearance();
 

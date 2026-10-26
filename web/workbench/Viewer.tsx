@@ -1,17 +1,18 @@
-import {bindViewportAppearance} from "./viewport-appearance";
-import { createDemandRender } from "./demand-render";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { decodeGeometryTriangles } from "../../src/geometry-validator";
 import type { BedrockGeometryFile } from "../../src/bedrock-types";
+import { buildPolyMeshPreview } from "../shared/poly-mesh-preview";
 import { createPosePreview } from "./pose-preview";
 import type { HumanoidProfile } from "../../src/humanoid";
 import type { Result, Session } from "./types";
 import { api } from "../lib/api";
 import { preparePreviewMaterial } from "./preview-material";
+import {
+  createPreviewViewport,
+  type PreviewViewport,
+} from "../shared/preview-viewport";
 import { HoldOriginalButton } from "./HoldOriginalButton";
 import { captureCameraView, restoreCameraView, type CameraViewState } from "./camera-state";
 
@@ -71,40 +72,38 @@ export function Viewer({
     const el = host.current!;
     let disposed = false;
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#15191e");
-    const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 10000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    el.appendChild(renderer.domElement);
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x707984, 3));
-    const light = new THREE.DirectionalLight(0xffffff, 2);
-    light.position.set(20, 40, 30);
-    scene.add(light);
-    const grid = new THREE.GridHelper(64, 32, 0x46515b, 0x282f36);
-    scene.add(grid);
-    const forward = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0.1, 0), 18, 0xa8dfb8, 3, 1.5);
-    scene.add(forward);
-    const labelCanvas = document.createElement("canvas");
-    labelCanvas.width = 512;
-    labelCanvas.height = 80;
-    const labelContext = labelCanvas.getContext("2d")!;
-    labelContext.fillStyle = "#a8dfb8";
-    labelContext.font = "32px sans-serif";
-    labelContext.textAlign = "center";
-    labelContext.fillText("玩家正前方（−Z）", 256, 48);
-    const labelTexture = new THREE.CanvasTexture(labelCanvas);
-    const directionLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture, depthTest: false, depthWrite: false }));
-    directionLabel.position.set(0, 1, -21);
-    directionLabel.scale.set(18, 2.8, 1);
-    scene.add(directionLabel);
-    const group = new THREE.Group();
-    scene.add(group);
     let poseController: ReturnType<typeof createPosePreview> | null = null;
     let poseSignature = "";
+    let modelDirty = true;
+    let beforeRender = () => {};
+
+    let view: PreviewViewport;
+    try {
+      view = createPreviewViewport({
+        host: el,
+        theme: true,
+        grid: {
+          size: 64,
+          divisions: 32,
+          color: 0x46515b,
+          centerColor: 0x282f36,
+        },
+        lit: !settings.current.unlit,
+        renderMode: "demand",
+        controls: { enableDamping: true },
+        orientation: { direction: -1, label: "玩家正前方（−Z）" },
+        onBeforeRender: () => beforeRender(),
+        onContextLost: () =>
+          setError("WebGL 上下文丢失，请刷新页面后重试。"),
+      });
+    } catch (e) {
+      setError(String(e));
+      setLoading(false);
+      return;
+    }
+    const { camera, controls, lighting, orientation } = view;
+    const group = new THREE.Group();
+    view.setObject(group, { frame: false });
 
     function applyPose() {
       if (!poseController) return;
@@ -128,7 +127,6 @@ export function Viewer({
     }
 
     function fit(part = "all", front = false) {
-      const object = part === "all" ? group : group.children.find((child) => child.name === part);
       const box = new THREE.Box3();
       if (part.startsWith("material:")) {
         group.traverse((object) => {
@@ -137,22 +135,12 @@ export function Viewer({
           }
         });
       } else {
+        const object = part === "all" ? group : group.getObjectByName(part);
         if (!object) return;
         box.setFromObject(object);
       }
       if (box.isEmpty()) return;
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3()).length();
-      controls.target.copy(center);
-      camera.position.copy(center).add(front
-        ? new THREE.Vector3(0, 0, -size * 1.65)
-        : new THREE.Vector3(size * 0.65, size * 0.25, size * 1.65));
-      camera.up.set(0, 1, 0);
-      camera.zoom = 1;
-      camera.near = Math.max(0.001, size / 1000);
-      camera.far = Math.max(100, size * 100);
-      camera.updateProjectionMatrix();
-      controls.update();
+      view.frameBox(box, front ? "front" : "angle", { resetZoom: true });
     }
     frameRef.current = (part) => fit(part ?? "all", !!previewUrl);
     frontRef.current = () => fit("all", true);
@@ -199,39 +187,17 @@ export function Viewer({
             texture.dispose();
             return;
           }
-          texture.colorSpace = THREE.SRGBColorSpace;
-          texture.magFilter = THREE.NearestFilter;
-          texture.minFilter = THREE.NearestFilter;
-          const triangles = decodeGeometryTriangles(file as BedrockGeometryFile, "geometry.skin0");
-          const parts = new Map<string, typeof triangles>();
-          for (const triangle of triangles) {
-            const name = triangle[0]!.bone;
-            const list = parts.get(name) ?? [];
-            list.push(triangle);
-            parts.set(name, list);
-          }
-          for (const [name, tris] of parts) {
-            const positions: number[] = [], normals: number[] = [], uvs: number[] = [];
-            for (const triangle of tris) for (const corner of triangle) {
-              positions.push(-corner.position[0], corner.position[1], corner.position[2]);
-              normals.push(-corner.normal[0], corner.normal[1], corner.normal[2]);
-              uvs.push(...corner.uv);
-            }
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-            geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-            geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-            const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-              map: texture,
-              side: THREE.FrontSide,
-              transparent: false,
-              alphaTest: 0.5,
-              depthWrite: true,
-              roughness: 1,
-            }));
-            mesh.name = name;
-            group.add(mesh);
-          }
+          const preview = buildPolyMeshPreview(file as BedrockGeometryFile, "", {
+            identifier: "geometry.skin0",
+            groupByBone: true,
+            mirrorX: true,
+            texture,
+            side: THREE.FrontSide,
+            alphaTest: 0.5,
+            transparent: false,
+            roughness: 1,
+          });
+          group.add(preview.object);
         }
         group.traverse((object) => {
           if (!(object instanceof THREE.Mesh)) return;
@@ -252,6 +218,9 @@ export function Viewer({
           }));
         });
         applyPose();
+        view.setLit(!settings.current.unlit, { invalidate: false });
+        lighting.fit(group);
+        orientation?.fit(group);
         const saved = cameraState.current;
         if (saved?.sessionId === session.id) {
           restoreCameraView(saved, camera, controls);
@@ -270,13 +239,6 @@ export function Viewer({
     }
     void load();
 
-    const resize = new ResizeObserver(() => {
-      camera.aspect = el.clientWidth / el.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(el.clientWidth, el.clientHeight);
-      invalidate.current?.();
-    });
-    resize.observe(el);
     const ray = new THREE.Raycaster();
     let down = [0, 0];
     const pointerDown = (event: PointerEvent) => { down = [event.clientX, event.clientY]; };
@@ -294,38 +256,41 @@ export function Viewer({
         settings.current.onSelect(currentMode !== "result" ? (names?.[0] ?? hit.object.name) : hit.object.name);
       }
     };
-    renderer.domElement.addEventListener("pointerdown", pointerDown);
-    renderer.domElement.addEventListener("pointerup", pointerUp);
-    let modelDirty = true;
-    const render = createDemandRender(() => {
-      if(modelDirty) {
-        modelDirty = false;
-        applyPose();
-        group.traverse((object) => {
-          if (!(object instanceof THREE.Mesh)) return;
-          const current = settings.current;
-          object.visible = current.mode !== "result"
-            ? current.solo !== null
-              ? object.userData.materialNames?.includes(current.solo)
-              : !object.userData.materialNames?.some((name: string) => current.excluded.includes(name))
-            : current.focus === "all" || object.name === current.focus;
-          const materials = current.unlit ? object.userData.flat : object.userData.original;
-          if (materials) {
-            object.material = materials.length === 1 ? materials[0] : materials;
-            for (const material of materials) material.wireframe = current.wire;
-          }
-        });
-      }
-      const moving = controls.update();
-      renderer.render(scene, camera);
-      return moving;
-    });
-    invalidate.current = () => {modelDirty = true;render.request();};
-    controls.addEventListener("change",render.request);
-    render.request();
-    const unbindAppearance=bindViewportAppearance(scene, grid, render.request);
+    view.renderer.domElement.addEventListener("pointerdown", pointerDown);
+    view.renderer.domElement.addEventListener("pointerup", pointerUp);
+
+    beforeRender = () => {
+      if (!modelDirty) return;
+      modelDirty = false;
+      applyPose();
+      const current = settings.current;
+      group.traverse((object) => {
+        if (!(object instanceof THREE.Mesh)) return;
+        object.visible = current.mode !== "result"
+          ? current.solo !== null
+            ? object.userData.materialNames?.includes(current.solo)
+            : !object.userData.materialNames?.some((name: string) => current.excluded.includes(name))
+          : current.focus === "all" || object.name === current.focus;
+        const materials = current.unlit ? object.userData.flat : object.userData.original;
+        if (materials) {
+          object.material = materials.length === 1 ? materials[0] : materials;
+          for (const material of materials) material.wireframe = current.wire;
+        }
+      });
+      // Lighting follows the posed bounds; unlit mode still shows the flat
+      // materials, so the rig just swaps to its ambient fill.
+      view.setLit(!current.unlit, { invalidate: false });
+      lighting.fit(group);
+      orientation?.fit(group);
+    };
+
+    invalidate.current = () => {
+      modelDirty = true;
+      view.invalidate();
+    };
+    view.invalidate();
+
     return () => {
-      unbindAppearance();
       disposed = true;
       setLoading(false);
       cameraState.current = {
@@ -333,23 +298,10 @@ export function Viewer({
         ...captureCameraView(camera.position, controls.target, camera.up, camera.zoom),
       };
       invalidate.current = null;
-      controls.removeEventListener("change",render.request);
-      render.dispose();
-      resize.disconnect();
-      renderer.domElement.removeEventListener("pointerdown", pointerDown);
-      renderer.domElement.removeEventListener("pointerup", pointerUp);
-      controls.dispose();
-      forward.line.geometry.dispose();
-      forward.cone.geometry.dispose();
-      (forward.line.material as THREE.Material).dispose();
-      (forward.cone.material as THREE.Material).dispose();
-      directionLabel.material.dispose();
-      labelTexture.dispose();
+      view.renderer.domElement.removeEventListener("pointerdown", pointerDown);
+      view.renderer.domElement.removeEventListener("pointerup", pointerUp);
+      view.dispose();
       disposeObject(group);
-      grid.geometry.dispose();
-      (grid.material as THREE.Material).dispose();
-      renderer.dispose();
-      renderer.domElement.remove();
     };
   }, [previewUrl, session?.id, viewKind === "result" ? result?.id : undefined, viewKind]);
 
