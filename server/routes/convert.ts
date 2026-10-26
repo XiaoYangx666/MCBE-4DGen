@@ -184,7 +184,7 @@ export const convertRoutes = [
           geometry: exported.file,
           png: exported.png,
           identifier: 'geometry.skin0',
-          packName: session.name + ' / 本地工作台',
+          packName: packNameFromModel(session.name),
         });
         job.files = files;
         job.texture = exported.png;
@@ -218,6 +218,29 @@ export const convertRoutes = [
   route('GET', '/api/job/:id/:asset', jobState),
 ];
 
+const MODEL_EXTENSION = /\.(pmx|pmd|glb|gltf|vrm|fbx|obj|dae|stl|ply)$/i;
+
+/** User-visible model name without a source file extension. */
+function modelDisplayName(name: string) {
+  return name.trim().replace(MODEL_EXTENSION, '').trim();
+}
+
+/** Skin pack name derived from the model, never a local-workbench suffix. */
+function packNameFromModel(name: string) {
+  return modelDisplayName(name).slice(0, 128) || '4D 皮肤';
+}
+
+/** Attachment headers with an ASCII fallback and a UTF-8 ZIP name. */
+function zipHeaders(name: string) {
+  const stem = (modelDisplayName(name) || '4d-skin').slice(0, 80);
+  const ascii = stem.replace(/[^\x20-\x7e]|["\\/]/g, '-').trim() || '4d-skin';
+  const encoded = encodeURIComponent(`${stem}.zip`);
+  return {
+    'Content-Type': 'application/zip',
+    'Content-Disposition': `attachment; filename="${ascii}.zip"; filename*=UTF-8''${encoded}`,
+  };
+}
+
 async function jobState({ studio, params }: RouteContext) {
   const job = studio.jobs.get(params.id!);
   if (!job) throw new HttpError('任务不存在', 404);
@@ -239,10 +262,7 @@ async function jobState({ studio, params }: RouteContext) {
     });
   if (asset === 'download')
     return new Response((await zipSkinPack(job.files!)) as BodyInit, {
-      headers: {
-        'Content-Type': 'application/zip',
-        'Content-Disposition': 'attachment; filename="skin.zip"',
-      },
+      headers: zipHeaders(job.meta?.source ?? ''),
     });
   if (asset === 'geometry') return json(job.geometry);
   if (asset === 'texture')

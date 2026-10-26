@@ -1,5 +1,42 @@
 export type Vec3 = [number, number, number];
 
+/** Six rigid player parts used by the humanoid binding. */
+export type HumanoidPart =
+  | 'body'
+  | 'head'
+  | 'leftArm'
+  | 'rightArm'
+  | 'leftLeg'
+  | 'rightLeg';
+
+export const HUMANOID_PARTS: readonly HumanoidPart[] = [
+  'body',
+  'head',
+  'leftArm',
+  'rightArm',
+  'leftLeg',
+  'rightLeg',
+];
+
+/** Stable byte code stored per triangle, so batches survive reduction. */
+export const PART_CODE: Record<HumanoidPart, number> = {
+  body: 0,
+  head: 1,
+  leftArm: 2,
+  rightArm: 3,
+  leftLeg: 4,
+  rightLeg: 5,
+};
+
+export const CODE_PART: readonly HumanoidPart[] = [
+  'body',
+  'head',
+  'leftArm',
+  'rightArm',
+  'leftLeg',
+  'rightLeg',
+];
+
 /** An image that can be drawn into a canvas. */
 export interface TextureSource {
   image: CanvasImageSource;
@@ -28,6 +65,11 @@ export interface SourceBatch {
   triangles: number;
   /** World-space surface area, used to budget atlas space. */
   area: number;
+  /**
+   * One `PART_CODE` per triangle, present when the model was extracted with a
+   * humanoid rig. Missing entries mean "body".
+   */
+  parts?: Uint8Array;
 }
 
 export interface AtlasRect {

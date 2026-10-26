@@ -71,16 +71,37 @@ export async function importSkinPackZip(file: File): Promise<ImportedPack> {
     geometryRoot = parsed;
   }
 
+  const readLang = async (entry: JSZip.JSZipObject | null) => {
+    const names = new Map<string, string>();
+    if (!entry) return names;
+    const lang = await entry.async('string');
+    for (const line of lang.split(/\r?\n/)) {
+      const index = line.indexOf('=');
+      if (index > 0) names.set(line.slice(0, index).trim(), line.slice(index + 1).trim());
+    }
+    return names;
+  };
   const langEntry = read('texts/zh_CN.lang') ?? read('texts/en_US.lang');
-  const lang = langEntry ? await langEntry.async('string') : '';
-  const langNames = new Map<string, string>();
-  for (const line of lang.split(/\r?\n/)) {
-    const index = line.indexOf('=');
-    if (index > 0) langNames.set(line.slice(0, index).trim(), line.slice(index + 1).trim());
+  const langNames = await readLang(langEntry);
+  // Pack-level names can live in a different language file than the one used
+  // for the skin labels; merge every available translation for the manifest.
+  const packNames = new Map<string, string>();
+  for (const path of entries.filter((name) => /^texts\/[^/]+\.lang$/i.test(name))) {
+    for (const [key, value] of await readLang(zip.file(path))) packNames.set(key, value);
   }
   const key = typeof skinsRoot.serialize_name === 'string'
     ? skinsRoot.serialize_name
     : typeof skinsRoot.localization_name === 'string' ? skinsRoot.localization_name : null;
+  // Some packs store a translation key (for example "pack.name") in the
+  // manifest; resolve it through the language file before showing it.
+  const headerName = typeof manifest.header?.name === 'string' ? manifest.header.name : '';
+  const packName = (
+    packNames.get(headerName) ??
+    (key ? packNames.get(`skinpack.${key}`) : undefined) ??
+    langNames.get(headerName) ??
+    (key ? langNames.get(`skinpack.${key}`) : undefined) ??
+    headerName
+  ).trim().slice(0, 128) || '导入的皮肤包';
 
   const skins: StoredSkin[] = [];
   const skipped: string[] = [];
@@ -156,8 +177,7 @@ export async function importSkinPackZip(file: File): Promise<ImportedPack> {
   const headerId = isUuid(manifest.header?.uuid) ? manifest.header.uuid : null;
   const moduleId = isUuid(module.uuid) ? module.uuid : null;
   return {
-    name: typeof manifest.header?.name === 'string' && manifest.header.name.trim()
-      ? manifest.header.name.trim().slice(0, 128) : '导入的皮肤包',
+    name: packName,
     headerId,
     moduleId,
     skins,

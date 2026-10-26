@@ -7,6 +7,7 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { vrmHumanoidRoles } from './humanoid.ts';
 
 export type ModelFormat = 'glb' | 'gltf' | 'obj' | 'fbx' | 'stl' | 'ply' | 'dae';
 
@@ -16,6 +17,8 @@ export interface LoadedModel {
   scene: THREE.Object3D;
   warnings: string[];
   stats: { triangles: number; meshes: number; materials: number; textures: number };
+  /** VRM 0.x/1.0 humanoid metadata, when the source provides it. */
+  humanoidRoles?: Record<string, THREE.Object3D>;
   dispose: () => void;
 }
 
@@ -106,7 +109,7 @@ export async function loadModelFiles(files: File[]): Promise<LoadedModel> {
   const revoke = () => { for (const url of created) URL.revokeObjectURL(url); };
 
   try {
-    const { scene, format } = await parseModel(main.file, mainUrl, main.format, files, manager, warnings);
+    const { scene, format, humanoidRoles } = await parseModel(main.file, mainUrl, main.format, files, manager, warnings);
     // OBJ/MTL textures are started by preload() and may still be decoding when
     // OBJLoader resolves. Wait for the manager to go idle so stats and the
     // atlas see the actual images.
@@ -132,6 +135,7 @@ export async function loadModelFiles(files: File[]): Promise<LoadedModel> {
       scene,
       warnings,
       stats,
+      ...(humanoidRoles && Object.keys(humanoidRoles).length ? { humanoidRoles } : {}),
       dispose: () => {
         if (disposed) return;
         disposed = true;
@@ -152,7 +156,11 @@ async function parseModel(
   files: File[],
   manager: THREE.LoadingManager,
   warnings: string[],
-): Promise<{ scene: THREE.Object3D; format: ModelFormat }> {
+): Promise<{
+  scene: THREE.Object3D;
+  format: ModelFormat;
+  humanoidRoles?: Record<string, THREE.Object3D>;
+}> {
   if (format === 'glb' || format === 'gltf') {
     const loader = new GLTFLoader(manager);
     try {
@@ -161,8 +169,15 @@ async function parseModel(
     } catch { /* decoder is optional; uncompressed files still load */ }
     const gltf = await loader.loadAsync(url);
     if (/\.vrm$/i.test(file.name))
-      warnings.push('VRM 以 glTF 基础网格读取，姿态为绑定姿势，不加载 VRM 骨骼与表情扩展。');
-    return { scene: gltf.scene, format };
+      warnings.push('VRM 以 glTF 基础网格读取；脸和身体材质会保留，表情与物理不会进入输出。');
+    const humanoidRoles = gltfHumanoidRoles(gltf);
+    if (gltf.parser.json.extensions?.VRM || gltf.parser.json.extensions?.VRMC_vrm)
+      warnings.push('已读取 VRM 人形骨骼，可用于六部位绑定。');
+    return {
+      scene: gltf.scene,
+      format,
+      ...(Object.keys(humanoidRoles).length ? { humanoidRoles } : {}),
+    };
   }
   if (format === 'obj') {
     const loader = new OBJLoader(manager);
@@ -218,6 +233,26 @@ async function parseModel(
     return { scene: group, format };
   }
   throw new Error(`暂不支持 ${format} 格式`);
+}
+
+/**
+ * GLTFLoader keeps the raw glTF JSON and an object→asset association map. Use
+ * both to turn VRM humanoid node indices into the nodes in the loaded scene.
+ */
+function gltfHumanoidRoles(gltf: {
+  scene: THREE.Object3D;
+  parser: {
+    json: unknown;
+    associations: Map<object, { nodes?: number }>;
+  };
+}): Record<string, THREE.Object3D> {
+  const byIndex = new Map<number, THREE.Object3D>();
+  for (const [object, association] of gltf.parser.associations) {
+    if (typeof association?.nodes !== 'number') continue;
+    if ((object as THREE.Object3D).isObject3D)
+      byIndex.set(association.nodes, object as THREE.Object3D);
+  }
+  return vrmHumanoidRoles(gltf.parser.json, (index) => byIndex.get(index));
 }
 
 function wrapGeometry(geometry: THREE.BufferGeometry) {

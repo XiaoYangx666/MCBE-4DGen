@@ -171,15 +171,23 @@ export const libraryRoutes = [
   }),
 
   route('GET', '/api/packs/:id/download', async ({ studio, params }) => {
+    const manager = studio.requireManager();
+    const pack = (await manager.list()).find((item) => item.id === params.id);
     const folder = resolve(storage.cache, 'pack-exports', crypto.randomUUID());
     await mkdir(folder, { recursive: true });
     const output = resolve(folder, 'skin.zip');
     try {
-      await studio.requireManager().exportPack(params.id!, output);
+      await manager.exportPack(params.id!, output);
+      const stem = (pack?.name ?? '')
+        .replace(/[\\/:*?"<>|\x00-\x1f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80) || '4d-skin';
+      const ascii = stem.replace(/[^\x20-\x7e]/g, '-').trim() || '4d-skin';
       return new Response(new Uint8Array(await readFile(output)), {
         headers: {
           'Content-Type': 'application/zip',
-          'Content-Disposition': 'attachment; filename="skin.zip"',
+          'Content-Disposition': `attachment; filename="${ascii}.zip"; filename*=UTF-8''${encodeURIComponent(stem + '.zip')}`,
         },
       });
     } finally {

@@ -1,12 +1,13 @@
 import * as THREE from 'three';
+import type { HumanoidRig } from './humanoid.ts';
 
 export interface ArmRig {
   root: THREE.Object3D;
-  leftArm: THREE.Bone;
-  rightArm: THREE.Bone;
-  leftHand: THREE.Bone;
-  rightHand: THREE.Bone;
-  initial: Map<THREE.Bone, { position: THREE.Vector3; quaternion: THREE.Quaternion }>;
+  leftArm: THREE.Object3D;
+  rightArm: THREE.Object3D;
+  leftHand: THREE.Object3D;
+  rightHand: THREE.Object3D;
+  initial: Map<THREE.Object3D, { position: THREE.Vector3; quaternion: THREE.Quaternion }>;
 }
 
 const LEFT_UPPER = new Set([
@@ -57,6 +58,23 @@ export function detectArmRig(root: THREE.Object3D): ArmRig | null {
   if (!leftArm || !rightArm || !leftHand || !rightHand) return null;
 
   const initial = new Map<THREE.Bone, { position: THREE.Vector3; quaternion: THREE.Quaternion }>();
+  for (const bone of [leftArm, rightArm, leftHand, rightHand]) {
+    initial.set(bone, { position: bone.position.clone(), quaternion: bone.quaternion.clone() });
+  }
+  return { root, leftArm, rightArm, leftHand, rightHand, initial };
+}
+
+/** Reuse a detected humanoid rig when the name-only arm detector misses it. */
+export function armRigFromHumanoid(rig: HumanoidRig | null): ArmRig | null {
+  if (!rig) return null;
+  const leftArm = rig.roles.leftUpperArm;
+  const rightArm = rig.roles.rightUpperArm;
+  const leftHand = rig.roles.leftHand;
+  const rightHand = rig.roles.rightHand;
+  if (!leftArm || !rightArm || !leftHand || !rightHand) return null;
+  let root: THREE.Object3D = rig.root;
+  while (root.parent) root = root.parent;
+  const initial = new Map<THREE.Object3D, { position: THREE.Vector3; quaternion: THREE.Quaternion }>();
   for (const bone of [leftArm, rightArm, leftHand, rightHand]) {
     initial.set(bone, { position: bone.position.clone(), quaternion: bone.quaternion.clone() });
   }

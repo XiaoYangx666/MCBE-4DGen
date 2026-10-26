@@ -5,7 +5,9 @@ import { DownloadButtons, WarningList } from './Common';
 import { Icon } from './Icons';
 import { Viewport } from './Viewport';
 import { MODEL_ACCEPT, type LoadedModel } from '../engine/import-model';
-import { applyArmPose, type ArmRig } from '../engine/pose';
+import { applyArmPose, armRigFromHumanoid, type ArmRig } from '../engine/pose';
+import type { HumanoidRig } from '../engine/humanoid';
+import type { BindingMode, ConvertResult } from '../engine/convert';
 import {
   applyMaterialVisibility,
   collectMaterialVisibility,
@@ -13,7 +15,6 @@ import {
 } from '../lib/material-visibility';
 import { extractModel, type ExtractedModel } from '../engine/extract';
 import type { DoubleSidedPolicy } from '../engine/bedrock';
-import type { ConvertResult } from '../engine/convert';
 import { nextFrame } from '../engine/frame';
 import {
   convertExtractedModel,
@@ -83,6 +84,8 @@ export function ModelStudio() {
   const [rotationY, setRotationY] = useState(0);
   const [armSpread, setArmSpread] = useState(0);
   const [armAvailable, setArmAvailable] = useState(false);
+  const [binding, setBinding] = useState<BindingMode>('static');
+  const [rigAvailable, setRigAvailable] = useState(false);
   const [source, setSource] = useState<ExtractedModel | null>(null);
   const [included, setIncluded] = useState<Set<string>>(new Set());
   const [mobileTab, setMobileTab] = useState<'basic' | 'pose' | 'material' | 'result'>('basic');
@@ -98,6 +101,7 @@ export function ModelStudio() {
   const [soloKey, setSoloKey] = useState<string | null>(null);
   const sourcePose = useRef('0|0');
   const armRig = useRef<ArmRig | null>(null);
+  const humanoidRig = useRef<HumanoidRig | null>(null);
   const previewRootRef = useRef<THREE.Group | null>(null);
   const originalVisibility = useRef(new Map<THREE.Material, boolean>());
   const [result, setResult] = useState<ConvertResult | null>(null);
@@ -189,10 +193,13 @@ export function ModelStudio() {
     setRotationY(0);
     setArmSpread(0);
     setArmAvailable(false);
+    setRigAvailable(false);
+    setBinding('static');
     setWeights({});
     setSoloKey(null);
     originalVisibility.current = new Map();
     armRig.current = null;
+    humanoidRig.current = null;
     previewRootRef.current = null;
     setPreviewRoot(null);
     sourcePose.current = '0|0';
@@ -209,8 +216,11 @@ export function ModelStudio() {
         return;
       }
       originalVisibility.current = collectMaterialVisibility(job.model.scene);
-      armRig.current = job.armRig;
-      setArmAvailable(!!job.armRig);
+      humanoidRig.current = job.rig;
+      setRigAvailable(!!job.rig);
+      setBinding(job.rig ? 'humanoid' : 'static');
+      armRig.current = armRigFromHumanoid(job.rig) ?? job.armRig;
+      setArmAvailable(!!armRig.current);
       const root = new THREE.Group();
       root.add(job.model.scene);
       previewRootRef.current = root;
@@ -233,18 +243,21 @@ export function ModelStudio() {
     }
   };
 
-  const key = useMemo(() => modelResultKey({
-    name,
-    height,
-    rotationY,
-    armSpread,
-    doubleSided,
-    ratio,
-    maxError,
-    included,
-    weights,
-    modelTriangles: model?.stats.triangles ?? 0,
-  }), [name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, weights, model?.stats.triangles]);
+  const key = useMemo(() => [
+    binding,
+    modelResultKey({
+      name,
+      height,
+      rotationY,
+      armSpread,
+      doubleSided,
+      ratio,
+      maxError,
+      included,
+      weights,
+      modelTriangles: model?.stats.triangles ?? 0,
+    }),
+  ].join('|'), [binding, name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, weights, model?.stats.triangles]);
 
   const convert = async () => {
     if (!model || busy) return;
@@ -255,7 +268,7 @@ export function ModelStudio() {
     try {
       await nextFrame();
       let extracted = source;
-      const poseKey = `${rotationY}|${armSpread}`;
+      const poseKey = `${rotationY}|${armSpread}|${binding}`;
       if (!extracted || sourcePose.current !== poseKey) {
         const root = previewRootRef.current;
         const saved = root?.rotation.y ?? 0;
@@ -265,9 +278,12 @@ export function ModelStudio() {
           root.updateMatrixWorld(true);
         }
         try {
+          if (armRig.current) applyArmPose(armRig.current, armSpread);
+          model.scene.updateMatrixWorld(true);
           extracted = extractModel(model.scene, {
             rotationYDegrees: rotationY,
-            bakeSkinning: armSpread !== 0,
+            bakeSkinning: binding === 'humanoid' || armSpread !== 0,
+            rig: binding === 'humanoid' ? humanoidRig.current : null,
           });
         } finally {
           if (root) {
@@ -287,6 +303,7 @@ export function ModelStudio() {
         name: name.trim(),
         height,
         doubleSided,
+        binding,
         ratio,
         maxError,
         included,
@@ -493,6 +510,25 @@ export function ModelStudio() {
               placeholder="输入皮肤名称"
             />
           </label>
+
+          <label className="field-label">
+            绑定方式
+            <select
+              value={binding}
+              disabled={!rigAvailable}
+              onChange={(event) => setBinding(event.target.value as BindingMode)}
+            >
+              <option value="humanoid" disabled={!rigAvailable}>六部位人形（随动作摆动）</option>
+              <option value="static">静态整体（不与动作联动）</option>
+            </select>
+          </label>
+          <p className="field-help">
+            {rigAvailable
+              ? binding === 'humanoid'
+                ? '已识别完整人形骨骼：头、躯干、双臂、双腿会跟随玩家动作。'
+                : '当前按静态整体导出；切换为六部位后需要重新转换。'
+              : '未识别到完整的 VRM / 常见 MMD 人形骨骼，只能按静态整体导出。'}
+          </p>
 
           <label className="field-label">
             模型高度

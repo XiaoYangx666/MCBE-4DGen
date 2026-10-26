@@ -51,6 +51,19 @@ describe('webapp mesh reduction', () => {
     expect(source.triangles).toBe(128);
   });
 
+  it('reduces each player part separately and keeps one code per triangle', async () => {
+    const source = grid(8);
+    source.parts = Uint8Array.from(
+      { length: source.triangles },
+      (_, index) => index % 2,
+    );
+    const result = await reduceBatches([source], { ratio: 0.5, maxError: 0.03 });
+    const reduced = result.batches[0]!;
+    expect(reduced.parts).toBeInstanceOf(Uint8Array);
+    expect(reduced.parts!.length).toBe(reduced.triangles);
+    expect(new Set(reduced.parts)).toEqual(new Set([0, 1]));
+  });
+
   it('passes batches through unchanged at 100%', async () => {
     const source = grid(4);
     const result = await reduceBatches([source], { ratio: 1, maxError: 0.03 });
