@@ -47,15 +47,38 @@ npm run dev
 
 默认不会写游戏目录。只有显式执行「启用」或给 workflow 加 `--deploy` 才会部署。
 
+### 网页版（纯浏览器）
+
+不需要 Node 后台，构建后是纯静态站点：
+
+```sh
+npm run webapp:dev
+```
+
+打开 <http://127.0.0.1:4174>。手机与电脑在同一 Wi-Fi 时，打开终端里 Vite 打印的 `Network` 地址即可在手机上使用。网页版包含图片皮肤、模型转换（含浏览器内 PMX → GLB）、三维预览、模型站点目录、单包管理和平铺 `.zip` 导出；不写入游戏目录，也没有模型库。模型使用静态整体绑定，贴图固定 128 × 128。
+
+```sh
+npm run webapp:build    # 输出到 webapp/dist/
+```
+
+构建产物可直接部署到任意静态托管。仓库已配置 Cloudflare Workers 静态资源部署：
+
+```sh
+npm run webapp:deploy:dry   # 构建并检查打包内容
+npm run webapp:deploy       # 部署到 Cloudflare
+```
+
+自动部署使用 Cloudflare Workers Builds 的 GitHub 集成，不需要在 GitHub Secrets 里保存 Cloudflare API Token。连接仓库后推送到 `main` 即自动构建部署，详见 [网页版](docs/web-app.md#部署到-cloudflare)。
+
 ## 功能
 
 - **模型导入**：OBJ/MTL、GLB、glTF、FBX、DAE、STL、PLY、PMX、VRM，保留节点、材质、蒙皮与贴图。
 - **优化**：误差受限减面、贴图缩放、显式图集、初始姿态冻结。
 - **绑定**：Static 整体绑定；VRM 六部位刚性人形绑定，可调肩宽与手臂外展。
 - **导出**：Bedrock `poly_mesh` 几何、ZIP、`manifest.json`、`skins.json`、`geometry.json` 与本地化文件。
-- **皮肤包管理**：多包启停、改名、备份与恢复、外部改动保护，写入游戏目录前自动备份。
+- **皮肤包管理**：桌面版支持多包启停、改名、备份与恢复、外部改动保护，写入游戏目录前自动备份；网页版只保留一个浏览器本地包，可持续添加、导入 ZIP 和导出 ZIP。
 - **图片模板**：任意可解码图片可生成双面平面 4D 皮肤。
-- **界面**：本地 Web 工作台（三维预览、材质筛选、姿势与减面）和 Windows 便携版。
+- **界面**：本地 Web 工作台（三维预览、材质筛选、姿势与减面）、Windows 便携版，以及可静态部署的纯浏览器网页版。
 
 ## 支持格式
 
@@ -73,6 +96,7 @@ npm run dev
 
 - [完整工作流程](docs/workflow.md)
 - [本地网页工作台](docs/local-web.md)
+- [网页版（纯浏览器）](docs/web-app.md)
 - [桌面版使用与打包](docs/desktop.md)
 - [数据目录与图片模板](docs/storage-and-templates.md)
 - [命令行与皮肤包管理](docs/cli.md)
@@ -85,6 +109,8 @@ npm run dev
 - 客户端实测只显示 128×128 贴图；256/512/1024 的图片模板测试均不可见，导出固定为 128。
 - PMD、Blend、KTX2/Basis/Draco 暂不支持。
 - 外部贴图只能位于模型文件所在目录及其子目录。
+- 网页版导出平铺 `.zip`，`manifest.json`、`skins.json`、`geometry.json`、贴图和 `texts/` 都在压缩包顶层，没有外层文件夹；解压到游戏 `skin_packs/<包名>/` 即可。不提供一键写入游戏目录。
+- 网页版只保留一个浏览器本地皮肤包，导入仅支持 `1.8.0` legacy poly_mesh 皮肤包；内置人形与 cube 几何会跳过。
 - 桌面版只提供未签名的 Windows 便携包，首次运行可能触发 SmartScreen。
 
 ## 开发

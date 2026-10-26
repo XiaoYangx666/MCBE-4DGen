@@ -1,5 +1,5 @@
 import { expect,test } from 'vitest';
-import { createDemandRender } from '../web/workbench/demand-render.ts';
+import { createDemandRender } from '../web/shared/demand-render.ts';
 
 test('preview coalesces changes, settles to no frames, wakes again, and cancels on dispose',()=>{
   const pending=new Map<number,FrameRequestCallback>();let id=0,draws=0,moving=2;

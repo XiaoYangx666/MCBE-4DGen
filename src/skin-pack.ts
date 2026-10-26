@@ -1,20 +1,20 @@
 import { safeExternalAsset } from "./import-skin-pack.ts";
 import { validateImportedGeometry } from "./pack-geometry.ts";
-import { randomUUID } from 'node:crypto';
 import { readFile, readdir, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import JSZip from 'jszip';
 import sharp from 'sharp';
 import type { BedrockGeometryFile } from './bedrock-types.ts';
-import { parseGeometryJSON, validateGeometry } from './geometry-validator.ts';
+import { parseGeometryJSON } from './geometry-validator.ts';
 
-export type SkinPackFiles = Record<string, Uint8Array>;
-const encoder = new TextEncoder();
+import { buildSkinPack, isUuid } from './skin-pack-files.ts';
+import type { SkinPackFiles, SkinPackInput } from './skin-pack-files.ts';
+import { zipSkinPackBytes } from './skin-pack-zip.ts';
+export { buildSkinPack };
+export type { SkinPackFiles, SkinPackInput };
 const decoder = new TextDecoder('utf-8', { fatal: true });
-const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const fileName = /^[A-Za-z0-9_-]+\.png$/;
 const rootFile = /^(?:manifest|skins|geometry)\.json$|^[A-Za-z0-9_-]+\.png$|^texts\/(?:[a-z]{2}_[A-Z]{2}\.lang|languages\.json)$/;
-const text = (value: unknown) => encoder.encode(JSON.stringify(value));
 function assert(ok: unknown, message: string): asserts ok {
   if (!ok) throw new Error('Invalid skin pack: ' + message);
 }
@@ -28,44 +28,6 @@ function required(files: Readonly<SkinPackFiles>, name: string): Uint8Array {
   const content = Object.hasOwn(files, name) ? files[name] : undefined;
   if (!(content instanceof Uint8Array)) throw new Error('Invalid skin pack: missing ' + name);
   return content;
-}
-
-export interface SkinPackInput {
-  geometry: BedrockGeometryFile;
-  png: Uint8Array;
-  /** Human-readable name in manifest.json. */
-  packName?: string;
-  /** Must equal an identifier already present in geometry.json. */
-  identifier: string;
-}
-
-/** Legacy geometry, texture, unique pack identity and localized display names. */
-export function buildSkinPack(input: SkinPackInput): SkinPackFiles {
-  const name = input.packName ?? 'Custom Skin Pack';
-  if (!name.trim() || name.length > 128) throw new Error('Pack name must be 1–128 characters');
-  if (input.identifier !== 'geometry.skin0') {
-    throw new Error('Single-skin export requires identifier geometry.skin0');
-  }
-  validateGeometry(input.geometry, { expectedIdentifier: input.identifier });
-  const headerId = randomUUID(), moduleId = randomUUID();
-  const key = 'FourDGen_' + headerId.replaceAll('-', '');
-  const label = name.replace(/[\r\n=]/g, ' ');
-  return {
-    'manifest.json': text({
-      format_version: 2,
-      header: { name, uuid: headerId, version: [1, 0, 0] },
-      modules: [{ type: 'skin_pack', uuid: moduleId, version: [1, 0, 0] }],
-    }),
-    'skins.json': text({ serialize_name: key, localization_name: key, skins: [{
-      localization_name: 'skin0', geometry: input.identifier,
-      texture: 'skin0.png', hide_armor: true, type: 'free',
-    }] }),
-    'geometry.json': text(input.geometry),
-    'skin0.png': new Uint8Array(input.png),
-    'texts/languages.json': text(['en_US', 'zh_CN']),
-    'texts/en_US.lang': encoder.encode(`skinpack.${key}=${label}\nskin.${key}.skin0=${label}\n`),
-    'texts/zh_CN.lang': encoder.encode(`skinpack.${key}=${label}\nskin.${key}.skin0=${label}\n`),
-  };
 }
 
 export interface PackValidation {
@@ -92,14 +54,14 @@ export async function validateSkinPackFiles(
   assert(record(manifest) && [1, 2].includes(manifest.format_version as number), 'manifest format_version must be 1 or 2');
   const header = manifest.header;
   assert(record(header) && typeof header.name === 'string' && header.name.trim().length > 0 &&
-    typeof header.uuid === 'string' && uuid.test(header.uuid), 'invalid manifest header');
+    isUuid(header.uuid), 'invalid manifest header');
   const version = (value: unknown) => Array.isArray(value) && value.length === 3 &&
     value.every((n) => Number.isSafeInteger(n) && n >= 0);
   assert(version(header.version), 'invalid header version');
   assert(Array.isArray(manifest.modules) && manifest.modules.length === 1, 'expected one skin_pack module');
   const module = manifest.modules[0];
-  assert(record(module) && module.type === 'skin_pack' && typeof module.uuid === 'string' &&
-    uuid.test(module.uuid) && module.uuid !== header.uuid && version(module.version), 'invalid skin_pack module');
+  assert(record(module) && module.type === 'skin_pack' &&
+    isUuid(module.uuid) && module.uuid !== header.uuid && version(module.version), 'invalid skin_pack module');
   assert(record(skins) && Array.isArray(skins.skins) && skins.skins.length > 0, 'skins.json has no skins');
   const names = new Set<string>(), geometries = new Set<string>(), textures = new Set<string>();
   for (const entry of skins.skins) {
@@ -159,23 +121,7 @@ export async function zipSkinPack(
   options: { fast?: boolean; light?: boolean } = {},
 ): Promise<Uint8Array> {
   await validateSkinPackFiles(files, options.light ? { light: true } : {});
-  const zip = new JSZip();
-  for (const [name, bytes] of Object.entries(files)) {
-    if (!options.fast) zip.file(name, bytes);
-    else if (/\.png$/i.test(name))
-      // PNG data is already compressed; storing it avoids a second pass.
-      zip.file(name, bytes, { compression: 'STORE' });
-    else
-      zip.file(name, bytes, {
-        compression: 'DEFLATE',
-        compressionOptions: { level: 1 },
-      });
-  }
-  return zip.generateAsync({
-    type: 'uint8array',
-    compression: 'DEFLATE',
-    compressionOptions: { level: options.fast ? 1 : 6 },
-  });
+  return zipSkinPackBytes(files, options.fast ? { fast: true } : {});
 }
 
 /** Read supported root assets and texts/ only; reject unsafe or unexpected ZIP paths. */
@@ -188,7 +134,14 @@ export async function readSkinPack(path: string, options: { external?: boolean }
   };
   assert(!(await lstat(path)).isSymbolicLink(), 'symbolic links are not supported');
   if ((await lstat(path)).isDirectory()) {
-    for (const entry of await readdir(path, { withFileTypes: true })) {
+    const entries = await readdir(path, { withFileTypes: true });
+    const files = entries.filter((entry) => entry.isFile());
+    const directories = entries.filter((entry) => entry.isDirectory());
+    // Accept a single wrapper folder, e.g. an extracted 4DGen-xxxxxxxx pack.
+    if (!files.length && directories.length === 1 && directories[0]!.name !== 'texts') {
+      return readSkinPack(join(path, directories[0]!.name), options);
+    }
+    for (const entry of entries) {
       if (entry.isDirectory() && entry.name === 'texts') {
         for (const nested of await readdir(join(path, 'texts'), { withFileTypes: true })) {
           assert(nested.isFile(), 'non-file in texts');
@@ -201,11 +154,28 @@ export async function readSkinPack(path: string, options: { external?: boolean }
     }
   } else {
     const zip = await JSZip.loadAsync(await readFile(path), { checkCRC32: true, createFolders: false });
-    for (const entry of Object.values(zip.files)) {
-      if (entry.dir) { assert(entry.name === 'texts/', 'unexpected directory in archive'); continue; }
+    const entries = Object.values(zip.files);
+    const fileEntries = entries.filter((entry) => !entry.dir);
+    const roots = new Set(fileEntries.map((entry) => {
+      const index = entry.name.indexOf('/');
+      return index < 0 ? '' : entry.name.slice(0, index);
+    }));
+    const wrapper = roots.size === 1 && !roots.has('') ? [...roots][0]! : '';
+    const prefix = wrapper ? wrapper + '/' : '';
+    for (const entry of entries) {
+      let name = entry.name;
+      if (prefix) {
+        if (name === prefix) {
+          assert(entry.dir, 'unexpected file path in archive');
+          continue;
+        }
+        assert(name.startsWith(prefix), 'unexpected or unsafe filename ' + name);
+        name = name.slice(prefix.length);
+      }
+      if (entry.dir) { assert(name === 'texts/', 'unexpected directory in archive'); continue; }
       assert(!entry.unsafeOriginalName || entry.unsafeOriginalName === entry.name,
         'unexpected or unsafe filename ' + entry.unsafeOriginalName);
-      add(entry.name, await entry.async('uint8array'));
+      add(name, await entry.async('uint8array'));
     }
   }
   return result;

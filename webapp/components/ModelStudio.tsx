@@ -1,0 +1,875 @@
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { DropZone } from './DropZone';
+import { DownloadButtons, WarningList } from './Common';
+import { Icon } from './Icons';
+import { Viewport } from './Viewport';
+import { MODEL_ACCEPT, type LoadedModel } from '../engine/import-model';
+import { applyArmPose, type ArmRig } from '../engine/pose';
+import {
+  applyMaterialVisibility,
+  collectMaterialVisibility,
+  restoreMaterialVisibility,
+} from '../lib/material-visibility';
+import { extractModel, type ExtractedModel } from '../engine/extract';
+import type { DoubleSidedPolicy } from '../engine/bedrock';
+import type { ConvertResult } from '../engine/convert';
+import { nextFrame } from '../engine/frame';
+import {
+  convertExtractedModel,
+  loadModelJob,
+  materialLabels as buildMaterialLabels,
+  modelResultKey,
+  ModelJobCancelled,
+  sourceTriangleCount,
+} from '../engine/model-job';
+import { buildGeometryPreview } from '../lib/output-preview';
+import { useSkinPack } from '../lib/pack-context';
+import type { TextureSource } from '../engine/types';
+import { RatioField } from '../../web/shared/RatioField';
+import { ConversionReport } from './ConversionReport';
+import { formatBytes } from '../../web/shared/format';
+import { useCompactViewport } from '../lib/use-compact-viewport';
+import { PoseControls } from '../../web/shared/PoseControls';
+import { MaterialList, type MaterialListItem } from '../../web/shared/MaterialList';
+
+const ModelSourcesDialog = lazy(async () => {
+  const module = await import('./ModelSourcesDialog');
+  return { default: module.ModelSourcesDialog };
+});
+
+const DEFAULT_NAME = '我的 4D 皮肤';
+const thumbnailCache = new Map<string, string | null>();
+
+/** Default and maximum mobile sheet heights, shared by CSS and drag state. */
+const normalSheetHeight = () => Math.min(window.innerHeight * 0.6, 620);
+const maxSheetHeight = () => Math.max(320, window.innerHeight - 72);
+const clampSheetHeight = (value: number) =>
+  Math.max(160, Math.min(maxSheetHeight(), value));
+
+function textureThumbnail(texture: TextureSource | null): string | null {
+  if (!texture) return null;
+  if (thumbnailCache.has(texture.key)) return thumbnailCache.get(texture.key)!;
+  let result: string | null = null;
+  try {
+    const size = 40;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext('2d');
+    if (context) {
+      const scale = Math.max(size / texture.width, size / texture.height);
+      const width = texture.width * scale;
+      const height = texture.height * scale;
+      context.drawImage(texture.image, (size - width) / 2, (size - height) / 2, width, height);
+      result = canvas.toDataURL('image/png');
+    }
+  } catch {
+    result = null;
+  }
+  thumbnailCache.set(texture.key, result);
+  return result;
+}
+
+export function ModelStudio() {
+  const [model, setModel] = useState<LoadedModel | null>(null);
+  const [sourceBytes, setSourceBytes] = useState(0);
+  const [name, setName] = useState(DEFAULT_NAME);
+  const [height, setHeight] = useState(32);
+  const [heightText, setHeightText] = useState('32');
+  const [ratio, setRatio] = useState(0.2);
+  const [maxError, setMaxError] = useState(0.03);
+  const [doubleSided, setDoubleSided] = useState<DoubleSidedPolicy>('source');
+  const [rotationY, setRotationY] = useState(0);
+  const [armSpread, setArmSpread] = useState(0);
+  const [armAvailable, setArmAvailable] = useState(false);
+  const [source, setSource] = useState<ExtractedModel | null>(null);
+  const [included, setIncluded] = useState<Set<string>>(new Set());
+  const [mobileTab, setMobileTab] = useState<'basic' | 'pose' | 'material' | 'result'>('basic');
+  const [sheetOpen, setSheetOpen] = useState(true);
+  const [sheetHeight, setSheetHeight] = useState<number | null>(null);
+  const [sheetDragging, setSheetDragging] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const sheetDrag = useRef<{ startY: number; startHeight: number; moved: boolean } | null>(null);
+  const suppressSheetClick = useRef(false);
+  const compact = useCompactViewport();
+  const [previewRoot, setPreviewRoot] = useState<THREE.Group | null>(null);
+  const [weights, setWeights] = useState<Record<string, number>>({});
+  const [soloKey, setSoloKey] = useState<string | null>(null);
+  const sourcePose = useRef('0|0');
+  const armRig = useRef<ArmRig | null>(null);
+  const previewRootRef = useRef<THREE.Group | null>(null);
+  const originalVisibility = useRef(new Map<THREE.Material, boolean>());
+  const [result, setResult] = useState<ConvertResult | null>(null);
+  const [resultKey, setResultKey] = useState('');
+  const [preview, setPreview] = useState<THREE.Object3D | null>(null);
+  const [viewMode, setViewMode] = useState<'source' | 'output'>('source');
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [packBusy, setPackBusy] = useState(false);
+  const [packMessage, setPackMessage] = useState('');
+  const [packError, setPackError] = useState('');
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const { addSkin } = useSkinPack();
+  const modelRef = useRef<LoadedModel | null>(null);
+  const loadId = useRef(0);
+  const customName = useRef(false);
+  const modelInput = useRef<HTMLInputElement>(null);
+  const closeSources = useCallback(() => setSourcesOpen(false), []);
+
+  useEffect(() => {
+    if (!compact) return;
+    const onResize = () => setSheetHeight((height) =>
+      height == null ? null : clampSheetHeight(height));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [compact]);
+
+  useEffect(() => () => {
+    modelRef.current?.dispose();
+    modelRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    setPackMessage('');
+    setPackError('');
+  }, [result]);
+
+  useEffect(() => {
+    if (!result) {
+      setPreview(null);
+      return;
+    }
+    const created = buildGeometryPreview(result.geometry, result.textureUrl);
+    setPreview(created.object);
+    return () => created.dispose();
+  }, [result]);
+
+  useEffect(() => {
+    if (!previewRoot) return;
+    previewRoot.rotation.y = (rotationY * Math.PI) / 180;
+    previewRoot.updateMatrixWorld(true);
+  }, [previewRoot, rotationY]);
+
+  useEffect(() => {
+    const rig = armRig.current;
+    if (!model || !rig) return;
+    applyArmPose(rig, armSpread);
+  }, [model, armSpread]);
+
+  useEffect(() => {
+    if (!previewRoot) return;
+    applyMaterialVisibility(previewRoot, soloKey, included, originalVisibility.current);
+  }, [previewRoot, soloKey, included]);
+
+  const materialThumbs = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const batch of source?.batches ?? []) {
+      if (map.has(batch.key)) continue;
+      map.set(batch.key, textureThumbnail(batch.texture));
+    }
+    return map;
+  }, [source]);
+
+  const choose = async (incoming: File[]) => {
+    if (!incoming.length) return;
+    const token = ++loadId.current;
+    setError(null);
+    setLoading(true);
+    setPhase('读取文件…');
+    setResult(null);
+    setViewMode('source');
+    setWarnings([]);
+    setSource(null);
+    setSourceBytes(0);
+    setIncluded(new Set());
+    setRotationY(0);
+    setArmSpread(0);
+    setArmAvailable(false);
+    setWeights({});
+    setSoloKey(null);
+    originalVisibility.current = new Map();
+    armRig.current = null;
+    previewRootRef.current = null;
+    setPreviewRoot(null);
+    sourcePose.current = '0|0';
+    modelRef.current?.dispose();
+    modelRef.current = null;
+    setModel(null);
+    try {
+      const job = await loadModelJob(incoming, {
+        onPhase: setPhase,
+        isCurrent: () => token === loadId.current,
+      });
+      if (token !== loadId.current) {
+        job.model.dispose();
+        return;
+      }
+      originalVisibility.current = collectMaterialVisibility(job.model.scene);
+      armRig.current = job.armRig;
+      setArmAvailable(!!job.armRig);
+      const root = new THREE.Group();
+      root.add(job.model.scene);
+      previewRootRef.current = root;
+      setPreviewRoot(root);
+      modelRef.current = job.model;
+      setModel(job.model);
+      setSourceBytes(job.totalBytes);
+      setSource(job.extracted);
+      setIncluded(new Set(job.extracted.batches.map((batch) => batch.key)));
+      setWarnings(job.warnings);
+      if (!customName.current) setName(job.model.name.slice(0, 60) || DEFAULT_NAME);
+    } catch (cause) {
+      if (!(cause instanceof ModelJobCancelled) && token === loadId.current)
+        setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (token === loadId.current) {
+        setLoading(false);
+        setPhase('');
+      }
+    }
+  };
+
+  const key = useMemo(() => modelResultKey({
+    name,
+    height,
+    rotationY,
+    armSpread,
+    doubleSided,
+    ratio,
+    maxError,
+    included,
+    weights,
+    modelTriangles: model?.stats.triangles ?? 0,
+  }), [name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, weights, model?.stats.triangles]);
+
+  const convert = async () => {
+    if (!model || busy) return;
+    setBusy(true);
+    setError(null);
+    setPhase('读取网格…');
+    const startedAt = performance.now();
+    try {
+      await nextFrame();
+      let extracted = source;
+      const poseKey = `${rotationY}|${armSpread}`;
+      if (!extracted || sourcePose.current !== poseKey) {
+        const root = previewRootRef.current;
+        const saved = root?.rotation.y ?? 0;
+        if (root) {
+          root.rotation.y = 0;
+          restoreMaterialVisibility(root, originalVisibility.current);
+          root.updateMatrixWorld(true);
+        }
+        try {
+          extracted = extractModel(model.scene, {
+            rotationYDegrees: rotationY,
+            bakeSkinning: armSpread !== 0,
+          });
+        } finally {
+          if (root) {
+            root.rotation.y = saved;
+            applyMaterialVisibility(root, soloKey, included, originalVisibility.current);
+            root.updateMatrixWorld(true);
+          }
+        }
+        sourcePose.current = poseKey;
+        setSource(extracted);
+      }
+      const merged = [...new Set([...model.warnings, ...extracted.warnings])];
+      if (armSpread !== 0) merged.push(`已按 ${armSpread}° 调整手臂，并烘焙到静态网格。`);
+      setWarnings(merged);
+
+      const converted = await convertExtractedModel(extracted, {
+        name: name.trim(),
+        height,
+        doubleSided,
+        ratio,
+        maxError,
+        included,
+        weights,
+        onPhase: setPhase,
+      });
+      setResult({
+        ...converted.result,
+        elapsedMs: performance.now() - startedAt,
+        excludedMaterials: converted.excludedMaterials,
+      });
+      setResultKey(key);
+      setWarnings([...new Set([...merged, ...converted.warnings])]);
+      setViewMode('output');
+      if (compact) {
+        setMobileTab('result');
+        setSheetOpen(true);
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+      setPhase('');
+    }
+  };
+
+  const stale = !!result && resultKey !== key;
+
+  const addToPack = async () => {
+    if (!result || packBusy) return;
+    setPackBusy(true);
+    setPackError('');
+    try {
+      const added = await addSkin({
+        name: name.trim() || '模型皮肤',
+        geometry: result.geometry,
+        png: result.png,
+        triangles: result.report.triangles,
+        source: 'model',
+      });
+      setPackMessage(
+        added.createdPack
+          ? `已创建「${added.packName}」并加入，共 ${added.count} 个皮肤`
+          : `已加入「${added.packName}」，共 ${added.count} 个皮肤`,
+      );
+    } catch (cause) {
+      setPackError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPackBusy(false);
+    }
+  };
+  const viewObject = viewMode === 'output' && preview ? preview : previewRoot ?? model?.scene ?? null;
+  const totalBytes = sourceBytes;
+  const heightValue = Number(heightText);
+  const heightValid = heightText.trim() !== '' && Number.isFinite(heightValue) && heightValue >= 1 && heightValue <= 128;
+  const sourceTriangles = source
+    ? sourceTriangleCount(source.batches, included, doubleSided)
+    : model?.stats.triangles ?? 0;
+  const targetFaces = Math.max(1, Math.round(sourceTriangles * ratio));
+  const actualFaces = result && !stale ? result.report.triangles : null;
+  const selectedMaterial = source?.batches.find((batch) => batch.key === soloKey)?.name ?? null;
+  const materialLabels = useMemo(
+    () => source ? buildMaterialLabels(source.batches) : new Map<string, string>(),
+    [source],
+  );
+
+  const sheetIsExpanded = sheetOpen && sheetHeight !== null && sheetHeight > normalSheetHeight() * 1.15;
+  const sheetWillCollapse = sheetDragging && sheetHeight !== null && sheetHeight < normalSheetHeight() * 0.55;
+
+  return (
+    <div className={`studio-layout model-layout ${compact ? 'compact' : ''} ${sheetOpen ? '' : 'sheet-collapsed'}`}>
+      <input
+        ref={modelInput}
+        className="mobile-model-input"
+        type="file"
+        accept={MODEL_ACCEPT}
+        multiple
+        disabled={loading || busy}
+        onChange={(event) => {
+          const next = event.target.files ? [...event.target.files] : [];
+          event.target.value = '';
+          if (next.length) void choose(next);
+        }}
+      />
+      <div
+        ref={sheetRef}
+        className="studio-sheet"
+        style={sheetHeight !== null
+          ? { height: sheetHeight, ...(sheetDragging ? { transition: 'none' } : {}) }
+          : undefined}
+      >
+        <div className="sheet-handle">
+          <button
+            type="button"
+            aria-expanded={sheetOpen}
+            title="上下拖动调整设置面板高度"
+            onPointerDown={(event) => {
+              if (!compact || !sheetOpen) return;
+              const element = sheetRef.current;
+              if (!element) return;
+              sheetDrag.current = {
+                startY: event.clientY,
+                startHeight: element.getBoundingClientRect().height,
+                moved: false,
+              };
+              setSheetDragging(true);
+              try {
+                event.currentTarget.setPointerCapture(event.pointerId);
+              } catch { /* synthetic events may not capture */ }
+            }}
+            onPointerMove={(event) => {
+              const drag = sheetDrag.current;
+              if (!drag) return;
+              const delta = drag.startY - event.clientY;
+              if (Math.abs(delta) > 4) drag.moved = true;
+              if (!drag.moved) return;
+              setSheetHeight(clampSheetHeight(drag.startHeight + delta));
+            }}
+            onPointerUp={(event) => {
+              const drag = sheetDrag.current;
+              sheetDrag.current = null;
+              setSheetDragging(false);
+              try {
+                if (event.currentTarget.hasPointerCapture(event.pointerId))
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+              } catch { /* ignore */ }
+              if (!drag?.moved) return;
+              const height = sheetRef.current?.getBoundingClientRect().height ?? normalSheetHeight();
+              const normal = normalSheetHeight();
+              const max = maxSheetHeight();
+              if (height < normal * 0.55) {
+                // Pulling well below the normal height collapses the sheet.
+                setSheetOpen(false);
+                setSheetHeight(null);
+              } else {
+                const threshold = normal + (max - normal) * 0.3;
+                setSheetHeight(height >= threshold ? max : normal);
+              }
+              suppressSheetClick.current = true;
+              window.setTimeout(() => { suppressSheetClick.current = false; }, 250);
+            }}
+            onPointerCancel={() => {
+              sheetDrag.current = null;
+              setSheetDragging(false);
+            }}
+            onClick={() => {
+              if (suppressSheetClick.current) return;
+              setSheetOpen((open) => !open);
+            }}
+          >
+            <span className="sheet-grip" aria-hidden="true" />
+            <span>{sheetOpen
+              ? sheetWillCollapse
+                ? '松开收起'
+                : sheetIsExpanded ? '已放大 · 可下拉' : '收起设置'
+              : '展开设置'}</span>
+            <span className="sheet-caret" aria-hidden="true">{sheetOpen ? '▾' : '▴'}</span>
+          </button>
+        </div>
+        {compact && (
+          <div className="mobile-settings-tabs" role="tablist" aria-label="模型设置">
+            {([
+              ['basic', '基础'],
+              ['pose', '姿势'],
+              ['material', '材质'],
+              ['result', '结果'],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={mobileTab === key}
+                className={mobileTab === key ? 'active' : ''}
+                onClick={() => {
+                  setMobileTab(key);
+                  setSheetOpen(true);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="sheet-body" data-tab={mobileTab}>
+          <aside className="studio-inspector">
+            <div className="panel-heading">
+              <div className="template-icon"><Icon name="cube" size={26} /></div>
+              <h2>转换设置</h2>
+            </div>
+            <div className="panel-scroll">
+        <fieldset disabled={loading || busy}>
+          <div className="settings-section" data-section="basic">
+            <div className="settings-section-title">基础配置</div>
+
+          <label className="field-label">
+            皮肤名称
+            <input
+              value={name}
+              maxLength={128}
+              onChange={(event) => {
+                customName.current = true;
+                setName(event.target.value);
+              }}
+              placeholder="输入皮肤名称"
+            />
+          </label>
+
+          <label className="field-label">
+            模型高度
+            <input
+              type="number"
+              min={1}
+              max={128}
+              value={heightText}
+              aria-invalid={!heightValid}
+              onChange={(event) => {
+                const next = event.target.value;
+                setHeightText(next);
+                const value = Number(next);
+                if (next.trim() !== '' && Number.isFinite(value) && value >= 1 && value <= 128)
+                  setHeight(value);
+              }}
+            />
+          </label>
+          <input
+            className="height-range"
+            type="range"
+            min={1}
+            max={128}
+            step={1}
+            value={height}
+            aria-label="模型高度"
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              setHeight(value);
+              setHeightText(String(value));
+            }}
+          />
+          {!heightValid && <p className="field-help error-text">模型高度需为 1–128</p>}
+
+          <div className="settings-group">
+            <RatioField
+              ratio={ratio}
+              onChange={setRatio}
+              sourceTriangles={sourceTriangles}
+              targetFaces={targetFaces}
+              actualFaces={actualFaces}
+              disabled={loading || busy}
+              showBudget={!!model}
+            />
+            <details className="advanced-settings">
+              <summary>高级减面</summary>
+              <label className="field-label">
+                形状变化容限
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.005}
+                  value={maxError}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isFinite(value) && value >= 0 && value <= 1) setMaxError(value);
+                  }}
+                />
+              </label>
+              <p className="field-help">默认 0.03。调小更保形，可能减不到目标；调大减得更多，但更容易丢轮廓。</p>
+            </details>
+          </div>
+
+          <label className="field-label">
+            双面渲染
+            <select
+              value={doubleSided}
+              onChange={(event) => setDoubleSided(event.target.value as DoubleSidedPolicy)}
+            >
+              <option value="source">跟随源材质</option>
+              <option value="all">全部双面</option>
+              <option value="front">全部单面</option>
+            </select>
+          </label>
+          </div>
+
+          <div className="settings-section" data-section="pose">
+            <div className="settings-section-title">姿势与朝向</div>
+            <PoseControls
+              rotationY={rotationY}
+              onRotationY={setRotationY}
+              armSpread={armSpread}
+              onArmSpread={setArmSpread}
+              showArm={!!model}
+              armAvailable={armAvailable}
+              disabled={loading || busy}
+              rotationHelp="源模型实时旋转，转换时按这个朝向导出；用「正面检查」确认角色朝向绿色箭头。"
+            />
+          </div>
+        </fieldset>
+        {compact && (
+          <div className="settings-section result-section" data-section="result">
+            {result ? (
+              <>
+                <ConversionReport
+                  result={result}
+                  warnings={warnings}
+                  stale={stale}
+                  selectedMaterial={selectedMaterial}
+                  onSelectMaterial={(material) => {
+                    const batch = source?.batches.find((item) => item.name === material);
+                    if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
+                  }}
+                />
+                <div className="mobile-result-actions">
+                  <button
+                    type="button"
+                    className="button-link"
+                    disabled={packBusy || stale}
+                    onClick={() => void addToPack()}
+                  >
+                    <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
+                    {packBusy ? '正在加入…' : '加入皮肤包'}
+                  </button>
+                  <DownloadButtons files={result.files} name={name.trim()} compact />
+                </div>
+              </>
+            ) : (
+              <>
+                <WarningList warnings={warnings} />
+                <p className="field-help">转换后这里显示转换报告、材质像素覆盖和保存按钮。</p>
+              </>
+            )}
+          </div>
+        )}
+            </div>
+          </aside>
+
+          <aside className="studio-materials">
+            <div className="panel-heading">模型 / 材质</div>
+            <div className="panel-scroll">
+              {!compact && (
+                <>
+                  <DropZone
+                    accept={MODEL_ACCEPT}
+                    multiple
+                    compact={!!model}
+                    title={model ? '重新选择模型' : '拖入模型或 ZIP，或点击选择'}
+                    hint={model ? `${model.name} · ${formatBytes(totalBytes)}` : 'GLB / glTF / VRM / PMX / FBX / OBJ / DAE / STL / PLY，或含贴图的 ZIP'}
+                    icon="cube"
+                    onFiles={(next) => void choose(next)}
+                    disabled={loading || busy}
+                  />
+                  <div className="model-source-entry">
+                    <button type="button" className="button-link" onClick={() => setSourcesOpen(true)}>
+                      获取模型 <Icon name="arrow" size={13} />
+                    </button>
+                  </div>
+                </>
+              )}
+
+          <div className="settings-section" data-section="material">
+            <div className="settings-section-title">材质</div>
+          {source && (
+            <div className="material-settings">
+              <div className="material-settings-title">
+                材质筛选 <span>{included.size}/{source.batches.length}</span>
+              </div>
+              <p className="field-help">取消勾选会从源模型预览中隐藏；点击材质名可只看该材质；右侧数字是像素权重，默认 1。</p>
+              <MaterialList
+                items={source.batches.map((batch): MaterialListItem => ({
+                  id: batch.key,
+                  name: materialLabels.get(batch.key) ?? batch.name,
+                  meta: `${batch.triangles.toLocaleString('zh-CN')} 面${batch.texture ? ` · ${batch.texture.width}×${batch.texture.height}` : ' · 纯色'}`,
+                  thumbnail: materialThumbs.get(batch.key) ?? null,
+                  color: `rgb(${batch.color.map((value) => Math.round(value * 255)).join(' ')})`,
+                  included: included.has(batch.key),
+                  weight: weights[batch.key] ?? 1,
+                  soloed: soloKey === batch.key,
+                  selected: soloKey === batch.key,
+                }))}
+                disabled={loading || busy}
+                onToggle={(id) => {
+                  const willInclude = !included.has(id);
+                  setIncluded((previous) => {
+                    const next = new Set(previous);
+                    if (willInclude) next.add(id);
+                    else next.delete(id);
+                    return next;
+                  });
+                  if (!willInclude && soloKey === id) setSoloKey(null);
+                }}
+                onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
+                onWeight={(id, value) => {
+                  setWeights((previous) => ({ ...previous, [id]: value }));
+                }}
+              />
+              <div className="material-actions">
+                {soloKey && (
+                  <button type="button" className="text-button" onClick={() => setSoloKey(null)}>
+                    显示全部
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setIncluded(new Set(source.batches.map((batch) => batch.key)))}
+                >
+                  全部保留
+                </button>
+                <button type="button" className="text-button" onClick={() => setIncluded(new Set())}>
+                  全部取消
+                </button>
+              </div>
+              {!included.size && <p className="field-help error-text">至少保留一个材质</p>}
+            </div>
+          )}
+          {!source && <p className="field-help">导入模型后可以在这里筛选材质。</p>}
+          </div>
+            </div>
+          </aside>
+        </div>
+
+        <div className="settings-footer">
+          {compact && stale && (
+            <p className="stale-note" role="status"><Icon name="alert" size={14} /> 参数已修改，请重新转换。</p>
+          )}
+          {compact && packMessage && (
+            <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
+          )}
+          {compact && packError && (
+            <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
+          )}
+          {error && <p className="error-message" role="alert"><Icon name="alert" size={15} />{error}</p>}
+          <button type="button" className="primary" disabled={!model || busy || loading || !name.trim() || !heightValid || !included.size} onClick={() => void convert()}>
+            <Icon name={busy ? 'reset' : 'spark'} size={15} className={busy ? 'spin' : undefined} />
+            {busy ? phase || '正在转换…' : result ? '重新转换' : '转换为 4D 皮肤'}
+          </button>
+        </div>
+      </div>
+
+      <section className="studio-result model-result">
+        <div className="result-header">
+          <div>
+            <h2>{result && viewMode === 'output' ? '输出预览' : model ? '源模型预览' : '模型预览'}</h2>
+            <p>
+              {result && viewMode === 'output'
+                ? '实际导出的 poly_mesh 与 128 × 128 贴图。'
+                : model
+                  ? `${model.stats.triangles.toLocaleString('zh-CN')} 三角面 · ${model.stats.materials} 材质 · ${model.stats.textures} 贴图`
+                  : '导入模型后在这里预览。'}
+            </p>
+          </div>
+          <div className="tabs">
+            {model && (
+              <button type="button" className={viewMode === 'source' ? 'active' : ''} onClick={() => setViewMode('source')}>
+                源模型
+              </button>
+            )}
+            {result && (
+              <button type="button" className={viewMode === 'output' ? 'active' : ''} onClick={() => setViewMode('output')}>
+                4D 输出
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="model-stage">
+          {compact && model && (
+            <div className="mobile-import-actions">
+              <button
+                type="button"
+                className="mobile-import-fab"
+                disabled={loading || busy}
+                onClick={() => modelInput.current?.click()}
+              >
+                <Icon name="upload" size={13} /> 更换模型
+              </button>
+              <button
+                type="button"
+                className="mobile-import-fab"
+                disabled={loading || busy}
+                onClick={() => setSourcesOpen(true)}
+              >
+                获取模型
+              </button>
+            </div>
+          )}
+          {viewObject ? (
+            <Viewport
+              object={viewObject}
+              grid={viewMode === 'output'}
+              facing={viewMode === 'source' ? 'source' : 'output'}
+            />
+          ) : (
+            <div className="empty-state compact">
+              {loading ? (
+                <>
+                  <span className="spinner" />
+                  <h2>{phase || '正在解析模型…'}</h2>
+                  <p>大模型需要几秒钟，请保持页面打开。</p>
+                </>
+              ) : (
+                <>
+                  <Icon name="cube" size={42} />
+                  <h2>还没有导入模型</h2>
+                  <p>{compact ? '选择模型文件，或从常用站点获取。' : '拖入模型或 ZIP，或从常用站点获取。'}</p>
+                  {compact ? (
+                    <div className="empty-actions">
+                      <button type="button" className="button-link" onClick={() => modelInput.current?.click()}>
+                        选择模型文件
+                      </button>
+                      <button type="button" className="button-link" onClick={() => setSourcesOpen(true)}>
+                        获取模型 <Icon name="arrow" size={13} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" className="button-link" onClick={() => setSourcesOpen(true)}>
+                      获取模型 <Icon name="arrow" size={13} />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          {busy && (
+            <div className="busy-overlay">
+              <span className="spinner" />
+              <b>{phase || '正在转换…'}</b>
+              <small>大模型可能需要几秒钟</small>
+            </div>
+          )}
+        </div>
+
+        <div className="result-body model-details">
+          {result ? (
+            <ConversionReport
+              result={result}
+              warnings={warnings}
+              stale={stale}
+              selectedMaterial={selectedMaterial}
+              onSelectMaterial={(material) => {
+                const batch = source?.batches.find((item) => item.name === material);
+                if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
+              }}
+            />
+          ) : (
+            <>
+              <WarningList warnings={warnings} />
+              <div className="inline-note">转换后显示转换报告、材质像素覆盖和贴图利用率。</div>
+            </>
+          )}
+        </div>
+        {result && (
+          <div className="result-footer">
+            {stale && (
+              <p className="stale-note" role="status"><Icon name="alert" size={14} /> 参数已修改，请重新转换。</p>
+            )}
+            <div className="pack-add-row">
+              <button type="button" className="button-link" disabled={packBusy || stale} onClick={() => void addToPack()}>
+                <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
+                {packBusy ? '正在加入…' : '加入皮肤包'}
+              </button>
+              {packMessage && (
+                <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
+              )}
+            </div>
+            {packError && <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>}
+            <DownloadButtons files={result.files} name={name.trim()} compact />
+          </div>
+        )}
+      </section>
+
+      {sourcesOpen && (
+        <Suspense
+          fallback={(
+            <div className="dialog-backdrop">
+              <div className="preview-dialog preview-dialog-loading" role="status">
+                <span className="spinner" /> 正在加载模型站点…
+              </div>
+            </div>
+          )}
+        >
+          <ModelSourcesDialog onClose={closeSources} />
+        </Suspense>
+      )}
+    </div>
+  );
+}

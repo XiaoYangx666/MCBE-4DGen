@@ -42,7 +42,7 @@ import {
 } from './pack-tree.ts';
 import type { ActivePack, LibraryPack, PackMeta, SkinOrigin } from './pack-types.ts';
 import { readSkinPack, validateSkinPackFiles, zipSkinPack } from './skin-pack.ts';
-import type { SkinPackFiles } from './skin-pack.ts';
+import type { SkinPackFiles } from './skin-pack-files.ts';
 
 export interface ManagerConfig {
   libraryOnly?: boolean;
