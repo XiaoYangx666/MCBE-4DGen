@@ -6,8 +6,9 @@ import {
   buildSkinPackCollection,
   randomUuid,
 } from '../../src/skin-pack-files.ts';
-import { zipSkinPack } from './convert.ts';
-import { safeFilename, saveOrShare } from './download.ts';
+import { zipSkinPackBlob } from '../../src/skin-pack-zip.ts';
+import { zipFileName } from '../../web/shared/file-save.ts';
+import { saveOrShare } from './download.ts';
 import { importSkinPackZip } from './pack-import.ts';
 import { deleteSkinPack, loadSkinPack, saveSkinPack } from './pack-store.ts';
 import { DEFAULT_PACK_NAME, type SkinPack, type SkinSource, type StoredSkin } from './pack-types.ts';
@@ -211,8 +212,8 @@ export function SkinPackProvider({ children }: { children: ReactNode }) {
       })),
     });
     // Flat archive: every pack file is at the ZIP root, with no wrapper folder.
-    const blob = await zipSkinPack(collection.files);
-    const file = `${safeFilename(current.name)}.zip`;
+    const blob = await zipSkinPackBlob(collection.files);
+    const file = zipFileName(current.name);
     await saveOrShare(blob, file, current.name);
     return { file, bytes: blob.size };
   }), [enqueue]);

@@ -1,12 +1,16 @@
 import type {
   BedrockBone,
   BedrockGeometryFile,
-  PolyMesh,
-  V2,
   V3,
   VertexRef,
 } from '../../src/bedrock-types.ts';
 import { validateGeometry } from '../../src/geometry-validator.ts';
+import {
+  createPolyMeshStreams,
+  mirrorX,
+  visibleBounds,
+  VertexStream,
+} from '../../src/poly-mesh-writer.ts';
 import type { SourceBatch } from './types.ts';
 
 export type DoubleSidedPolicy = 'source' | 'all' | 'front';
@@ -30,21 +34,6 @@ export interface GeometryReport {
   bounds: { min: V3; max: V3 };
   materials: { name: string; triangles: number }[];
   warnings: string[];
-}
-
-class Stream<T extends number[]> {
-  readonly values: T[] = [];
-  private readonly indices = new Map<string, number>();
-  add(value: T): number {
-    const clean = value.map((v) => (Object.is(v, -0) ? 0 : v)) as T;
-    const key = clean.join(',');
-    const existing = this.indices.get(key);
-    if (existing !== undefined) return existing;
-    const index = this.values.length;
-    this.values.push(clean);
-    this.indices.set(key, index);
-    return index;
-  }
 }
 
 const defaultPivot = (): V3 => [0, 24, 0];
@@ -90,31 +79,24 @@ export function buildBedrockGeometry(batches: readonly SourceBatch[], options: G
   const centerZ = -(minZ + maxZ) / 2;
   const groundY = -minY;
 
-  const positions = new Stream<V3>();
-  const normals = new Stream<V3>();
-  const backNormals = new Stream<V3>();
-  const uvs = new Stream<V2>();
-  const pm: PolyMesh = {
-    normalized_uvs: true,
-    positions: positions.values,
-    normals: normals.values,
-    uvs: uvs.values,
-    polys: [],
-  };
+  const { positions, normals, uvs, polyMesh: pm } = createPolyMeshStreams();
+  const backNormals = new VertexStream<V3>();
 
   let addedBackfaces = 0;
   let skippedDegenerate = 0;
   const materials: { name: string; triangles: number }[] = [];
 
   const addPosition = (x: number, y: number, z: number): number =>
-    positions.add([
-      -((x + centerX) * scale),
+    positions.add(mirrorX([
+      (x + centerX) * scale,
       (y + groundY) * scale,
       (z + centerZ) * scale,
-    ]);
+    ]));
   const addNormal = (x: number, y: number, z: number): number => {
     const length = Math.hypot(x, y, z);
-    return length > 0 ? normals.add([-x / length, y / length, z / length]) : normals.add([0, 1, 0]);
+    return length > 0
+      ? normals.add(mirrorX([x / length, y / length, z / length]))
+      : normals.add([0, 1, 0]);
   };
   const addBackNormal = (x: number, y: number, z: number): number => {
     const length = Math.hypot(x, y, z);
@@ -165,21 +147,14 @@ export function buildBedrockGeometry(batches: readonly SourceBatch[], options: G
   if (!pm.polys.length) throw new Error('没有可导出的三角面（可能全部退化）');
 
   const bones: BedrockBone[] = [{ name: 'body', pivot: defaultPivot(), poly_mesh: pm }];
-  const min: V3 = [Infinity, Infinity, Infinity];
-  const max: V3 = [-Infinity, -Infinity, -Infinity];
-  for (const p of positions.values) {
-    for (let axis = 0; axis < 3; axis++) {
-      min[axis] = Math.min(min[axis]!, p[axis]!);
-      max[axis] = Math.max(max[axis]!, p[axis]!);
-    }
-  }
+  const bounds = visibleBounds(positions.values);
   const file: BedrockGeometryFile = { format_version: '1.8.0' };
   file[identifier] = {
     texturewidth: 128,
     textureheight: 128,
-    visible_bounds_width: Math.max(max[0] - min[0], max[2] - min[2]) / 16 + 0.25,
-    visible_bounds_height: (max[1] - min[1]) / 16 + 0.25,
-    visible_bounds_offset: [(min[0] + max[0]) / 32, (min[1] + max[1]) / 32, (min[2] + max[2]) / 32],
+    visible_bounds_width: bounds.visible_bounds_width,
+    visible_bounds_height: bounds.visible_bounds_height,
+    visible_bounds_offset: bounds.visible_bounds_offset,
     bones,
   };
 
@@ -204,7 +179,7 @@ export function buildBedrockGeometry(batches: readonly SourceBatch[], options: G
     positions: positions.values.length,
     normals: normals.values.length,
     uvs: uvs.values.length,
-    bounds: { min, max },
+    bounds: { min: bounds.min, max: bounds.max },
     materials,
     warnings,
   };

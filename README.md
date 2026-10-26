@@ -61,7 +61,14 @@ npm run webapp:dev
 npm run webapp:build    # 输出到 webapp/dist/
 ```
 
-构建产物可直接部署到任意静态托管。详见 [网页版](docs/web-app.md)。
+构建产物可直接部署到任意静态托管。仓库已配置 Cloudflare Workers 静态资源部署：
+
+```sh
+npm run webapp:deploy:dry   # 构建并检查打包内容
+npm run webapp:deploy       # 部署到 Cloudflare
+```
+
+自动部署使用 Cloudflare Workers Builds 的 GitHub 集成，不需要在 GitHub Secrets 里保存 Cloudflare API Token。连接仓库后推送到 `main` 即自动构建部署，详见 [网页版](docs/web-app.md#部署到-cloudflare)。
 
 ## 功能
 

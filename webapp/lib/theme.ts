@@ -4,9 +4,11 @@ import {
   isPalette,
   type Palette,
 } from '../../web/shared/palettes';
+import { type Theme } from '../../web/shared/appearance';
 
 export type { Palette } from '../../web/shared/palettes';
-export type Theme = 'light' | 'dark';
+export type { Theme } from '../../web/shared/appearance';
+export { applyThemeToDocument as applyAppearance } from '../../web/shared/appearance';
 
 /** Palette metadata shared with the desktop workbench. */
 export const PALETTES = PALETTE_OPTIONS;
@@ -30,16 +32,6 @@ export function initialPalette(): Palette {
   } catch { /* storage can be blocked */ }
   // Matches the desktop workbench default.
   return DEFAULT_PALETTE;
-}
-
-export function applyAppearance(theme: Theme, palette: Palette) {
-  const root = document.documentElement;
-  root.dataset.theme = theme;
-  root.dataset.palette = palette;
-  // Read the resolved variable so the browser chrome matches every palette.
-  const canvas = getComputedStyle(root).getPropertyValue('--canvas').trim();
-  document.querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', canvas || (theme === 'dark' ? '#19191c' : '#f4f4f5'));
 }
 
 export function rememberTheme(theme: Theme) {

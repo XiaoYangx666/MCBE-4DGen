@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { extractModel } from '../webapp/lib/extract.ts';
+import { extractModel } from '../webapp/engine/extract.ts';
 
 function sceneWithTriangle() {
   const geometry = new THREE.BufferGeometry();

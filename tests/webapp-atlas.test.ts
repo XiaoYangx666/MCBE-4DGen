@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { planAtlas, remapUvs, type AtlasInput } from '../webapp/lib/atlas.ts';
-import type { TextureSource } from '../webapp/lib/types.ts';
+import { planAtlas, remapUvs, type AtlasInput } from '../webapp/engine/atlas.ts';
+import type { TextureSource } from '../webapp/engine/types.ts';
 
 const texture: TextureSource = {
   image: {} as CanvasImageSource,

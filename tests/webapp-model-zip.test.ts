@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
-import { expandModelArchives, isModelArchive, isModelAsset } from '../webapp/lib/model-zip.ts';
+import { expandModelArchives, isModelArchive, isModelAsset } from '../webapp/engine/model-zip.ts';
 
 async function zipFile(entries: Record<string, string | Uint8Array>, name = 'model.zip') {
   const zip = new JSZip();

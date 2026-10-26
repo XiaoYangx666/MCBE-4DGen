@@ -6,8 +6,6 @@ import {
   type PolyMeshPreview,
 } from '../../web/shared/poly-mesh-preview.ts';
 
-export { firstGeometryIdentifier };
-
 /**
  * Browser-side preview of the exact exported poly_mesh: double-sided cutout
  * with flat, texture-accurate lighting-friendly materials.

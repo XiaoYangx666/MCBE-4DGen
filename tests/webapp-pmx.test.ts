@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { png } from './fixtures.ts';
 import { pmxFixture } from './pmx-fixture.ts';
-import { applyPmxMaterialNames, convertPmxModel, isPmdModel, isPmxModel } from '../webapp/lib/pmx.ts';
+import { applyPmxMaterialNames, convertPmxModel, isPmdModel, isPmxModel } from '../webapp/engine/pmx.ts';
 
 describe('webapp PMX conversion', () => {
   it('converts PMX to GLB and resolves sidecar textures by basename', async () => {

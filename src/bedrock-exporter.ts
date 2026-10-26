@@ -4,13 +4,16 @@ import { bindStatic } from "./bone-mapper.ts";
 import type {
   BedrockBone,
   BedrockGeometryFile,
-  PolyMesh,
-  V2,
-  V3,
   VertexRef,
 } from "./bedrock-types.ts";
 import { isGeometryIdentifier } from "./bedrock-types.ts";
 import { validateGeometry } from "./geometry-validator.ts";
+import {
+  createPolyMeshStreams,
+  mirrorX,
+  visibleBounds,
+  type PolyMeshStreams,
+} from "./poly-mesh-writer.ts";
 
 export interface ExportOptions {
   identifier: string;
@@ -21,22 +24,6 @@ export interface ExportOptions {
   /** Export frozen _playerPart groups in one pass, with independent streams per bone. */
   playerParts?: boolean;
 }
-
-class Stream<T extends number[]> {
-  readonly values: T[] = [];
-  private readonly indices = new Map<string, number>();
-  add(value: T): number {
-    const clean = value.map((v) => (Object.is(v, -0) ? 0 : v)) as T;
-    const key = clean.join(",");
-    const existing = this.indices.get(key);
-    if (existing !== undefined) return existing;
-    const index = this.values.length;
-    this.values.push(clean);
-    this.indices.set(key, index);
-    return index;
-  }
-}
-const mirror = (v: V3): V3 => [-v[0] || 0, v[1], v[2]];
 
 /** Legacy 1.8.0, indexed poly_mesh only. Does not create a SkinPack or assert client support. */
 export async function exportBedrockGeometry(
@@ -77,33 +64,9 @@ export async function exportBedrockGeometry(
       .toBuffer();
     metadata = await sharp(image).metadata();
   }
-  const streams = new Map<
-    string,
-    {
-      positions: Stream<V3>;
-      normals: Stream<V3>;
-      uvs: Stream<V2>;
-      pm: PolyMesh;
-    }
-  >();
+  const streams = new Map<string, PolyMeshStreams>();
   const streamFor = (name: string) => {
-    if (!streams.has(name)) {
-      const positions = new Stream<V3>(),
-        normals = new Stream<V3>(),
-        uvs = new Stream<V2>();
-      streams.set(name, {
-        positions,
-        normals,
-        uvs,
-        pm: {
-          normalized_uvs: true,
-          positions: positions.values,
-          normals: normals.values,
-          uvs: uvs.values,
-          polys: [],
-        },
-      });
-    }
+    if (!streams.has(name)) streams.set(name, createPolyMeshStreams());
     return streams.get(name)!;
   };
   const warnings = [...binding.model.warnings];
@@ -120,7 +83,7 @@ export async function exportBedrockGeometry(
       : binding.meshBone;
     if (typeof part !== "string" || !binding.bones.some((b) => b.name === part))
       throw new Error("Invalid frozen player part");
-    const { positions, normals, uvs, pm } = streamFor(part);
+    const { positions, normals, uvs, polyMesh: pm } = streamFor(part);
     const material = p.getMaterial()!,
       info = material.getBaseColorTextureInfo()!;
     if (
@@ -171,14 +134,14 @@ export async function exportBedrockGeometry(
       const sign = back ? -1 : 1;
       const tuple: VertexRef = [
         positions.add(
-          mirror([
+          mirrorX([
             v[0]! + binding.position[0],
             v[1]! + binding.position[1],
             v[2]! + binding.position[2],
           ]),
         ),
         normals.add(
-          mirror([
+          mirrorX([
             (sign * n[0]!) / length,
             (sign * n[1]!) / length,
             (sign * n[2]!) / length,
@@ -227,27 +190,22 @@ export async function exportBedrockGeometry(
   const bones: BedrockBone[] = binding.bones.map((bone) => ({
     name: bone.name,
     ...(bone.parent !== undefined ? { parent: bone.parent } : {}),
-    pivot: mirror(bone.pivot),
+    pivot: mirrorX(bone.pivot),
     ...(streams.has(bone.name)
-      ? { poly_mesh: streams.get(bone.name)!.pm }
+      ? { poly_mesh: streams.get(bone.name)!.polyMesh }
       : {}),
   }));
-  const min: V3 = [Infinity, Infinity, Infinity],
-    max: V3 = [-Infinity, -Infinity, -Infinity];
-  for (const stream of streams.values())
-    for (const v of stream.positions.values)
-      for (let i = 0; i < 3; i++) {
-        min[i] = Math.min(min[i]!, v[i]!);
-        max[i] = Math.max(max[i]!, v[i]!);
-      }
+  function* emittedPositions() {
+    for (const stream of streams.values()) yield* stream.positions.values;
+  }
+  const bounds = visibleBounds(emittedPositions());
   const file: BedrockGeometryFile = { format_version: "1.8.0" };
   file[options.identifier] = {
     texturewidth: metadata.width,
     textureheight: metadata.height,
-    visible_bounds_width:
-      Math.max(max[0] - min[0], max[2] - min[2]) / 16 + 0.25,
-    visible_bounds_height: (max[1] - min[1]) / 16 + 0.25,
-    visible_bounds_offset: min.map((v, i) => (v + max[i]!) / 32) as V3,
+    visible_bounds_width: bounds.visible_bounds_width,
+    visible_bounds_height: bounds.visible_bounds_height,
+    visible_bounds_offset: bounds.visible_bounds_offset,
     bones,
   };
   const validation = validateGeometry(file, {

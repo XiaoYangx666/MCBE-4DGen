@@ -30,7 +30,7 @@ import {
   buildPreviewGlb,
   PREVIEW_TEXTURE_LIMIT,
 } from '../src/preview-asset.ts';
-import type { SkinPackFiles } from '../src/skin-pack.ts';
+import type { SkinPackFiles } from '../src/skin-pack-files.ts';
 import {
   dataRoot,
   resolveManagerConfig,

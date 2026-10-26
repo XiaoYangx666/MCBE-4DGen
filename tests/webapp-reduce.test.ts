@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { reduceBatches } from '../webapp/lib/reduce.ts';
-import type { SourceBatch } from '../webapp/lib/types.ts';
+import { reduceBatches } from '../webapp/engine/reduce.ts';
+import type { SourceBatch } from '../webapp/engine/types.ts';
 
 /** A flat grid of `size × size` quads, as unwelded triangle soup. */
 function grid(size: number): SourceBatch {

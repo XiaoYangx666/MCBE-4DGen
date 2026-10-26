@@ -2,10 +2,11 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { DropZone } from './DropZone';
 import { DownloadButtons } from './Common';
 import { Icon } from './Icons';
-import { createImageSkin, type ImageSkinResult } from '../lib/image-skin';
-import { nextFrame } from '../lib/convert';
+import { createImageSkin, type ImageSkinResult } from '../engine/image-skin';
+import { nextFrame } from '../engine/frame';
 import { useSkinPack } from '../lib/pack-context';
-import { formatBytes, isCompactViewport } from '../lib/download';
+import { formatBytes } from '../../web/shared/format';
+import { isCompactViewport } from '../lib/download';
 
 const GeometryPreview = lazy(async () => {
   const module = await import('./SkinPreview');

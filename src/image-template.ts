@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import { buildImageSkinGeometry } from './image-skin-geometry.ts';
-import { buildSkinPack } from './skin-pack.ts';
+import { buildSkinPack } from './skin-pack-files.ts';
 
 /** A vertical two-sided poly_mesh. UVs preserve the complete image, including alpha. */
 export async function createImageSkin(bytes: Uint8Array, options: {name: string; height: number}) {

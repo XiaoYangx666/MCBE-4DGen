@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildImageSkinGeometry } from '../src/image-skin-geometry.ts';
 import { validateGeometry } from '../src/geometry-validator.ts';
-import { buildBedrockGeometry } from '../webapp/lib/bedrock.ts';
-import type { SourceBatch } from '../webapp/lib/types.ts';
+import { buildBedrockGeometry } from '../webapp/engine/bedrock.ts';
+import type { SourceBatch } from '../webapp/engine/types.ts';
 
 function quad(overrides: Partial<SourceBatch> = {}): SourceBatch {
   return {

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { safeFilename, saveOrShare } from '../lib/download';
-import { zipSkinPack } from '../lib/convert';
+import { zipFileName } from '../../web/shared/file-save';
+import { saveOrShare } from '../lib/download';
+import { zipSkinPackBlob } from '../../src/skin-pack-zip.ts';
 import { Icon } from './Icons';
 
 interface DownloadButtonsProps {
@@ -17,8 +18,8 @@ export function DownloadButtons({ files, name, compact }: DownloadButtonsProps) 
     setBusy(true);
     setError(null);
     try {
-      const blob = await zipSkinPack(files);
-      await saveOrShare(blob, `${safeFilename(name)}.zip`, name);
+      const blob = await zipSkinPackBlob(files);
+      await saveOrShare(blob, zipFileName(name), name);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {

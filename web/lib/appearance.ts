@@ -3,6 +3,7 @@ import {
   isPalette,
   type Palette,
 } from "../shared/palettes";
+import { applyThemeToDocument } from "../shared/appearance";
 
 export type { Palette } from "../shared/palettes";
 export type Appearance = "system" | "light" | "dark";
@@ -21,10 +22,10 @@ const isAppearance = (value: unknown): value is Appearance =>
   (APPEARANCES as readonly string[]).includes(value);
 
 function apply() {
-  document.documentElement.dataset.theme =
-    preference === "system" ? (media.matches ? "dark" : "light") : preference;
-  document.documentElement.dataset.palette = palette;
-  window.dispatchEvent(new Event("appearancechange"));
+  applyThemeToDocument(
+    preference === "system" ? (media.matches ? "dark" : "light") : preference,
+    palette,
+  );
 }
 
 export async function initializeAppearance() {

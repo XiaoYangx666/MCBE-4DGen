@@ -1,18 +1,13 @@
 import JSZip from 'jszip';
 import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 import { validateGeometry } from '../../src/geometry-validator.ts';
-import { randomUuid } from '../../src/skin-pack-files.ts';
+import {
+  isPng,
+  isUuid,
+  pngDimensions,
+  randomUuid,
+} from '../../src/skin-pack-files.ts';
 import type { StoredSkin } from './pack-types.ts';
-
-const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
-
-function pngDimensions(value: Uint8Array) {
-  if (value.length < 24) return null;
-  const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
-  if (view.getUint32(12) !== 0x49484452) return null;
-  return { width: view.getUint32(16), height: view.getUint32(20) };
-}
 
 export interface ImportedPack {
   name: string;
@@ -122,8 +117,7 @@ export async function importSkinPackZip(file: File): Promise<ImportedPack> {
       continue;
     }
     const png = await texture.async('uint8array');
-    if (png.length > 8 * 1024 * 1024 ||
-      !PNG_SIGNATURE.every((byte, position) => png[position] === byte)) {
+    if (png.length > 8 * 1024 * 1024 || !isPng(png)) {
       skipped.push(`${name}：贴图不是有效的 PNG`);
       continue;
     }
@@ -159,10 +153,8 @@ export async function importSkinPackZip(file: File): Promise<ImportedPack> {
       ? `没有可导入的皮肤：${skipped.slice(0, 2).join('；')}`
       : 'ZIP 里没有可导入的皮肤');
   }
-  const headerId = typeof manifest.header?.uuid === 'string' && UUID_PATTERN.test(manifest.header.uuid)
-    ? manifest.header.uuid : null;
-  const moduleId = typeof module.uuid === 'string' && UUID_PATTERN.test(module.uuid)
-    ? module.uuid : null;
+  const headerId = isUuid(manifest.header?.uuid) ? manifest.header.uuid : null;
+  const moduleId = isUuid(module.uuid) ? module.uuid : null;
   return {
     name: typeof manifest.header?.name === 'string' && manifest.header.name.trim()
       ? manifest.header.name.trim().slice(0, 128) : '导入的皮肤包',
