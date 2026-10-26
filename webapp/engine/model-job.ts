@@ -8,9 +8,10 @@ import {
 } from './pmx.ts';
 import { convertTgaTextures } from './textures.ts';
 import { detectArmRig, type ArmRig } from './pose.ts';
+import { detectHumanoidRig, type HumanoidRig } from './humanoid.ts';
 import { extractModel, type ExtractedModel } from './extract.ts';
 import { reduceBatches } from './reduce.ts';
-import { convertBatches, type ConvertResult } from './convert.ts';
+import { convertBatches, type BindingMode, type ConvertResult } from './convert.ts';
 import { nextFrame } from './frame.ts';
 import type { DoubleSidedPolicy } from './bedrock.ts';
 import type { SourceBatch } from './types.ts';
@@ -39,6 +40,8 @@ export interface LoadedModelJob {
   totalBytes: number;
   warnings: string[];
   armRig: ArmRig | null;
+  /** Complete six-part rig, when the source provides one. */
+  rig: HumanoidRig | null;
 }
 
 /**
@@ -101,8 +104,17 @@ export async function loadModelJob(
         warnings.push('PMX 材质数量与转换结果不一致，已保留通用材质名。');
     }
 
+    const rig = detectHumanoidRig(loaded.scene, loaded.humanoidRoles);
     const armRig = detectArmRig(loaded.scene);
-    const extracted = extractModel(loaded.scene);
+    const extracted = extractModel(loaded.scene, { rig });
+    if (rig) {
+      const classified = extracted.batches.some((batch) =>
+        batch.parts?.some((part) => part !== 0));
+      if (!classified)
+        warnings.push('识别到人形骨骼，但网格没有可用的蒙皮权重；导出后仍会整体跟随身体，不会分部位摆动。');
+    } else if (loaded.stats.triangles > 0) {
+      warnings.push('未识别到完整的 VRM / 常见 MMD 人形骨骼，将使用静态整体绑定（不会随玩家动作摆动）。');
+    }
     assertActive(isCurrent);
     return {
       model: loaded,
@@ -110,6 +122,7 @@ export async function loadModelJob(
       totalBytes,
       warnings: [...new Set([...warnings, ...loaded.warnings, ...extracted.warnings])],
       armRig,
+      rig,
     };
   } catch (cause) {
     loaded?.dispose();
@@ -121,6 +134,7 @@ export interface ConvertExtractedOptions {
   name: string;
   height: number;
   doubleSided: DoubleSidedPolicy;
+  binding?: BindingMode;
   ratio: number;
   maxError: number;
   included: ReadonlySet<string>;
@@ -164,10 +178,14 @@ export async function convertExtractedModel(
       : { ...batch, area: batch.area * Math.max(0, weight) };
   });
 
+  const humanoid = options.binding === 'humanoid' ? extracted.rig : null;
+  if (options.binding === 'humanoid' && !humanoid)
+    throw new Error('没有识别到完整的六部位人形骨骼，无法按人形绑定导出');
   const converted = await convertBatches(batches, {
     name: options.name,
     height: options.height,
     doubleSided: options.doubleSided,
+    ...(humanoid ? { rig: humanoid } : {}),
     sourceTriangles,
     onPhase: phase,
   });

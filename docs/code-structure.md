@@ -100,12 +100,13 @@ npm run test:node
 网页版是独立的 Vite + React 静态应用，构建产物在 `webapp/dist/`，不需要 `server/`。
 
 - `engine/import-model.ts`：GLTF/OBJ/FBX/DAE/STL/PLY 加载与多文件资源映射。
-- `engine/extract.ts`：世界变换、材质分组、UV 归一化与包围数据。
+- `engine/humanoid.ts`：VRM 0.x / 1.0 人形元数据与常见 MMD / Mixamo 骨骼识别、六部位归属和世界轴心。
+- `engine/extract.ts`：世界变换、材质分组、UV 归一化、按源权重划分六部位与包围数据。
 - `engine/atlas.ts`：128 × 128 图集规划、绘制、UV 重映射。
-- `engine/bedrock.ts`：静态整体绑定、镜像与 `poly_mesh` 导出。
+- `engine/bedrock.ts`：静态整体绑定或六部位玩家骨架、镜像与 `poly_mesh` 导出。
 - `engine/convert.ts`：图集 → 几何 → 皮肤包 → ZIP 流程。
 - `engine/image-skin.ts`：图片平面皮肤。
-- `engine/model-zip.ts`、`engine/pmx.ts`、`engine/textures.ts`、`engine/pose.ts`、`engine/reduce.ts`、`engine/model-job.ts`、`engine/types.ts`：模型 ZIP、PMX→GLB、TGA→PNG、手臂姿势、按材质减面、导入/转换编排与转换数据类型。
+- `engine/model-zip.ts`、`engine/pmx.ts`、`engine/textures.ts`、`engine/pose.ts`、`engine/reduce.ts`、`engine/model-job.ts`、`engine/types.ts`：模型 ZIP、PMX→GLB、TGA→PNG、手臂姿势、按材质/部位减面、导入/转换编排与转换数据类型。
 - `engine/frame.ts`、`engine/canvas.ts`、`engine/names.ts`：帧让步、Canvas PNG 编码与皮肤名称校验。
 - `lib/output-preview.ts`：共享 poly_mesh 预览的薄封装，自动识别皮肤包里的几何标识。
 - `lib/pack-types.ts`、`lib/pack-store.ts`、`lib/pack-context.tsx`：单包数据结构、IndexedDB 持久化与 React 状态。

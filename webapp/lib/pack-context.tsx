@@ -118,7 +118,9 @@ export function SkinPackProvider({ children }: { children: ReactNode }) {
       version: 1,
       headerId: randomUuid(),
       moduleId: randomUuid(),
-      name: DEFAULT_PACK_NAME,
+      // A first skin names its new pack, so the exported ZIP is not generically
+      // called "我的 4D 皮肤包" when the user already typed a model name.
+      name: validateName(input.name, DEFAULT_PACK_NAME),
       createdAt: now,
       updatedAt: now,
       skins: [],

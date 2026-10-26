@@ -1,16 +1,24 @@
 import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 import { buildSkinPack } from '../../src/skin-pack-files.ts';
 import { planAtlas, remapUvs, renderAtlas, measureAtlasUsage, type AtlasInput } from './atlas.ts';
-import { buildBedrockGeometry, type DoubleSidedPolicy, type GeometryReport } from './bedrock.ts';
+import {
+  buildBedrockGeometry,
+  type DoubleSidedPolicy,
+  type GeometryReport,
+  type GeometryRig,
+} from './bedrock.ts';
 import { canvasPng } from './canvas.ts';
 import { nextFrame } from './frame.ts';
 import { validateName } from './names.ts';
-import type { SourceBatch } from './types.ts';
+import type { HumanoidPart, SourceBatch } from './types.ts';
+
+export type BindingMode = 'static' | 'humanoid';
 
 export interface ConvertOptions {
   name: string;
   height: number;
   doubleSided: DoubleSidedPolicy;
+  rig?: GeometryRig;
   /** Pre-reduction triangle count, for the report only. */
   sourceTriangles?: number;
   onPhase?: (phase: string) => void;
@@ -35,6 +43,8 @@ export interface ConvertResult {
   textureCoverage: number;
   textureUrl: string;
   triangles: number;
+  binding: BindingMode;
+  parts?: Partial<Record<HumanoidPart, number>>;
   /** Wall time for the whole convert action, filled by the studio. */
   elapsedMs?: number;
   /** Material names excluded before conversion, filled by the studio. */
@@ -88,12 +98,14 @@ export async function convertBatches(
   options.onPhase?.('导出 4D 骨骼几何…');
   await nextFrame();
   const png = await canvasPng(atlas.canvas);
+  const binding: BindingMode = options.rig ? 'humanoid' : 'static';
   const { file, report } = buildBedrockGeometry(batches, {
     height: options.height,
     doubleSided: options.doubleSided,
     ...(options.sourceTriangles !== undefined
       ? { sourceTriangles: options.sourceTriangles }
       : {}),
+    ...(options.rig ? { rig: options.rig } : {}),
   });
   options.onPhase?.('打包皮肤包…');
   await nextFrame();
@@ -112,5 +124,7 @@ export async function convertBatches(
     textureCoverage: atlas.coverage,
     textureUrl: atlas.canvas.toDataURL('image/png'),
     triangles: report.triangles,
+    binding,
+    ...(report.parts ? { parts: report.parts } : {}),
   };
 }

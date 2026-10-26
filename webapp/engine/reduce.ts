@@ -83,6 +83,107 @@ export async function reduceBatches(
 }
 
 function reduceBatch(batch: SourceBatch, options: ReduceOptions) {
+  if (batch.parts?.length) return reduceParts(batch, options);
+  return simplifyBatch(batch, options);
+}
+
+/** Reduce each player part independently so no triangle crosses a bone seam. */
+function reduceParts(batch: SourceBatch, options: ReduceOptions) {
+  const triangles = batch.positions.length / 9;
+  const groups = new Map<number, number[]>();
+  for (let t = 0; t < triangles; t++) {
+    const part = batch.parts?.[t] ?? 0;
+    const list = groups.get(part);
+    if (list) list.push(t);
+    else groups.set(part, [t]);
+  }
+  if (groups.size <= 1) {
+    const simplified = simplifyBatch(batch, options);
+    const part = groups.keys().next().value ?? 0;
+    return {
+      batch: {
+        ...simplified.batch,
+        parts: new Uint8Array(simplified.detail.after).fill(part),
+      },
+      detail: simplified.detail,
+    };
+  }
+
+  const positionChunks: Float32Array[] = [];
+  const normalChunks: Float32Array[] = [];
+  const uvChunks: Float32Array[] = [];
+  const partChunks: Uint8Array[] = [];
+  let before = 0;
+  let after = 0;
+  let error = 0;
+  for (const [part, list] of groups) {
+    const simplified = simplifyBatch(sliceTriangles(batch, list, part), options);
+    positionChunks.push(simplified.batch.positions);
+    normalChunks.push(simplified.batch.normals);
+    if (simplified.batch.uvs) uvChunks.push(simplified.batch.uvs);
+    partChunks.push(new Uint8Array(simplified.detail.after).fill(part));
+    before += simplified.detail.before;
+    after += simplified.detail.after;
+    error = Math.max(error, simplified.detail.error);
+  }
+  const merged = mergeFloat(positionChunks);
+  return {
+    batch: {
+      ...batch,
+      positions: merged,
+      normals: mergeFloat(normalChunks),
+      uvs: batch.uvs ? mergeFloat(uvChunks) : null,
+      parts: mergeBytes(partChunks),
+      triangles: after,
+      area: surfaceArea(merged),
+    },
+    detail: { name: batch.name, before, after, error },
+  };
+}
+
+function mergeFloat(chunks: readonly Float32Array[]) {
+  const output = new Float32Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return output;
+}
+
+function mergeBytes(chunks: readonly Uint8Array[]) {
+  const output = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return output;
+}
+
+function sliceTriangles(batch: SourceBatch, indices: readonly number[], part: number) {
+  const positions = new Float32Array(indices.length * 9);
+  const normals = new Float32Array(indices.length * 9);
+  const uvs = batch.uvs ? new Float32Array(indices.length * 6) : null;
+  let p = 0, n = 0, u = 0;
+  for (const t of indices) {
+    positions.set(batch.positions.subarray(t * 9, t * 9 + 9), p);
+    normals.set(batch.normals.subarray(t * 9, t * 9 + 9), n);
+    if (uvs && batch.uvs) uvs.set(batch.uvs.subarray(t * 6, t * 6 + 6), u);
+    p += 9; n += 9; u += 6;
+  }
+  return {
+    ...batch,
+    positions,
+    normals,
+    uvs,
+    parts: new Uint8Array(indices.length).fill(part),
+    triangles: indices.length,
+    area: surfaceArea(positions),
+  };
+}
+
+function simplifyBatch(batch: SourceBatch, options: ReduceOptions) {
   const welded = weld(batch);
   const triangles = batch.positions.length / 9;
   const target = Math.max(1, Math.round(triangles * options.ratio));
@@ -128,9 +229,10 @@ function reduceBatch(batch: SourceBatch, options: ReduceOptions) {
     }
   }
 
+  const { parts: _parts, ...rest } = batch;
   return {
     batch: {
-      ...batch,
+      ...rest,
       positions,
       normals,
       uvs,

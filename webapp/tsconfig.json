@@ -24,6 +24,7 @@
     "../web/shared/**/*.tsx",
     "../tests/webapp-geometry.test.ts",
     "../tests/webapp-extract.test.ts",
+    "../tests/webapp-humanoid.test.ts",
     "../tests/webapp-atlas.test.ts",
     "../tests/webapp-model-zip.test.ts",
     "../tests/webapp-pmx.test.ts",

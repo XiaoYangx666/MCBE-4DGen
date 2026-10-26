@@ -46,6 +46,27 @@ describe('webapp skin pack import', () => {
     expect(imported.skipped).toEqual([]);
   });
 
+  it('resolves a localized pack name instead of showing the translation key', async () => {
+    const collection = buildSkinPackCollection({
+      packName: 'Shared Pack',
+      headerId: '55555555-5555-4555-8555-555555555555',
+      moduleId: '66666666-6666-4666-8666-666666666666',
+      skins: [skin('Skin A', 24)],
+    });
+    const manifest = JSON.parse(new TextDecoder().decode(collection.files['manifest.json']!)) as {
+      header: { name: string };
+    };
+    manifest.header.name = 'pack.name';
+    collection.files['manifest.json'] = new TextEncoder().encode(JSON.stringify(manifest));
+    const english = new TextDecoder().decode(collection.files['texts/en_US.lang']!);
+    collection.files['texts/en_US.lang'] = new TextEncoder().encode(`pack.name=Localized Pack\n${english}`);
+    const zip = new JSZip();
+    for (const [name, bytes] of Object.entries(collection.files)) zip.file(name, bytes);
+    const bytes = new Uint8Array(await zip.generateAsync({ type: 'uint8array' }));
+    const imported = await importSkinPackZip(new File([bytes], 'localized.zip'));
+    expect(imported.name).toBe('Localized Pack');
+  });
+
   it('imports a flat zip and rejects archives without a manifest', async () => {
     const imported = await importSkinPackZip(new File([await zipPack()], 'flat.zip'));
     expect(imported.skins).toHaveLength(2);

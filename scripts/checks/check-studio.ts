@@ -31,14 +31,21 @@ try {
   const packs:any=await(await fetch(base+'/api/packs')).json();assert.equal(packs.configured,true);assert.equal(packs.gameConfigured,false);assert.equal(packs.stateDir,storage.skins);assert.equal(packs.status.length,0);
   assert.equal(packs.library.find((p:any)=>p.id===saved.pack.id).stats.triangles,4);
   const download=await fetch(base+'/api/packs/'+saved.pack.id+'/download');assert.equal(download.status,200);
-  assert.equal(download.headers.get('Content-Type'),'application/zip');assert.match(download.headers.get('Content-Disposition')??'',/filename="skin\.zip"/);
-  const jobDownload=await fetch(base+'/api/job/'+result.id+'/download');assert.equal(jobDownload.status,200);assert.match(jobDownload.headers.get('Content-Disposition')??'',/filename="skin\.zip"/);
+  assert.equal(download.headers.get('Content-Type'),'application/zip');assert.match(download.headers.get('Content-Disposition')??'',/filename\*=UTF-8''/);
+  const jobDownload=await fetch(base+'/api/job/'+result.id+'/download');assert.equal(jobDownload.status,200);assert.match(jobDownload.headers.get('Content-Disposition')??'',/filename\*=UTF-8''/);
   const jobZip=await JSZip.loadAsync(await jobDownload.arrayBuffer());assert.ok(jobZip.file('geometry.json'));assert.ok(jobZip.file('skin0.png'));
   const zip=await JSZip.loadAsync(await download.arrayBuffer());assert.ok(zip.file('geometry.json'));assert.ok(zip.file('skin0.png'));
   const blocked=await fetch(base+'/api/packs/enable',{method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({slot:'custom',id:saved.pack.id})});assert.equal(blocked.status,400);
   await writeFile(join(fixture,'model.obj'),'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n');
   const model=await post('/api/local-import',{path:join(fixture,'model.obj')});
   const models:any=await(await fetch(base+'/api/models')).json();const entry=models.find((m:any)=>m.id===model.modelId);assert.ok(entry.path.startsWith(storage.sources));
+  const convert=await post('/api/convert',{session:model.id,excluded:[],binding:'static',ratio:1,maxError:0.03,height:32,profile:null});
+  let converted:any=null;for(let i=0;i<200;i++){converted=await(await fetch(base+'/api/job/'+convert.id)).json();if(converted.status!=='running')break;await new Promise(r=>setTimeout(r,25));}
+  assert.equal(converted.status,'done',JSON.stringify(converted));
+  const convertedDownload=await fetch(base+'/api/job/'+convert.id+'/download');
+  assert.match(convertedDownload.headers.get('Content-Disposition')??'',/filename="model\.zip"/);
+  const convertedZip=await JSZip.loadAsync(await convertedDownload.arrayBuffer());
+  assert.equal(JSON.parse(await convertedZip.file('manifest.json')!.async('string')).header.name,'model');
   const settings:any=await(await fetch(base+'/api/settings')).json();assert.equal(settings.dataRoot,storage.root);
   const usage:any=await(await fetch(base+'/api/settings/storage-usage')).json();assert.equal(usage.root,storage.root);assert.ok(usage.bytes>0);assert.ok(usage.categories.skins.bytes>0);assert.ok(usage.categories.sources.bytes>0);
   const gameRoot=join(fixture,'game');await mkdir(join(gameRoot,'custom'),{recursive:true});

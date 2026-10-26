@@ -1,9 +1,18 @@
 import * as THREE from 'three';
-import type { SourceBatch, TextureSource, Vec3 } from './types.ts';
+import { humanoidPivots, type HumanoidRig } from './humanoid.ts';
+import {
+  PART_CODE,
+  type HumanoidPart,
+  type SourceBatch,
+  type TextureSource,
+  type Vec3,
+} from './types.ts';
 
 export interface ExtractedModel {
   batches: SourceBatch[];
   warnings: string[];
+  /** Present when extracted with a complete humanoid rig. */
+  rig: { pivots: Partial<Record<HumanoidPart, Vec3>> } | null;
   stats: {
     triangles: number;
     materials: number;
@@ -23,6 +32,8 @@ interface Accumulator {
   opacity: number;
   doubleSided: boolean;
   texture: TextureSource | null;
+  /** PART_CODE per triangle. */
+  parts: number[];
   minU: number;
   minV: number;
   maxU: number;
@@ -51,6 +62,8 @@ export interface ExtractOptions {
   rotationYDegrees?: number;
   /** Bake the current skeleton pose (used for arm/pose adjustments). */
   bakeSkinning?: boolean;
+  /** Complete humanoid rig; when set, triangles are classified per part. */
+  rig?: HumanoidRig | null;
 }
 
 /**
@@ -77,12 +90,16 @@ export function extractModel(
   const warnings = new Set<string>();
   let sourceTriangles = 0;
   let skippedMeshes = 0;
+  const rig = options.rig ?? null;
+  const pivots = rig ? humanoidPivots(rig, rotation) : null;
 
   scene.traverseVisible((object) => {
     const mesh = object as THREE.Mesh;
     if (!(mesh as unknown as { isMesh?: boolean }).isMesh || !mesh.geometry) return;
     if ((object as THREE.SkinnedMesh).isSkinnedMesh) {
-      warnings.add('模型包含骨骼动画网格：网页版使用绑定姿势（T-pose）导出，不评估当前动作。');
+      warnings.add(options.rig
+        ? '模型包含骨骼网格：按当前绑定姿势导出六部位，播放中的源动画不会保留。'
+        : '模型包含骨骼动画网格：网页版使用绑定姿势（T-pose）导出，不评估当前动作。');
     }
     if (mesh.morphTargetInfluences?.some((influence) => Math.abs(influence) > 1e-6)) {
       warnings.add('模型包含表情/形态键：网页版忽略这些变形，仅导出基础网格。');
@@ -112,6 +129,29 @@ export function extractModel(
     const skinned = mesh as THREE.SkinnedMesh;
     const bake = !!options.bakeSkinning && skinned.isSkinnedMesh &&
       !!geometry.getAttribute('skinIndex') && !!geometry.getAttribute('skinWeight');
+    const skinIndex = geometry.getAttribute('skinIndex');
+    const skinWeight = geometry.getAttribute('skinWeight');
+    const skeleton = skinned.isSkinnedMesh ? skinned.skeleton : null;
+    const classify = !!rig && !!skeleton && !!skinIndex && !!skinWeight;
+    const partScores = new Map<HumanoidPart, number>();
+    const partOfTriangle = (a: number, b: number, c: number): HumanoidPart => {
+      if (!classify) return 'body';
+      partScores.clear();
+      for (const index of [a, b, c]) {
+        for (let i = 0; i < 4; i++) {
+          const weight = skinWeight!.getComponent(index, i);
+          if (!(weight > 0)) continue;
+          const joint = skeleton!.bones[skinIndex!.getComponent(index, i)];
+          const part = rig!.partForNode(joint);
+          partScores.set(part, (partScores.get(part) ?? 0) + weight);
+        }
+      }
+      let best: HumanoidPart = 'body';
+      let bestWeight = 0;
+      for (const [part, weight] of partScores)
+        if (weight > bestWeight) { best = part; bestWeight = weight; }
+      return best;
+    };
 
     for (const group of groups) {
       const material = materials[group.materialIndex ?? 0] as (THREE.Material & MaterialFields) | undefined;
@@ -179,6 +219,7 @@ export function extractModel(
           edge1[2] * edge2[0] - edge1[0] * edge2[2],
           edge1[0] * edge2[1] - edge1[1] * edge2[0],
         ) / 2;
+        accumulator.parts.push(PART_CODE[partOfTriangle(ia, ib, ic)]);
         accumulator.triangles++;
         sourceTriangles++;
       }
@@ -221,6 +262,7 @@ export function extractModel(
       uvBounds: bounds && bounds[2] - bounds[0] > 1e-6 && bounds[3] - bounds[1] > 1e-6 ? bounds : null,
       triangles: accumulator.triangles,
       area: accumulator.area,
+      ...(rig ? { parts: Uint8Array.from(accumulator.parts) } : {}),
     });
   }
 
@@ -228,6 +270,7 @@ export function extractModel(
   return {
     batches,
     warnings: [...warnings],
+    rig: pivots,
     stats: {
       triangles: sourceTriangles,
       materials: batches.length,
@@ -257,6 +300,7 @@ function accumulatorFor(
     opacity: material.opacity ?? 1,
     doubleSided: material.side === THREE.DoubleSide,
     texture,
+    parts: [],
     minU: Infinity,
     minV: Infinity,
     maxU: -Infinity,

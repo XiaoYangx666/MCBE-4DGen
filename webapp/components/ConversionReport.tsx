@@ -37,6 +37,7 @@ export function ConversionReport({
         <>
           源三角面 {result.report.sourceTriangles.toLocaleString('zh-CN')} · 转换后比例 {ratio} · 材质{' '}
           {result.report.materials.length} · 贴图覆盖 {Math.round(result.textureCoverage * 100)}%
+          {result.binding === 'humanoid' ? ' · 六部位人形绑定' : ' · 静态整体绑定'}
         </>
       )}
       materials={[
