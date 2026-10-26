@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { Changelog } from '../../web/shared/Changelog';
+import { BUILD_LABEL } from '../../web/shared/build-log';
 import { PALETTE_OPTIONS, type Palette } from '../../web/shared/palettes';
 import type { Theme } from '../lib/theme';
 import { REPO } from '../lib/links';
@@ -198,11 +200,12 @@ export function AppDrawer({
         </div>
 
         <div className="drawer-foot">
+          <Changelog drawer onOpen={close} />
           <a href={REPO} target="_blank" rel="noreferrer">
             <Icon name="github" size={15} /> GitHub
           </a>
           <span className="local"><b /> 本机处理 · 文件不会上传</span>
-          <small>4DGen Web · GPL-3.0</small>
+          <small>4DGen Web · {BUILD_LABEL} · GPL-3.0</small>
         </div>
       </aside>
     </div>

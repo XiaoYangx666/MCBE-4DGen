@@ -54,6 +54,10 @@ Workers Builds 会自动安装依赖，并在 Cloudflare 侧生成/复用自己�
 
 界面复用桌面版的明暗主题与配色。首次打开跟随系统明暗，默认 graphite（中性灰）；顶栏的配色按钮可以切换中性灰 / 海盐蓝 / 暖砂 / 玫瑰灰 / 蓝紫五种配色，选择保存在当前浏览器。配色名称与说明来自 `web/shared/palettes.ts`，与桌面端设置页共用同一份元数据；两边仍各自负责 localStorage 与桌面桥接的持久化。
 
+### 构建号与更新日志
+
+顶栏显示当前 Beta 构建号，例如 `BETA 2026.10.26.3`；点击后打开更新日志。桌面工作台、桌面应用和网页版使用同一个 `web/shared/Changelog.tsx` 组件和 `web/shared/build-log.ts` 数据。当前没有正式版本号，日志按构建记录；正式发版时把覆盖的多个构建合并成一个版本条目即可。
+
 ### 图片皮肤
 
 - 支持 PNG、JPEG、WebP、GIF、BMP、SVG、AVIF（取决于浏览器解码能力），单张最大 40 MB。
@@ -278,6 +282,8 @@ webapp/
 - `src/image-skin-geometry.ts`：图片平面皮肤的共享几何。
 - `src/geometry-validator.ts`：导出前后的 Bedrock 几何结构校验。
 - `src/source-sites.ts`：模型站点目录与分类数据。
+- `web/shared/build-log.ts`：当前 Beta 构建号与更新日志数据，桌面与网页版共用。
+- `web/shared/Changelog.tsx`：构建号按钮和更新日志弹窗，桌面工作台、桌面应用和网页版共用。
 - `web/shared/palettes.ts`：配色 key、名称、说明与默认值。
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态，图标和剪贴板由调用方注入。
 - `web/shared/ConversionSummary.tsx`：转换报告摘要，桌面工作台与网页版共用。

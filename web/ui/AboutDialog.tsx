@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { Changelog } from "../shared/Changelog";
+import { BUILD_LABEL } from "../shared/build-log";
 import { api } from "../lib/api";
 import { Modal } from "./Modal";
 
@@ -37,9 +39,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
       title={
         <>
           关于 4DGen
-          {data?.version && (
-            <span className="version-badge">v{data.version}</span>
-          )}
+          <span className="version-badge">{BUILD_LABEL}</span>
         </>
       }
       label="关于 4DGen"
@@ -64,7 +64,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
               </div>
               <div>
                 <dt>版本</dt>
-                <dd>{data.version}</dd>
+                <dd>{BUILD_LABEL}</dd>
               </div>
               <div>
                 <dt>许可证</dt>
@@ -91,6 +91,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
           </>
         )}
         <div className="pick-actions">
+          <Changelog compact />
           <a
             className="button-link"
             href="https://github.com/XiaoYangx666/MCBE-4DGen"
