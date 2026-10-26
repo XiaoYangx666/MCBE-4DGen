@@ -5,8 +5,8 @@ import type { BedrockGeometryFile } from '../src/bedrock-types.ts';
 import { buildImageSkinGeometry } from '../src/image-skin-geometry.ts';
 import { buildSkinPackCollection, type SkinPackCollectionSkin } from '../src/skin-pack-files.ts';
 import { importSkinPackZip } from '../webapp/lib/pack-import.ts';
-import { zipSkinPack } from '../webapp/lib/convert.ts';
-import { firstGeometryIdentifier } from '../webapp/lib/output-preview.ts';
+import { zipSkinPackBlob } from '../src/skin-pack-zip.ts';
+import { firstGeometryIdentifier } from '../web/shared/poly-mesh-preview.ts';
 
 const png = await sharp({
   create: { width: 128, height: 128, channels: 4, background: { r: 100, g: 120, b: 160, alpha: 1 } },
@@ -73,7 +73,7 @@ describe('webapp skin pack import', () => {
       moduleId: '44444444-4444-4444-8444-444444444444',
       skins: [skin('Skin A', 24)],
     });
-    const blob = await zipSkinPack(collection.files);
+    const blob = await zipSkinPackBlob(collection.files);
     const zip = await JSZip.loadAsync(await blob.arrayBuffer());
     const files = Object.keys(zip.files).filter((name) => !zip.files[name]?.dir).sort();
     expect(files).toEqual(Object.keys(collection.files).sort());

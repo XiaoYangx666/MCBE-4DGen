@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Assets-only Worker: Cloudflare serves the built Vite app directly.
+  "name": "4dgen-web",
+  // Keep this aligned with the date the Worker runtime is validated against.
+  "compatibility_date": "2026-10-26",
+  "assets": {
+    "directory": "./webapp/dist",
+    // The app uses hash routes, but unknown paths should still return the SPA.
+    "not_found_handling": "single-page-application"
+  }
+}

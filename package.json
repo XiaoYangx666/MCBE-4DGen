@@ -30,6 +30,8 @@
     "webapp:dev": "vite --config webapp/vite.config.ts",
     "webapp:build": "vite build --config webapp/vite.config.ts",
     "webapp:preview": "vite preview --config webapp/vite.config.ts",
+    "webapp:deploy": "npm run webapp:build && wrangler deploy",
+    "webapp:deploy:dry": "npm run webapp:build && wrangler deploy --dry-run",
     "check:webapp": "tsc --noEmit -p webapp/tsconfig.json",
     "test:workflow": "vitest run tests/pack-manager.test.ts tests/humanoid.test.ts tests/texture-optimizer.test.ts tests/rigid-mesh-reducer.test.ts tests/pmx-wasm.test.ts tests/bedrock-export.test.ts tests/geometry-validator.test.ts tests/prepare-model.test.ts tests/skin-pack.test.ts tests/preview.test.ts tests/web-preview.test.ts --testTimeout=30000",
     "probe": "node scripts/checks/probe.ts",
@@ -79,7 +81,8 @@
     "three": "^0.186.1",
     "typescript": "7.0.2",
     "vite": "^8.3.4",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wrangler": "4.152.0"
   },
   "main": "desktop/main.cjs",
   "productName": "4DGen"

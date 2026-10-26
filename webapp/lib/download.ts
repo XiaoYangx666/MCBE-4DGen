@@ -1,14 +1,4 @@
-export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.rel = 'noopener';
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
-}
+import { downloadBlob } from '../../web/shared/file-save';
 
 /**
  * Phones often ignore the anchor download attribute, especially iOS. Use the
@@ -41,7 +31,3 @@ export function isCompactViewport() {
 export function isCoarsePointer() {
   return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 }
-
-// Shared with the desktop workbench; re-exported here so existing imports keep
-// working without coupling callers to the shared layer path.
-export { formatBytes, formatCount, safeFilename } from '../../web/shared/format';

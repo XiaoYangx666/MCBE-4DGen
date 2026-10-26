@@ -1,4 +1,5 @@
-import { useEffect, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import { useDialogDismiss } from "../shared/useDialogDismiss";
 
 /** Shared dialog shell: overlay, title, close button and Escape handling. */
 export function Modal({
@@ -24,14 +25,13 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
-  useEffect(() => {
-    if (busy) return;
-    const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [busy, onClose]);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const { backdropProps } = useDialogDismiss({
+    onDismiss: onClose,
+    enabled: !busy,
+    closeOnBackdrop,
+    initialFocus: autoFocusClose ? closeButton : undefined,
+  });
 
   return (
     <div
@@ -39,9 +39,7 @@ export function Modal({
       role="dialog"
       aria-modal="true"
       aria-label={label}
-      onClick={(event) => {
-        if (closeOnBackdrop && event.target === event.currentTarget) onClose();
-      }}
+      {...backdropProps}
     >
       <div className={"pick-box " + className}>
         <div className="card-top">
@@ -50,8 +48,8 @@ export function Modal({
             <h2>{title}</h2>
           </div>
           <button
+            ref={closeButton}
             type="button"
-            autoFocus={autoFocusClose}
             disabled={busy}
             aria-label={closeLabel}
             onClick={onClose}

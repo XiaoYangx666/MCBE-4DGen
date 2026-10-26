@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
-import { decodeGeometryTriangles } from "../../src/geometry-validator";
 import type { BedrockGeometryFile } from "../../src/bedrock-types";
+import { buildPolyMeshPreview } from "../shared/poly-mesh-preview";
 import { createPosePreview } from "./pose-preview";
 import type { HumanoidProfile } from "../../src/humanoid";
 import type { Result, Session } from "./types";
@@ -135,7 +135,7 @@ export function Viewer({
           }
         });
       } else {
-        const object = part === "all" ? group : group.children.find((child) => child.name === part);
+        const object = part === "all" ? group : group.getObjectByName(part);
         if (!object) return;
         box.setFromObject(object);
       }
@@ -187,39 +187,17 @@ export function Viewer({
             texture.dispose();
             return;
           }
-          texture.colorSpace = THREE.SRGBColorSpace;
-          texture.magFilter = THREE.NearestFilter;
-          texture.minFilter = THREE.NearestFilter;
-          const triangles = decodeGeometryTriangles(file as BedrockGeometryFile, "geometry.skin0");
-          const parts = new Map<string, typeof triangles>();
-          for (const triangle of triangles) {
-            const name = triangle[0]!.bone;
-            const list = parts.get(name) ?? [];
-            list.push(triangle);
-            parts.set(name, list);
-          }
-          for (const [name, tris] of parts) {
-            const positions: number[] = [], normals: number[] = [], uvs: number[] = [];
-            for (const triangle of tris) for (const corner of triangle) {
-              positions.push(-corner.position[0], corner.position[1], corner.position[2]);
-              normals.push(-corner.normal[0], corner.normal[1], corner.normal[2]);
-              uvs.push(...corner.uv);
-            }
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-            geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-            geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-            const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-              map: texture,
-              side: THREE.FrontSide,
-              transparent: false,
-              alphaTest: 0.5,
-              depthWrite: true,
-              roughness: 1,
-            }));
-            mesh.name = name;
-            group.add(mesh);
-          }
+          const preview = buildPolyMeshPreview(file as BedrockGeometryFile, "", {
+            identifier: "geometry.skin0",
+            groupByBone: true,
+            mirrorX: true,
+            texture,
+            side: THREE.FrontSide,
+            alphaTest: 0.5,
+            transparent: false,
+            roughness: 1,
+          });
+          group.add(preview.object);
         }
         group.traverse((object) => {
           if (!(object instanceof THREE.Mesh)) return;

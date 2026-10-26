@@ -4,26 +4,31 @@ import { DropZone } from './DropZone';
 import { DownloadButtons, WarningList } from './Common';
 import { Icon } from './Icons';
 import { Viewport } from './Viewport';
-import { loadModelFiles, formatOf, MODEL_ACCEPT, type LoadedModel } from '../lib/import-model';
-import { expandModelArchives } from '../lib/model-zip';
-import { convertPmxModel, isPmdModel, isPmxModel, applyPmxMaterialNames } from '../lib/pmx';
-import { convertTgaTextures } from '../lib/textures';
-import { detectArmRig, applyArmPose, type ArmRig } from '../lib/pose';
+import { MODEL_ACCEPT, type LoadedModel } from '../engine/import-model';
+import { applyArmPose, type ArmRig } from '../engine/pose';
 import {
   applyMaterialVisibility,
   collectMaterialVisibility,
   restoreMaterialVisibility,
 } from '../lib/material-visibility';
-import { extractModel, type ExtractedModel } from '../lib/extract';
-import { reduceBatches } from '../lib/reduce';
-import type { DoubleSidedPolicy } from '../lib/bedrock';
-import { convertBatches, nextFrame, type ConvertResult } from '../lib/convert';
+import { extractModel, type ExtractedModel } from '../engine/extract';
+import type { DoubleSidedPolicy } from '../engine/bedrock';
+import type { ConvertResult } from '../engine/convert';
+import { nextFrame } from '../engine/frame';
+import {
+  convertExtractedModel,
+  loadModelJob,
+  materialLabels as buildMaterialLabels,
+  modelResultKey,
+  ModelJobCancelled,
+  sourceTriangleCount,
+} from '../engine/model-job';
 import { buildGeometryPreview } from '../lib/output-preview';
 import { useSkinPack } from '../lib/pack-context';
-import type { TextureSource, SourceBatch } from '../lib/types';
+import type { TextureSource } from '../engine/types';
 import { RatioField } from '../../web/shared/RatioField';
-import { MaterialCoverage } from '../../web/shared/MaterialCoverage';
-import { formatBytes } from '../lib/download';
+import { ConversionReport } from './ConversionReport';
+import { formatBytes } from '../../web/shared/format';
 import { useCompactViewport } from '../lib/use-compact-viewport';
 import { PoseControls } from '../../web/shared/PoseControls';
 import { MaterialList, type MaterialListItem } from '../../web/shared/MaterialList';
@@ -41,70 +46,6 @@ const normalSheetHeight = () => Math.min(window.innerHeight * 0.6, 620);
 const maxSheetHeight = () => Math.max(320, window.innerHeight - 72);
 const clampSheetHeight = (value: number) =>
   Math.max(160, Math.min(maxSheetHeight(), value));
-
-/** Final face multiplier for the current double-sided policy. */
-function backMultiplier(batch: SourceBatch, policy: DoubleSidedPolicy) {
-  if (policy === 'all') return 2;
-  if (policy === 'front') return 1;
-  return batch.doubleSided ? 2 : 1;
-}
-
-function ConversionReport({
-  result,
-  warnings,
-  stale,
-  selectedMaterial,
-  onSelectMaterial,
-}: {
-  result: ConvertResult;
-  warnings: string[];
-  stale: boolean;
-  selectedMaterial?: string | null;
-  onSelectMaterial?: (name: string) => void;
-}) {
-  const report = result.textureReport;
-  const size = report.size || 128;
-  const area = size * size;
-  const removed = result.excludedMaterials ?? [];
-  const materials = [...report.materials].sort((a, b) => b.pixels - a.pixels);
-  const blank = Math.max(0, 1 - report.allocatedUtilization) * 100;
-  const ratio = result.report.sourceTriangles > 0
-    ? `${Math.round((result.report.triangles / result.report.sourceTriangles) * 100)}%`
-    : '—';
-  return (
-    <div className="report-panel conversion-report">
-      <div className="panel-title">转换报告 <span>REPORT</span></div>
-      <div className="metric">
-        <strong>{result.report.triangles.toLocaleString('zh-CN')}</strong>
-        <span>输出三角面</span>
-      </div>
-      <p>
-        {removed.length ? `已移除 ${removed.length} 个材质` : '未移除材质'} ·{' '}
-        {stale ? '参数已修改，请重新转换' : '结果与本次参数一致'}
-      </p>
-      {result.elapsedMs !== undefined && (
-        <p>完整生成用时 {(result.elapsedMs / 1000).toFixed(1)} 秒</p>
-      )}
-      <p>
-        包间空白 {blank.toFixed(1)}% · 实际非透明 UV 覆盖 {(report.sampledUtilization * 100).toFixed(1)}%
-      </p>
-      <p>
-        源三角面 {result.report.sourceTriangles.toLocaleString('zh-CN')} · 转换后比例 {ratio} · 材质{' '}
-        {result.report.materials.length} · 贴图覆盖 {Math.round(result.textureCoverage * 100)}%
-      </p>
-      <MaterialCoverage
-        materials={[
-          ...materials.map((material) => ({ name: material.name, pixels: material.pixels })),
-          ...removed.map((name) => ({ name, pixels: null, excluded: true })),
-        ]}
-        total={area}
-        selected={selectedMaterial ?? null}
-        onSelect={onSelectMaterial}
-      />
-      <WarningList warnings={warnings} />
-    </div>
-  );
-}
 
 function textureThumbnail(texture: TextureSource | null): string | null {
   if (!texture) return null;
@@ -259,79 +200,30 @@ export function ModelStudio() {
     modelRef.current = null;
     setModel(null);
     try {
-      await nextFrame();
-      const expanded = await expandModelArchives(incoming);
-      let files = expanded.files;
-      const warnings = [...expanded.warnings];
-      let pmxMaterialNames: string[] = [];
-
-      if (files.some((file) => isPmxModel(file) || isPmdModel(file))) {
-        setPhase('转换 PMX 模型…');
-        await nextFrame();
-        const pmx = await convertPmxModel(files);
-        files = files
-          .filter((file) => !isPmxModel(file) && !isPmdModel(file))
-          .concat(pmx.file);
-        pmxMaterialNames = pmx.materialNames;
-        warnings.push(...pmx.warnings);
-      }
-
-      setPhase('准备贴图…');
-      await nextFrame();
-      const textures = await convertTgaTextures(files, {
-        onProgress: (done, total) => {
-          if (total) setPhase(`准备贴图 ${done}/${total}…`);
-        },
+      const job = await loadModelJob(incoming, {
+        onPhase: setPhase,
+        isCurrent: () => token === loadId.current,
       });
-      files = textures.files;
-      warnings.push(...textures.warnings);
-
-      if (!files.some((file) => formatOf(file.name))) {
-        throw new Error('没有找到支持的模型文件。支持 GLB、glTF、VRM、PMX、FBX、OBJ、DAE、STL、PLY，也可以导入包含模型和贴图的 ZIP。');
-      }
-      const total = files.reduce((sum, file) => sum + file.size, 0);
-      if (total > 512 * 1024 * 1024) {
-        throw new Error('文件总大小超过 512 MB，请精简贴图或先压缩模型。');
-      }
-      setPhase('解析模型…');
-      const loaded = await loadModelFiles(files);
       if (token !== loadId.current) {
-        loaded.dispose();
+        job.model.dispose();
         return;
       }
-      if (pmxMaterialNames.length) {
-        const applied = applyPmxMaterialNames(loaded.scene, pmxMaterialNames);
-        if (!applied)
-          warnings.push('PMX 材质数量与转换结果不一致，已保留通用材质名。');
-      }
-      originalVisibility.current = collectMaterialVisibility(loaded.scene);
-      let extracted: ExtractedModel;
-      try {
-        const rig = detectArmRig(loaded.scene);
-        armRig.current = rig;
-        setArmAvailable(!!rig);
-        extracted = extractModel(loaded.scene);
-      } catch (cause) {
-        loaded.dispose();
-        throw cause;
-      }
-      if (token !== loadId.current) {
-        loaded.dispose();
-        return;
-      }
+      originalVisibility.current = collectMaterialVisibility(job.model.scene);
+      armRig.current = job.armRig;
+      setArmAvailable(!!job.armRig);
       const root = new THREE.Group();
-      root.add(loaded.scene);
+      root.add(job.model.scene);
       previewRootRef.current = root;
       setPreviewRoot(root);
-      modelRef.current = loaded;
-      setModel(loaded);
-      setSourceBytes(total);
-      setSource(extracted);
-      setIncluded(new Set(extracted.batches.map((batch) => batch.key)));
-      setWarnings([...new Set([...warnings, ...loaded.warnings, ...extracted.warnings])]);
-      if (!customName.current) setName(loaded.name.slice(0, 60) || DEFAULT_NAME);
+      modelRef.current = job.model;
+      setModel(job.model);
+      setSourceBytes(job.totalBytes);
+      setSource(job.extracted);
+      setIncluded(new Set(job.extracted.batches.map((batch) => batch.key)));
+      setWarnings(job.warnings);
+      if (!customName.current) setName(job.model.name.slice(0, 60) || DEFAULT_NAME);
     } catch (cause) {
-      if (token === loadId.current)
+      if (!(cause instanceof ModelJobCancelled) && token === loadId.current)
         setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       if (token === loadId.current) {
@@ -341,18 +233,18 @@ export function ModelStudio() {
     }
   };
 
-  const resultKeyFor = () => [
-    name.trim(),
+  const key = useMemo(() => modelResultKey({
+    name,
     height,
     rotationY,
     armSpread,
     doubleSided,
-    ratio.toFixed(2),
-    maxError.toFixed(3),
-    [...included].sort().join(','),
-    Object.entries(weights).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}:${value}`).join(','),
-    model?.stats.triangles ?? 0,
-  ].join('|');
+    ratio,
+    maxError,
+    included,
+    weights,
+    modelTriangles: model?.stats.triangles ?? 0,
+  }), [name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, weights, model?.stats.triangles]);
 
   const convert = async () => {
     if (!model || busy) return;
@@ -391,43 +283,23 @@ export function ModelStudio() {
       if (armSpread !== 0) merged.push(`已按 ${armSpread}° 调整手臂，并烘焙到静态网格。`);
       setWarnings(merged);
 
-      let batches = extracted.batches.filter((batch) => included.has(batch.key));
-      if (!batches.length) throw new Error('请至少保留一个材质');
-      const selectedTriangles = batches.reduce((sum, batch) => sum + batch.triangles, 0);
-
-      let reductionWarnings: string[] = [];
-      if (ratio < 0.999) {
-        setPhase('减面…');
-        await nextFrame();
-        const reduced = await reduceBatches(batches, { ratio, maxError });
-        batches = reduced.batches;
-        reductionWarnings = reduced.warnings;
-      }
-
-      batches = batches.map((batch) => {
-        const weight = weights[batch.key] ?? 1;
-        return weight === 1
-          ? batch
-          : { ...batch, area: batch.area * Math.max(0, weight) };
-      });
-
-      const converted = await convertBatches(batches, {
+      const converted = await convertExtractedModel(extracted, {
         name: name.trim(),
         height,
         doubleSided,
-        sourceTriangles: selectedTriangles,
+        ratio,
+        maxError,
+        included,
+        weights,
         onPhase: setPhase,
       });
-      const excludedMaterials = [...new Set(
-        extracted.batches.filter((batch) => !included.has(batch.key)).map((batch) => batch.name),
-      )];
       setResult({
-        ...converted,
+        ...converted.result,
         elapsedMs: performance.now() - startedAt,
-        excludedMaterials,
+        excludedMaterials: converted.excludedMaterials,
       });
-      setResultKey(resultKeyFor());
-      setWarnings([...new Set([...merged, ...reductionWarnings, ...converted.report.warnings])]);
+      setResultKey(key);
+      setWarnings([...new Set([...merged, ...converted.warnings])]);
       setViewMode('output');
       if (compact) {
         setMobileTab('result');
@@ -441,7 +313,6 @@ export function ModelStudio() {
     }
   };
 
-  const key = resultKeyFor();
   const stale = !!result && resultKey !== key;
 
   const addToPack = async () => {
@@ -472,28 +343,15 @@ export function ModelStudio() {
   const heightValue = Number(heightText);
   const heightValid = heightText.trim() !== '' && Number.isFinite(heightValue) && heightValue >= 1 && heightValue <= 128;
   const sourceTriangles = source
-    ? source.batches
-      .filter((batch) => included.has(batch.key))
-      .reduce((sum, batch) => sum + batch.triangles * backMultiplier(batch, doubleSided), 0)
+    ? sourceTriangleCount(source.batches, included, doubleSided)
     : model?.stats.triangles ?? 0;
   const targetFaces = Math.max(1, Math.round(sourceTriangles * ratio));
   const actualFaces = result && !stale ? result.report.triangles : null;
   const selectedMaterial = source?.batches.find((batch) => batch.key === soloKey)?.name ?? null;
-  const materialLabels = new Map<string, string>();
-  if (source) {
-    const totals = new Map<string, number>();
-    for (const batch of source.batches) totals.set(batch.name, (totals.get(batch.name) ?? 0) + 1);
-    const seen = new Map<string, number>();
-    for (const batch of source.batches) {
-      if ((totals.get(batch.name) ?? 1) <= 1) {
-        materialLabels.set(batch.key, batch.name);
-        continue;
-      }
-      const index = (seen.get(batch.name) ?? 0) + 1;
-      seen.set(batch.name, index);
-      materialLabels.set(batch.key, `${batch.name} #${index}`);
-    }
-  }
+  const materialLabels = useMemo(
+    () => source ? buildMaterialLabels(source.batches) : new Map<string, string>(),
+    [source],
+  );
 
   const sheetIsExpanded = sheetOpen && sheetHeight !== null && sheetHeight > normalSheetHeight() * 1.15;
   const sheetWillCollapse = sheetDragging && sheetHeight !== null && sheetHeight < normalSheetHeight() * 0.55;

@@ -7,12 +7,12 @@ import sharp from 'sharp';
 import type { BedrockGeometryFile } from './bedrock-types.ts';
 import { parseGeometryJSON } from './geometry-validator.ts';
 
-import { buildSkinPack } from './skin-pack-files.ts';
+import { buildSkinPack, isUuid } from './skin-pack-files.ts';
 import type { SkinPackFiles, SkinPackInput } from './skin-pack-files.ts';
+import { zipSkinPackBytes } from './skin-pack-zip.ts';
 export { buildSkinPack };
 export type { SkinPackFiles, SkinPackInput };
 const decoder = new TextDecoder('utf-8', { fatal: true });
-const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const fileName = /^[A-Za-z0-9_-]+\.png$/;
 const rootFile = /^(?:manifest|skins|geometry)\.json$|^[A-Za-z0-9_-]+\.png$|^texts\/(?:[a-z]{2}_[A-Z]{2}\.lang|languages\.json)$/;
 function assert(ok: unknown, message: string): asserts ok {
@@ -54,14 +54,14 @@ export async function validateSkinPackFiles(
   assert(record(manifest) && [1, 2].includes(manifest.format_version as number), 'manifest format_version must be 1 or 2');
   const header = manifest.header;
   assert(record(header) && typeof header.name === 'string' && header.name.trim().length > 0 &&
-    typeof header.uuid === 'string' && uuid.test(header.uuid), 'invalid manifest header');
+    isUuid(header.uuid), 'invalid manifest header');
   const version = (value: unknown) => Array.isArray(value) && value.length === 3 &&
     value.every((n) => Number.isSafeInteger(n) && n >= 0);
   assert(version(header.version), 'invalid header version');
   assert(Array.isArray(manifest.modules) && manifest.modules.length === 1, 'expected one skin_pack module');
   const module = manifest.modules[0];
-  assert(record(module) && module.type === 'skin_pack' && typeof module.uuid === 'string' &&
-    uuid.test(module.uuid) && module.uuid !== header.uuid && version(module.version), 'invalid skin_pack module');
+  assert(record(module) && module.type === 'skin_pack' &&
+    isUuid(module.uuid) && module.uuid !== header.uuid && version(module.version), 'invalid skin_pack module');
   assert(record(skins) && Array.isArray(skins.skins) && skins.skins.length > 0, 'skins.json has no skins');
   const names = new Set<string>(), geometries = new Set<string>(), textures = new Set<string>();
   for (const entry of skins.skins) {
@@ -121,23 +121,7 @@ export async function zipSkinPack(
   options: { fast?: boolean; light?: boolean } = {},
 ): Promise<Uint8Array> {
   await validateSkinPackFiles(files, options.light ? { light: true } : {});
-  const zip = new JSZip();
-  for (const [name, bytes] of Object.entries(files)) {
-    if (!options.fast) zip.file(name, bytes);
-    else if (/\.png$/i.test(name))
-      // PNG data is already compressed; storing it avoids a second pass.
-      zip.file(name, bytes, { compression: 'STORE' });
-    else
-      zip.file(name, bytes, {
-        compression: 'DEFLATE',
-        compressionOptions: { level: 1 },
-      });
-  }
-  return zip.generateAsync({
-    type: 'uint8array',
-    compression: 'DEFLATE',
-    compressionOptions: { level: options.fast ? 1 : 6 },
-  });
+  return zipSkinPackBytes(files, options.fast ? { fast: true } : {});
 }
 
 /** Read supported root assets and texts/ only; reject unsafe or unexpected ZIP paths. */

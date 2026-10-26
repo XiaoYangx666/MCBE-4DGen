@@ -1,8 +1,10 @@
-import JSZip from 'jszip';
 import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 import { buildSkinPack } from '../../src/skin-pack-files.ts';
 import { planAtlas, remapUvs, renderAtlas, measureAtlasUsage, type AtlasInput } from './atlas.ts';
 import { buildBedrockGeometry, type DoubleSidedPolicy, type GeometryReport } from './bedrock.ts';
+import { canvasPng } from './canvas.ts';
+import { nextFrame } from './frame.ts';
+import { validateName } from './names.ts';
 import type { SourceBatch } from './types.ts';
 
 export interface ConvertOptions {
@@ -89,7 +91,9 @@ export async function convertBatches(
   const { file, report } = buildBedrockGeometry(batches, {
     height: options.height,
     doubleSided: options.doubleSided,
-    sourceTriangles: options.sourceTriangles,
+    ...(options.sourceTriangles !== undefined
+      ? { sourceTriangles: options.sourceTriangles }
+      : {}),
   });
   options.onPhase?.('打包皮肤包…');
   await nextFrame();
@@ -110,42 +114,3 @@ export async function convertBatches(
     triangles: report.triangles,
   };
 }
-
-export function validateName(name: string) {
-  if (!name.trim()) throw new Error('皮肤名称不能为空');
-  if (name.trim().length > 128) throw new Error('皮肤名称不能超过 128 个字符');
-}
-
-export async function canvasPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-  if (!blob) throw new Error('PNG 编码失败');
-  return new Uint8Array(await blob.arrayBuffer());
-}
-
-/**
- * Skin pack archives are flat: manifest.json, skins.json, geometry.json,
- * textures and texts/ all sit at the archive root. A wrapper folder makes
- * importers treat the pack as missing, so one is never added.
- */
-export async function zipSkinPack(files: Readonly<Record<string, Uint8Array>>): Promise<Blob> {
-  const zip = new JSZip();
-  for (const [name, bytes] of Object.entries(files)) {
-    if (/\.png$/i.test(name)) zip.file(name, bytes, { compression: 'STORE' });
-    else zip.file(name, bytes, { compression: 'DEFLATE', compressionOptions: { level: 6 } });
-  }
-  return zip.generateAsync({
-    type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 },
-  });
-}
-
-export const nextFrame = () => new Promise<void>((resolve) => {
-  let settled = false;
-  const done = () => {
-    if (settled) return;
-    settled = true;
-    resolve();
-  };
-  requestAnimationFrame(() => setTimeout(done, 0));
-  // rAF pauses in background tabs; keep the pipeline from stalling there.
-  setTimeout(done, 80);
-});

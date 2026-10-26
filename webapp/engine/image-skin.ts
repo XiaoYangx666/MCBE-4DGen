@@ -1,7 +1,8 @@
 import { buildSkinPack } from '../../src/skin-pack-files.ts';
 import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 import { buildImageSkinGeometry } from '../../src/image-skin-geometry.ts';
-import { canvasPng, validateName } from './convert.ts';
+import { canvasPng } from './canvas.ts';
+import { validateName } from './names.ts';
 
 export interface ImageSkinOptions {
   name: string;

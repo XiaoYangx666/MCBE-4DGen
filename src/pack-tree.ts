@@ -21,7 +21,7 @@ import type {
   PackStats,
   SkinOrigin,
 } from './pack-types.ts';
-import type { SkinPackFiles } from './skin-pack.ts';
+import type { SkinPackFiles } from './skin-pack-files.ts';
 
 export type Hashes = PackHashes;
 export interface Tree {

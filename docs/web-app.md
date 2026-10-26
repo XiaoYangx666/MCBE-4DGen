@@ -13,7 +13,42 @@ npm run check:webapp    # 只检查网页版
 
 开发服务器和预览服务器都监听 `0.0.0.0`，Vite 会同时打印一个 `Network` 地址。手机和电脑连同一个 Wi-Fi 后，直接打开这个地址即可，例如 `http://192.168.1.20:4174`。如果手机打不开，检查 Windows 防火墙是否允许 Node.js 的入站连接。
 
-`webapp/dist/` 可以部署到任意静态托管（Cloudflare Pages、GitHub Pages、Netlify、对象存储等）。构建使用相对路径，放在子目录也能打开。网页版没有 API 请求，不需要配置后端。
+`webapp/dist/` 可以部署到任意静态托管（Cloudflare Workers、Pages、GitHub Pages、Netlify、对象存储等）。构建使用相对路径，放在子目录也能打开。网页版没有 API 请求，不需要配置后端。
+
+## 部署到 Cloudflare
+
+仓库默认使用 Cloudflare Workers 静态资源部署，配置在根目录 `wrangler.jsonc`：
+
+- Worker 名称：`4dgen-web`（可以在 `wrangler.jsonc` 中修改）
+- 静态目录：`webapp/dist`
+- 未匹配路径回退到 `index.html`（SPA 模式）
+- 没有 Worker 脚本，只有静态资源
+
+首次手动部署：
+
+```powershell
+npx wrangler login
+npm run webapp:deploy:dry   # 构建并检查打包内容，不上传
+npm run webapp:deploy       # 构建并部署
+```
+
+部署完成后地址为 `https://4dgen-web.<你的 workers.dev 子域>.workers.dev`。自定义域名在 Cloudflare Dashboard 的 Workers → `4dgen-web` → Settings → Domains & Routes 添加。
+
+自动部署使用 Cloudflare 自己的 **Workers Builds** GitHub 集成，不需要在 GitHub 仓库里保存 `CLOUDFLARE_API_TOKEN`：
+
+1. 打开 Cloudflare Dashboard → Workers & Pages → `4dgen-web` → Settings → Builds
+2. 选择 Connect，授权 Cloudflare Workers & Pages GitHub App
+3. 选择仓库 `XiaoYangX666/MCBE-4DGen` 和分支 `main`
+4. 构建配置：
+   - Root directory：`/`
+   - Build command：`npm run webapp:build`
+   - Deploy command：`npx wrangler deploy`
+   - Preview command：保持默认 `npx wrangler preview`（启用 PR 预览时使用）
+5. 保存后推送到 `main` 即自动构建和部署
+
+Workers Builds 会自动安装依赖，并在 Cloudflare 侧生成/复用自己的构建 Token。只有想用自定义权限的 Token 时才需要在 Workers Builds 设置里手动指定。
+
+`.github/workflows/ci.yml` 继续只做类型检查、测试和网页版构建，不负责部署。手动部署仍然可以使用上面的 `npm run webapp:deploy`。
 
 ## 功能
 
@@ -111,7 +146,9 @@ PMX 会先用 `libassimp` 的 WebAssembly 后端转换成 GLB，再走同一条 
 
 已复用：
 
-- `src/skin-pack-files.ts`：`manifest.json`、`skins.json`、语言文件与皮肤包身份，桌面版和网页版导出完全同源。
+- `src/skin-pack-files.ts`：`manifest.json`、`skins.json`、语言文件与皮肤包身份，桌面版和网页版导出完全同源；同时提供 PNG 签名/尺寸与 UUID 校验。
+- `src/skin-pack-zip.ts`：平铺皮肤包 ZIP 的写入与压缩策略，桌面版和网页版共用。
+- `src/poly-mesh-writer.ts`：poly_mesh 的顶点去重流、X 镜像和可见包围盒；桌面导出与网页版导出共用这些基础逻辑，上游遍历仍各自保留。
 - `src/geometry-validator.ts`、`src/bedrock-types.ts`：导出前后的 Bedrock 几何结构校验和类型。
 - `src/image-skin-geometry.ts`：图片平面皮肤的几何由桌面 sharp 路径和浏览器 Canvas 路径共用。
 - `src/source-sites.ts`：模型来源站点目录、分类与搜索数据。
@@ -121,6 +158,11 @@ PMX 会先用 `libassimp` 的 WebAssembly 后端转换成 GLB，再走同一条 
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态；图标和剪贴板通过 props 注入。
 - `web/shared/PoseControls.tsx`：Y 轴旋转、手臂外展/下放控件；桌面工作台和网页版模型页共用，状态仍由各自页面持有。
 - `web/shared/MaterialList.tsx`：材质行、缩略图/色块、勾选、像素权重和只看按钮；桌面材质面板和网页版材质栏共用。
+- `web/shared/MaterialCoverage.tsx`：逐材质的图集像素覆盖行与选中行为；桌面转换报告和网页版模型结果共用。
+- `web/shared/ConversionSummary.tsx`：转换报告的标题、输出面数、移除材质、用时、图集利用率与材质覆盖摘要；两端只注入各自的数据和附加区块。
+- `web/shared/RatioField.tsx` 与 `web/shared/triangle-budget.ts`：保留面数比例、目标/实际面数与轻量/可接受/偏高区间。
+- `web/shared/file-save.ts`：浏览器下载回退与 Windows 安全的 `.zip` 文件名；桌面保存和网页版导出共用。
+- `web/shared/appearance.ts`：把主题与配色写入文档、同步 `theme-color` 并广播 `appearancechange`；两端持久化仍各自负责。
 - `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与统一取景 preset（`PREVIEW_CAMERA` / `PREVIEW_FRAMING`）；桌面端皮肤包预览、网页版 3D 预览和工作台共用。
 - `web/shared/preview-viewport.ts`：renderer、scene、camera、OrbitControls、ResizeObserver、连续/按需渲染循环、光照与正面指示的共享外壳；网页版和桌面皮肤包预览完整使用，工作台复用它并保留姿势/材质/focus 逻辑。
 - `web/shared/preview-lighting.ts`：预览用的环境光、三点光、软阴影和自适应光位；网页版、桌面皮肤包预览和工作台共用。
@@ -135,11 +177,11 @@ PMX 会先用 `libassimp` 的 WebAssembly 后端转换成 GLB，再走同一条 
 
 - 模型导入与导出。桌面版基于 `glTF-transform`、`sharp`、`libassimp`；浏览器版基于 three.js 加载器和 Canvas。强行抽象会把 Node 依赖带进浏览器。
 - 图集规划。桌面版有 UV 连通分岛、材质权重和逐岛重采样；网页版使用适合 128×128 的轻量 shelf packing。
-- 布局 CSS。桌面工作台是固定 `100dvh`、三栏、密集表单；网页版需要单列滚动和触控尺寸，只共用设计变量与视觉规范。弹窗外壳（桌面 `web/ui/Modal.tsx`、网页 `.sources-dialog` / `.preview-dialog`）也各自保留。
+- 布局 CSS。桌面工作台是固定 `100dvh`、三栏、密集表单；网页版需要单列滚动和触控尺寸，只共用设计变量与视觉规范。弹窗外壳（桌面 `web/ui/Modal.tsx`、网页 `.sources-dialog` / `.preview-dialog`）也各自保留，但 Esc、背景点击与初始焦点统一走 `web/shared/useDialogDismiss.ts`。
 - 数据与持久化。`/api/...`、`window.desktop`、IndexedDB 和皮肤包模型都不进入 `web/shared/`。
 - 体积格式化。桌面设置页的 `formatSize` 使用 `zh-CN` 本地化数字并支持 TB，网页版 `formatBytes` 是紧凑格式（最多 MB、固定小数位）；语义不同，未合并。
 - 配色缩略图 CSS。桌面 `.palette-preview` 与网页版 `.palette-swatch` 尺寸不同，目前只共享配色元数据。
-- `bedrock-exporter.ts`。桌面版按 glTF primitive/骨骼流导出，网页版按三角面汤导出；两者共享输出格式、坐标约定和同一个校验器。以后如果两端都要改 poly_mesh 细节，可以再抽出纯写入器。
+- `bedrock-exporter.ts`。桌面版按 glTF primitive/骨骼流导出，网页版按三角面汤导出；两者共享输出格式、坐标约定、校验器，以及 `poly-mesh-writer.ts` 中的顶点流、镜像和包围盒基础，但导出上游仍各自保留。
 
 ## 与桌面版的差异
 
@@ -189,9 +231,10 @@ webapp/
     ModelSourcesDialog.tsx 获取模型弹窗外壳（目录本体在 web/shared）
     PackStudio.tsx        单包管理、导入与导出
     SkinPreview.tsx       导出的 poly_mesh 三维预览与弹窗
+    ConversionReport.tsx  模型转换结果摘要与警告
     Viewport.tsx          three.js 预览、共享光照/正面指示与轨道控制
     DropZone.tsx          文件选择 / 拖放
-  lib/
+  engine/                 浏览器转换引擎，不依赖 React 或单包状态
     import-model.ts       GLTF/OBJ/FBX/DAE/STL/PLY 加载
     model-zip.ts          解包模型 ZIP（模型 + .bin/.mtl/贴图）
     pmx.ts                PMX → GLB（libassimp WASM），多 PMX 选最大
@@ -203,23 +246,40 @@ webapp/
     bedrock.ts            poly_mesh 导出
     convert.ts            图集 → 几何 → 皮肤包流程
     image-skin.ts         图片平面皮肤
+    model-job.ts          文件 → 模型加载/提取 → 减面/图集的编排
+    frame.ts              帧让步
+    canvas.ts             Canvas → PNG
+    names.ts              皮肤名称校验
+    types.ts              转换输入/输出类型
+  lib/                    应用状态与基础设施
     output-preview.ts     共享 poly_mesh 预览的薄封装
     pack-types.ts         单包与皮肤的数据结构
     pack-store.ts         IndexedDB 持久化
     pack-context.tsx      单包状态、添加、导入、导出
     pack-import.ts        解析 legacy poly_mesh 皮肤包 ZIP
+    download.ts           下载、分享与 ZIP 文件名
     theme.ts              明暗主题
+    links.ts              外部链接
+    use-compact-viewport.ts 布局断点
+    material-visibility.ts 预览材质显隐
 ```
+
+`engine/` 不导入 React、`components/`、`pack-context`、IndexedDB、主题或下载；这些应用层职责只留在 `lib/` 和 `components/`。模型页的 `ModelStudio` 只保留状态、预览和交互，导入/转换编排走 `engine/model-job.ts`。`tests/architecture.test.ts` 会检查这条边界。
 
 共享模块：
 
-- `src/skin-pack-files.ts`：无 Node 依赖的皮肤包构建器，桌面版与网页版共用。
+- `src/skin-pack-files.ts`：无 Node 依赖的皮肤包构建器、PNG/UUID 校验，桌面版与网页版共用。
+- `src/skin-pack-zip.ts`：平铺皮肤包 ZIP 写入器，两端共用。
+- `src/poly-mesh-writer.ts`：poly_mesh 顶点流、镜像与可见包围盒，两端共用。
 - `src/image-skin-geometry.ts`：图片平面皮肤的共享几何。
 - `src/geometry-validator.ts`：导出前后的 Bedrock 几何结构校验。
 - `src/source-sites.ts`：模型站点目录与分类数据。
 - `web/shared/palettes.ts`：配色 key、名称、说明与默认值。
 - `web/shared/SourceDirectory.tsx`：站点目录的搜索、分类、卡片与复制状态，图标和剪贴板由调用方注入。
-- `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与统一取景 preset，桌面端与网页端共用。
+- `web/shared/ConversionSummary.tsx`：转换报告摘要，桌面工作台与网页版共用。
+- `web/shared/file-save.ts`：`downloadBlob` 与 `zipFileName`，桌面保存和网页版导出共用。
+- `web/shared/appearance.ts`：主题/配色写入与 `appearancechange` 广播，桌面与网页版共用。
+- `web/shared/poly-mesh-preview.ts`：导出的 `poly_mesh` → three.js 网格、纹理与统一取景 preset，桌面端（含工作台输出预览）与网页端共用。
 - `web/shared/preview-viewport.ts`：共享预览外壳（renderer、camera、OrbitControls、渲染循环、光照、正面指示、网格/背景与对象生命周期）。
 - `web/shared/preview-lighting.ts`：预览环境光、三点光、软阴影与自适应光位，桌面端与网页端共用。
 - `web/shared/preview-orientation.ts`：预览的前向箭头与标签，桌面端与网页端共用。

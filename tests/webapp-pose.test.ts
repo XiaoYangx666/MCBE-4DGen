@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { applyArmPose, detectArmRig } from '../webapp/lib/pose.ts';
+import { applyArmPose, detectArmRig } from '../webapp/engine/pose.ts';
 
 function rigScene() {
   const root = new THREE.Group();

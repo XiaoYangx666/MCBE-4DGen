@@ -22,6 +22,25 @@ export function randomUuid(): string {
 const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
+/** True for a canonical UUID string, used to preserve pack identity. */
+export function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_PATTERN.test(value);
+}
+
+/** True when the bytes start with the PNG signature and can carry an IHDR. */
+export function isPng(value: Uint8Array): boolean {
+  return value.length >= 24 &&
+    PNG_SIGNATURE.every((byte, index) => value[index] === byte);
+}
+
+/** PNG IHDR dimensions without decoding the image. */
+export function pngDimensions(value: Uint8Array) {
+  if (value.length < 24) return null;
+  const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
+  if (view.getUint32(12) !== 0x49484452) return null; // "IHDR"
+  return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
 export interface SkinPackInput {
   geometry: BedrockGeometryFile;
   png: Uint8Array;
@@ -66,17 +85,10 @@ function singleGeometry(file: BedrockGeometryFile, skinName: string) {
 }
 
 function assertPng(value: Uint8Array, skinName: string) {
-  if (!(value instanceof Uint8Array) || value.length < 24 ||
-    !PNG_SIGNATURE.every((byte, index) => value[index] === byte)) {
+  if (!(value instanceof Uint8Array) || !isPng(value)) {
     throw new Error(`Skin "${skinName}" is missing a valid PNG texture`);
   }
   return new Uint8Array(value);
-}
-
-function pngDimensions(value: Uint8Array) {
-  const view = new DataView(value.buffer, value.byteOffset, value.byteLength);
-  if (view.getUint32(12) !== 0x49484452) return null; // "IHDR"
-  return { width: view.getUint32(16), height: view.getUint32(20) };
 }
 
 /**
@@ -87,8 +99,8 @@ export function buildSkinPackCollection(input: SkinPackCollectionInput): SkinPac
   const name = (input.packName ?? 'Custom Skin Pack').trim();
   if (!name || name.length > 128) throw new Error('Pack name must be 1-128 characters');
   if (!input.skins.length) throw new Error('A skin pack needs at least one skin');
-  const headerId = input.headerId && UUID_PATTERN.test(input.headerId) ? input.headerId : randomUuid();
-  const moduleId = input.moduleId && UUID_PATTERN.test(input.moduleId) ? input.moduleId : randomUuid();
+  const headerId = isUuid(input.headerId) ? input.headerId : randomUuid();
+  const moduleId = isUuid(input.moduleId) ? input.moduleId : randomUuid();
   const key = 'FourDGen_' + headerId.replaceAll('-', '');
   const packLabel = name.replace(/[\r\n=]/g, ' ');
   const geometryFile = { format_version: '1.8.0' } as BedrockGeometryFile;

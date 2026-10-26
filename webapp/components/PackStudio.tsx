@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Icon } from './Icons';
 import { useSkinPack } from '../lib/pack-context';
 import { DEFAULT_PACK_NAME, type StoredSkin } from '../lib/pack-types';
-import { formatBytes } from '../lib/download';
+import { formatBytes } from '../../web/shared/format';
 
 // three.js is only downloaded when someone opens a 3D preview.
 const SkinPreviewDialog = lazy(async () => {
