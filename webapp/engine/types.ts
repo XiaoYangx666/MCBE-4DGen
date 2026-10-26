@@ -1,41 +1,12 @@
 export type Vec3 = [number, number, number];
 
-/** Six rigid player parts used by the humanoid binding. */
-export type HumanoidPart =
-  | 'body'
-  | 'head'
-  | 'leftArm'
-  | 'rightArm'
-  | 'leftLeg'
-  | 'rightLeg';
-
-export const HUMANOID_PARTS: readonly HumanoidPart[] = [
-  'body',
-  'head',
-  'leftArm',
-  'rightArm',
-  'leftLeg',
-  'rightLeg',
-];
-
-/** Stable byte code stored per triangle, so batches survive reduction. */
-export const PART_CODE: Record<HumanoidPart, number> = {
-  body: 0,
-  head: 1,
-  leftArm: 2,
-  rightArm: 3,
-  leftLeg: 4,
-  rightLeg: 5,
-};
-
-export const CODE_PART: readonly HumanoidPart[] = [
-  'body',
-  'head',
-  'leftArm',
-  'rightArm',
-  'leftLeg',
-  'rightLeg',
-];
+// Binding rules, codes and the player skeleton are shared with the Node exporter.
+export type { HumanoidPart } from '../../src/humanoid-binding.ts';
+export {
+  CODE_PART,
+  HUMANOID_PARTS,
+  PART_CODE,
+} from '../../src/humanoid-binding.ts';
 
 /** An image that can be drawn into a canvas. */
 export interface TextureSource {

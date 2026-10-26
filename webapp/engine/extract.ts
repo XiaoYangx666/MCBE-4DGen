@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { dominantHumanoidPart } from '../../src/humanoid-binding.ts';
 import { humanoidPivots, type HumanoidRig } from './humanoid.ts';
 import {
   PART_CODE,
@@ -146,11 +147,7 @@ export function extractModel(
           partScores.set(part, (partScores.get(part) ?? 0) + weight);
         }
       }
-      let best: HumanoidPart = 'body';
-      let bestWeight = 0;
-      for (const [part, weight] of partScores)
-        if (weight > bestWeight) { best = part; bestWeight = weight; }
-      return best;
+      return dominantHumanoidPart(partScores);
     };
 
     for (const group of groups) {
