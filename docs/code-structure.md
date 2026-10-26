@@ -24,7 +24,7 @@ Importer -> IntermediateModel -> Optimizer -> BoneMapper -> BedrockExporter -> S
 - `importer.ts`、`avatar-import.ts`、`tga.ts`、`pmx-metadata.ts`：读取 GLB/glTF、Assimp 格式与 PMX/VRM 元数据。
 - `prepare-model.ts`、`optimizer.ts`、`mesh-optimizer.ts`、`rigid-mesh-reducer.ts`：变换、姿势冻结、减面。
 - `texture-optimizer.ts`、`texture-charts.ts`、`image-template.ts`、`image-skin-geometry.ts`：图集、UV 连通分岛、图片模板与两端共用的平面皮肤几何。
-- `bone-mapper.ts`、`humanoid.ts`、`auto-profile.ts`：Static 与六部位人形绑定。
+- `bone-mapper.ts`、`humanoid.ts`、`humanoid-binding.ts`、`auto-profile.ts`：Static 与六部位人形绑定；`humanoid-binding.ts` 提供两端共用的角色映射、玩家骨架、轴心拟合与三角面归属规则。
 - `bedrock-exporter.ts`、`bedrock-types.ts`、`geometry-validator.ts`、`poly-mesh-writer.ts`：Bedrock 1.8.0 poly_mesh 导出与校验。`poly-mesh-writer.ts` 提供两端共用的顶点去重、X 镜像与可见包围盒计算。
 - `skin-pack.ts`、`skin-pack-files.ts`、`skin-pack-zip.ts`、`pack-cli.ts`、`import-skin-pack.ts`：ZIP、皮肤包校验、不可变库与可恢复部署。`skin-pack-files.ts` 只依赖 Web 标准 API，桌面版与网页版共用皮肤包构建器、PNG 签名/尺寸与 UUID 校验；`skin-pack-zip.ts` 共用平铺 ZIP 的写入与压缩策略。
 - `pack-manager.ts`：皮肤包库与游戏槽位的领域操作；文件树的安全遍历、写入、校验和统计放在 `pack-tree.ts`。
@@ -89,7 +89,7 @@ npm run test:node
 - `library/`：模型库的 `ModelListPane`、`ImportModelDialog`、`RenameModelDialog`、`RelinkModelDialog`、`DeleteModelDialog` 与 `model-types.ts`。
 - `packs/`：`PackSidebar`、`PackHeader`、`SkinList`、`SkinDetail`、`PackDialogs`、`GameSkinsPanel`、`PersonaRecipePanel`、`PackPreview`、`SaveSkinDialog`、`GameStatusBadge`，以及 `use-pack-page.ts`、`pack-types.ts`、`pack-state.ts`、`pack-menu.ts`、`pack-ui.ts`、`game-skins-types.ts`。`PackPage` 只负责视图，数据加载和操作由 `usePackPage` 统一管理。
 - `ui/`：`AppBar`、`WebNav`、`AboutDialog`、`ContextMenu`、`InlineName`、`Modal`、`SelectableRow` 等跨页面组件。
-- `shared/`：与纯浏览器网页版共用的展示层，只依赖 Web 标准 API 与 React：`palettes.ts`（配色元数据）、`appearance.ts`（主题/配色写入文档并广播 `appearancechange`）、`SourceDirectory.tsx`（模型站点目录）、`PoseControls.tsx`（Y 轴旋转与手臂外展/下放控件）、`MaterialList.tsx`（材质行、缩略图、勾选、像素权重、只看）、`MaterialCoverage.tsx`（逐材质像素覆盖）、`ConversionSummary.tsx`（转换报告摘要）、`RatioField.tsx`（保留面数比例与面数区间）、`poly-mesh-preview.ts`（导出的 poly_mesh → three.js 网格、纹理与统一取景 preset）、`preview-viewport.ts`（renderer / scene / camera / OrbitControls / 渲染循环 / 光照与正面指示的共享外壳）、`preview-lighting.ts`（预览环境光、三点光与软阴影）、`preview-orientation.ts`（前向箭头与标签）、`demand-render.ts`（按需渲染合并）、`viewport-appearance.ts`（主题背景与网格着色）、`format.ts`（字节与文件名工具）、`file-save.ts`（浏览器下载与 ZIP 文件名）、`clipboard.ts`（复制回退）、`useDialogDismiss.ts`（Esc/背景点击）。这里不放 API、IndexedDB 或服务端数据模型。
+- `shared/`：与纯浏览器网页版共用的展示层，只依赖 Web 标准 API 与 React：`build-log.ts`（Beta 构建号与更新日志数据）、`Changelog.tsx`（构建号按钮与更新日志弹窗）、`palettes.ts`（配色元数据）、`appearance.ts`（主题/配色写入文档并广播 `appearancechange`）、`SourceDirectory.tsx`（模型站点目录）、`PoseControls.tsx`（Y 轴旋转与手臂外展/下放控件）、`MaterialList.tsx`（材质行、缩略图、勾选、像素权重、只看）、`MaterialCoverage.tsx`（逐材质像素覆盖）、`ConversionSummary.tsx`（转换报告摘要）、`RatioField.tsx`（保留面数比例与面数区间）、`poly-mesh-preview.ts`（导出的 poly_mesh → three.js 网格、纹理与统一取景 preset）、`preview-viewport.ts`（renderer / scene / camera / OrbitControls / 渲染循环 / 光照与正面指示的共享外壳）、`preview-lighting.ts`（预览环境光、三点光与软阴影）、`preview-orientation.ts`（前向箭头与标签）、`demand-render.ts`（按需渲染合并）、`viewport-appearance.ts`（主题背景与网格着色）、`format.ts`（字节与文件名工具）、`file-save.ts`（浏览器下载与 ZIP 文件名）、`clipboard.ts`（复制回退）、`useDialogDismiss.ts`（Esc/背景点击）。这里不放 API、IndexedDB 或服务端数据模型。
 - `lib/`：`api.ts`、`appearance.ts`、`navigation.ts`、`use-hash-route.ts` 等基础设施。
 - `styles/`：`style.css`、`workflow.css`、`theme.css`、`shared.css`。
 

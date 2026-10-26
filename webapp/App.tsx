@@ -3,6 +3,8 @@ import { ImageStudio } from './components/ImageStudio';
 import { PackStudio } from './components/PackStudio';
 import { AppDrawer, type Mode } from './components/AppDrawer';
 import { Icon } from './components/Icons';
+import { Changelog } from '../web/shared/Changelog';
+import { BUILD_LABEL } from '../web/shared/build-log';
 import { useSkinPack, SkinPackProvider } from './lib/pack-context';
 import { REPO } from './lib/links';
 import { useCompactViewport } from './lib/use-compact-viewport';
@@ -114,6 +116,7 @@ function AppShell() {
             <Icon name="menu" size={20} />
           </button>
           <span className="mobile-page-title">{MODE_TITLES[mode]}</span>
+          <Changelog compact />
           <span className="local"><b /> 本机处理</span>
         </header>
       ) : (
@@ -148,6 +151,7 @@ function AppShell() {
             </button>
           </nav>
           <div className="header-right">
+            <Changelog compact />
             <span className="local"><b /> 本机处理</span>
             <div className="palette-control" ref={paletteControl}>
               <button
@@ -235,7 +239,7 @@ function AppShell() {
       </main>
 
       <footer>
-        <span>4DGen Web / 图片与模型工作台</span>
+        <span>4DGen Web · {BUILD_LABEL}</span>
         <span>
           文件在本机处理，不会上传 · <a href={REPO} target="_blank" rel="noreferrer">GitHub</a> · GPL-3.0
         </span>

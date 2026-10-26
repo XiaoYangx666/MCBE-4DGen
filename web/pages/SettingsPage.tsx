@@ -7,6 +7,8 @@ import {
 } from "../lib/appearance";
 import { PALETTE_OPTIONS } from "../shared/palettes";
 import { useEffect, useState } from "react";
+import { Changelog } from "../shared/Changelog";
+import { BUILD_LABEL } from "../shared/build-log";
 import { api, post } from "../lib/api";
 
 type SettingsData = {
@@ -390,9 +392,8 @@ export function SettingsPage({ onAbout }: { onAbout: () => void }) {
               4DGen 本地模型与皮肤工作台。查看版本、运行环境和数据目录。
             </p>
             <div className="settings-save">
-              <span>
-                {data.version ? `版本 ${data.version}` : "本地模型与皮肤工作台"}
-              </span>
+              <span>{BUILD_LABEL}</span>
+              <Changelog compact />
               <button type="button" onClick={onAbout}>
                 关于 4DGen
               </button>

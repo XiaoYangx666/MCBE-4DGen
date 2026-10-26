@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Changelog } from "./shared/Changelog";
 import { AboutDialog } from "./ui/AboutDialog";
 import { AppBar } from "./ui/AppBar";
 import { LibraryPage } from "./pages/LibraryPage";
@@ -42,12 +43,20 @@ export function App() {
       </button>
     ) : null;
   const navigation = window.desktop ? (
-    <AppBar page={page}>{saveButton}</AppBar>
+    <AppBar page={page}>
+      <Changelog compact />
+      {saveButton}
+    </AppBar>
   ) : (
     <WebNav
       page={page}
       modelName={workbench.session?.name}
-      action={saveButton}
+      action={(
+        <>
+          <Changelog compact />
+          {saveButton}
+        </>
+      )}
     />
   );
 

@@ -1715,6 +1715,10 @@ footer a { color: var(--accent); }
 }
 .app-nav-mobile .local { display: inline-flex; align-items: center; margin-left: auto; font-size: 10px; }
 .drawer-foot .local { display: inline-flex; align-items: center; }
+@media (max-width: 380px) {
+  /* Keep the menu, page title and build badge on one line on small phones. */
+  .app-nav-mobile .changelog-build { display: none; }
+}
 
 .drawer-layer {
   position: fixed;
