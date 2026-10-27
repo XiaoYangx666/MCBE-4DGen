@@ -43,6 +43,7 @@
     "../tests/webapp-preview-materials.test.ts",
     "../tests/webapp-progress.test.ts",
     "../tests/webapp-reduce.test.ts",
+    "../tests/webapp-resources.test.ts",
     "../tests/webapp-pack-import.test.ts",
     "../tests/webapp-vrm-materials.test.ts"
   ]
