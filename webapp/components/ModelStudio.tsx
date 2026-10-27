@@ -23,8 +23,16 @@ import {
   materialLabels as buildMaterialLabels,
   modelResultKey,
   ModelJobCancelled,
+  prepareModelInput,
   sourceTriangleCount,
+  type PreparedModelInput,
 } from '../engine/model-job';
+import {
+  defaultModelCandidate,
+  type ModelFormat,
+} from '../../src/model-candidates.ts';
+import { Dialog } from '../../web/shared/Dialog';
+import { ModelCandidateList } from '../../web/shared/ModelCandidateList';
 import { buildGeometryPreview } from '../lib/output-preview';
 import { useSkinPack } from '../lib/pack-context';
 import type { TextureSource } from '../engine/types';
@@ -36,6 +44,8 @@ import { PoseControls } from '../../web/shared/PoseControls';
 import { MaterialList, type MaterialListItem } from '../../web/shared/MaterialList';
 
 const DEFAULT_NAME = '我的 4D 皮肤';
+/** Formats the browser build cannot open; the picker lists them as unavailable. */
+const WEB_UNAVAILABLE_FORMATS: readonly ModelFormat[] = ['pmd'];
 const thumbnailCache = new Map<string, string | null>();
 
 /** Default and maximum mobile sheet heights, shared by CSS and drag state. */
@@ -113,6 +123,8 @@ export function ModelStudio() {
   const [packMessage, setPackMessage] = useState('');
   const [packError, setPackError] = useState('');
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  /** Archive with several models: the picker waits for the user's choice. */
+  const [pending, setPending] = useState<{ input: PreparedModelInput; main: string } | null>(null);
   const { addSkin } = useSkinPack();
   const modelRef = useRef<LoadedModel | null>(null);
   const loadId = useRef(0);
@@ -174,12 +186,7 @@ export function ModelStudio() {
     return map;
   }, [source]);
 
-  const choose = async (incoming: File[]) => {
-    if (!incoming.length) return;
-    const token = ++loadId.current;
-    setError(null);
-    setLoading(true);
-    setPhase('读取文件…');
+  const resetLoadState = () => {
     setResult(null);
     setViewMode('source');
     setWarnings([]);
@@ -202,8 +209,18 @@ export function ModelStudio() {
     modelRef.current?.dispose();
     modelRef.current = null;
     setModel(null);
+  };
+
+  /** Parse an already unpacked input with the chosen model file. */
+  const runJob = async (prepared: PreparedModelInput, main: string | undefined) => {
+    const token = ++loadId.current;
+    setError(null);
+    setLoading(true);
+    setPhase('读取文件…');
+    resetLoadState();
     try {
-      const job = await loadModelJob(incoming, {
+      const job = await loadModelJob(prepared, {
+        ...(main === undefined ? {} : { main }),
         onPhase: setPhase,
         isCurrent: () => token === loadId.current,
       });
@@ -237,6 +254,42 @@ export function ModelStudio() {
         setPhase('');
       }
     }
+  };
+
+  const choose = async (incoming: File[]) => {
+    if (!incoming.length) return;
+    const token = ++loadId.current;
+    setError(null);
+    setLoading(true);
+    setPhase('读取文件…');
+    setPending(null);
+    try {
+      const prepared = await prepareModelInput(incoming);
+      if (token !== loadId.current) return;
+      const candidate = defaultModelCandidate(prepared.candidates, WEB_UNAVAILABLE_FORMATS);
+      if (!candidate) throw new Error('没有找到支持的模型文件。');
+      if (prepared.candidates.length > 1) {
+        // Let the user pick instead of silently loading the first model.
+        setPending({ input: prepared, main: candidate.path });
+        setLoading(false);
+        setPhase('');
+        return;
+      }
+      await runJob(prepared, candidate.path);
+    } catch (cause) {
+      if (token === loadId.current) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setLoading(false);
+        setPhase('');
+      }
+    }
+  };
+
+  const loadPending = () => {
+    if (!pending) return;
+    const { input, main } = pending;
+    setPending(null);
+    void runJob(input, main);
   };
 
   const key = useMemo(() => [
@@ -841,10 +894,10 @@ export function ModelStudio() {
               )}
             </div>
           )}
-          {busy && (
+          {(busy || loading) && viewObject && (
             <div className="busy-overlay">
               <span className="spinner" />
-              <b>{phase || '正在转换…'}</b>
+              <b>{phase || (busy ? '正在转换…' : '正在读取文件…')}</b>
               <small>大模型可能需要几秒钟</small>
             </div>
           )}
@@ -890,6 +943,29 @@ export function ModelStudio() {
       </section>
 
       {sourcesOpen && <ModelSourcesDialog onClose={closeSources} />}
+
+      {pending && (
+        <Dialog
+          title="选择包内模型"
+          label="选择包内模型"
+          className="model-candidate-dialog"
+          closeLabel="取消选择"
+          onClose={() => setPending(null)}
+        >
+          <p>这个包里有多套模型，选一个导入。</p>
+          <ModelCandidateList
+            candidates={pending.input.candidates}
+            value={pending.main}
+            onChange={(path) => setPending((current) => (current ? { ...current, main: path } : current))}
+            disabledFormats={WEB_UNAVAILABLE_FORMATS}
+            note={(candidate) => (candidate.format === 'pmd' ? '需桌面版' : null)}
+          />
+          <div className="pick-actions">
+            <button type="button" onClick={() => setPending(null)}>取消</button>
+            <button type="button" className="primary" onClick={loadPending}>加载所选模型</button>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

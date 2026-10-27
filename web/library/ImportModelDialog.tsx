@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { defaultModelCandidate, listModelCandidates } from "../../src/model-candidates.ts";
 import { api, post } from "../lib/api";
 import { Modal } from "../ui/Modal";
+import { ModelCandidateList } from "../shared/ModelCandidateList";
 import type { Session } from "../workbench/types";
 import { errorMessage } from "./model-types";
 
@@ -55,6 +57,11 @@ export function ImportModelDialog({
   const [pending, setPending] = useState("");
   const files = useRef<HTMLInputElement>(null);
   const folder = useRef<HTMLInputElement>(null);
+  // The server reports plain relative paths; rank them like the browser build.
+  const models = useMemo(
+    () => listModelCandidates(candidates.map((path) => ({ path }))),
+    [candidates],
+  );
 
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label);
@@ -73,10 +80,8 @@ export function ImportModelDialog({
   ) {
     if ("candidates" in data) {
       setCandidates(data.candidates);
-      setMain(
-        data.candidates.find((candidate) => !/(weapon|闭眼)/i.test(candidate)) ??
-          data.candidates[0],
-      );
+      const ranked = listModelCandidates(data.candidates.map((path) => ({ path })));
+      setMain(defaultModelCandidate(ranked)?.path ?? data.candidates[0] ?? "");
       setPending(data.pending ?? "");
     } else {
       onImported(data);
@@ -165,18 +170,12 @@ export function ImportModelDialog({
       {!!candidates.length && (
         <>
           <h3>选择包内模型</h3>
-          <div className="pick-list">
-            {candidates.map((candidate) => (
-              <label key={candidate}>
-                <input
-                  type="radio"
-                  checked={main === candidate}
-                  onChange={() => setMain(candidate)}
-                />
-                <span>{candidate}</span>
-              </label>
-            ))}
-          </div>
+          <ModelCandidateList
+            candidates={models}
+            value={main}
+            onChange={setMain}
+            disabled={!!busy}
+          />
           <button
             className="primary"
             disabled={!!busy || !main}

@@ -1104,51 +1104,9 @@ button.packs-chip:hover:not(:disabled) { background: var(--selected); }
 .drop-overlay > div { text-align: center; display: flex; flex-direction: column; gap: 8px; }
 .drop-overlay b { font-size: 20px; color: var(--ink); }
 .drop-overlay small { font-size: 11px; color: var(--accent); letter-spacing: 1px; }
-.pick-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: color-mix(in srgb,var(--canvas) 80.0%,transparent);
-  backdrop-filter: blur(3px);
-}
-.pick-box {
-  width: min(560px, 100%);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 20px 22px;
-  box-shadow: 0 30px 80px color-mix(in srgb,var(--canvas) 53.3%,transparent);
-}
-.pick-box h3 { margin: 0; font-size: 16px; color: var(--ink); }
-.pick-box p { font-size: 11px; color: var(--accent); line-height: 1.7; margin: 8px 0 14px; }
-.pick-list { display: grid; gap: 6px; max-height: 260px; overflow: auto; }
-.pick-list label {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--surface);
-  font-size: 12px;
-  color: var(--ink);
-  cursor: pointer;
-}
-.pick-list label.on { border-color: var(--line); background: var(--selected); }
-.pick-list input { accent-color: var(--ink); }
-.pick-list span { overflow-wrap: anywhere; }
-.pick-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-.pick-actions button.primary {
-  padding: 8px 16px;
-  background: var(--accent);
-  color: var(--canvas);
-  border: none;
-  font-weight: 600;
-}/* Application shell and unified library */
+/* Dialog shell and pick list styles live in styles/shared.css so the browser
+   build renders the same components. */
+/* Application shell and unified library */
 .app-nav { gap: 24px; min-height: 74px; }
 .app-nav nav { display:flex; align-self:stretch; align-items:stretch; gap:8px; }
 .app-nav nav a { display:flex; align-items:center; padding:0 18px; color:var(--accent); border-bottom:2px solid transparent; white-space:nowrap; }
@@ -1234,8 +1192,6 @@ button.danger-button { color:var(--danger); border-color:var(--danger); backgrou
 .import-dialog .pick-list label { display:flex; }
 .page-content .pick-box { width:min(620px,calc(100vw - 32px)); max-height:85vh; overflow:auto; }
 .page-content .pick-box>input { width:100%; }
-.card-top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.card-top h2 { margin:0; font-size:18px; }
 .slot-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
 .slot-card { padding:24px; background:var(--surface); border:1px solid var(--line); border-radius:10px; }
 .badge { background:var(--selected); color:var(--accent); font-size:11px; padding:6px 9px; border-radius:5px; white-space:nowrap; }
