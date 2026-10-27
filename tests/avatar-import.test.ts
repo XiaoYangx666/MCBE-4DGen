@@ -13,6 +13,7 @@ import { documentFixture, png } from './fixtures.ts';
 import { pmxFixture } from './pmx-fixture.ts';
 import { readPMXMaterials } from '../src/pmx-metadata.ts';
 import { prepareVRM } from '../src/avatar-import.ts';
+import { srgbToLinear } from '../src/texture-pixels.ts';
 
 async function temporary(fn: (dir: string) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), '4d-avatar-'));
@@ -101,7 +102,8 @@ for (const version of ['0', '1'] as const) test(`VRM ${version}: initial skin, m
   assert.equal(report.counts.skins, 1);
   if (version === '0') {
     assert.equal(report.materials[0]!.doubleSided, true);
-    assert.equal(report.materials[0]!.baseColor[1], 0.5);
+    // MToon _Color 是 sRGB，glTF baseColorFactor 是线性值。
+    assert.equal(report.materials[0]!.baseColor[1], srgbToLinear(0.5));
     assert.equal(report.materials[0]!.alphaMode, 'BLEND');
   }
   const out = join(dir, 'pack');

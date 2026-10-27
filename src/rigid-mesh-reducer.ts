@@ -2,11 +2,17 @@ import { cloneDocument, compactPrimitive } from '@gltf-transform/functions';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import type { IntermediateModel } from './model.ts';
 import { optimizeMesh } from './mesh-optimizer.ts';
+import {
+  isValidReduceMaxError,
+  isValidReduceRatio,
+  REDUCE_ATTRIBUTE_WEIGHTS,
+  REDUCE_SIMPLIFY_OPTIONS,
+} from './reduce-policy.ts';
 import { validateModel } from './validate-model.ts';
 
 /** Opt-in, post-pose/per-material reduction. Keeps rigid ownership and material boundaries. */
 export async function reduceRigidModel(input: IntermediateModel, options: { ratio: number; maxError: number }) {
-  if (!Number.isFinite(options.ratio) || options.ratio <= 0 || options.ratio > 1 || !Number.isFinite(options.maxError) || options.maxError < 0) throw new Error('Invalid rigid reduction options');
+  if (!isValidReduceRatio(options.ratio) || !isValidReduceMaxError(options.maxError)) throw new Error('Invalid rigid reduction options');
   if (!input.preparation?.worldTransformsBaked || input.document.getRoot().listSkins().length) throw new Error('Rigid reduction requires frozen geometry');
   const cloned = { ...input, document: cloneDocument(input.document), warnings: [...input.warnings] };
   let invisibleTriangles = 0;
@@ -26,7 +32,7 @@ export async function reduceRigidModel(input: IntermediateModel, options: { rati
     for (let i = 0; i < pos.getCount(); i++) { const n: number[] = [], t: number[] = []; normal.getElement(i, n); uv.getElement(i, t); attributes.set([...n, ...t], i * 5); }
     const target = Math.max(1, Math.floor(source.length / 3 * options.ratio));
     const [indices, error] = MeshoptSimplifier.simplifyWithAttributes(source, new Float32Array(pos.getArray()!), 3,
-      attributes, 5, [0.25, 0.25, 0.25, 1, 1], null, target * 3, options.maxError, ['Permissive']);
+      attributes, 5, [...REDUCE_ATTRIBUTE_WEIGHTS], null, target * 3, options.maxError, [...REDUCE_SIMPLIFY_OPTIONS]);
     if (!indices.length) throw new Error('Reduction emptied a material/rigid group');
     details.push({ part: p.getExtras()._playerPart, material: p.getMaterial()?.getName(), before: source.length / 3, after: indices.length / 3, error });
     p.setIndices(cleaned.model.document.createAccessor().setType('SCALAR').setArray(new Uint32Array(indices)).setBuffer(cleaned.model.document.getRoot().listBuffers()[0]!));

@@ -7,9 +7,17 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import {
+  MODEL_FORMAT_RANK,
+  modelFormatOf,
+  type ModelFormat as CandidateFormat,
+} from '../../src/model-candidates.ts';
 import { vrmHumanoidRoles } from './humanoid.ts';
+import { normalizePath } from './paths.ts';
+import { applyVrmMtoonMaterials } from './vrm-materials.ts';
 
-export type ModelFormat = 'glb' | 'gltf' | 'obj' | 'fbx' | 'stl' | 'ply' | 'dae';
+/** Formats this loader can open directly; PMX is converted first, PMD is desktop-only. */
+export type ModelFormat = Exclude<CandidateFormat, 'pmx' | 'pmd'>;
 
 export interface LoadedModel {
   name: string;
@@ -22,43 +30,55 @@ export interface LoadedModel {
   dispose: () => void;
 }
 
-const FORMATS: { extension: string; format: ModelFormat }[] = [
-  { extension: 'glb', format: 'glb' },
-  { extension: 'vrm', format: 'glb' },
-  { extension: 'gltf', format: 'gltf' },
-  { extension: 'fbx', format: 'fbx' },
-  { extension: 'obj', format: 'obj' },
-  { extension: 'dae', format: 'dae' },
-  { extension: 'stl', format: 'stl' },
-  { extension: 'ply', format: 'ply' },
-];
-
 export const MODEL_ACCEPT = '.glb,.gltf,.vrm,.pmx,.fbx,.obj,.dae,.stl,.ply,.zip';
 
 export function formatOf(name: string): ModelFormat | null {
-  const extension = name.split('.').pop()?.toLowerCase() ?? '';
-  return FORMATS.find((item) => item.extension === extension)?.format ?? null;
+  const format = modelFormatOf(name);
+  return format && format !== 'pmx' && format !== 'pmd' ? format : null;
+}
+
+/** Archive-relative path for a picked file, falling back to its base name. */
+export function modelFilePath(file: File): string {
+  const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+  return relative && relative.length > 0 ? relative : file.name;
+}
+
+export interface LoadModelFilesOptions {
+  /** Candidate path (or File) the user picked; defaults to the best candidate. */
+  main?: string | File;
 }
 
 /** Load a model entirely in the browser. Sidecar buffers/textures are mapped by path or basename. */
-export async function loadModelFiles(files: File[]): Promise<LoadedModel> {
+export async function loadModelFiles(
+  files: File[],
+  options: LoadModelFilesOptions = {},
+): Promise<LoadedModel> {
   const candidates = files
-    .map((file) => ({ file, format: formatOf(file.name) }))
-    .filter((item): item is { file: File; format: ModelFormat } => !!item.format);
+    .map((file) => ({ file, format: formatOf(file.name), path: modelFilePath(file) }))
+    .filter((item): item is { file: File; format: ModelFormat; path: string } => item.format !== null)
+    .sort((a, b) =>
+      MODEL_FORMAT_RANK[a.format] - MODEL_FORMAT_RANK[b.format] ||
+      a.path.localeCompare(b.path));
   if (!candidates.length) {
     throw new Error('没有找到支持的模型文件。请选择 GLB、glTF、VRM、FBX、OBJ、DAE、STL 或 PLY。');
   }
-  const rank: Record<ModelFormat, number> = { glb: 0, gltf: 1, fbx: 2, obj: 3, dae: 4, stl: 5, ply: 6 };
-  candidates.sort((a, b) => rank[a.format] - rank[b.format] || a.file.name.localeCompare(b.file.name));
-  const main = candidates[0]!;
+  const wanted = options.main;
+  const main = wanted === undefined
+    ? candidates[0]!
+    : candidates.find((item) =>
+        item.file === wanted || item.path === wanted || item.file.name === wanted);
+  if (!main) {
+    const label = typeof wanted === 'string' ? wanted : wanted?.name ?? '';
+    throw new Error(`所选模型「${label}」不在导入的文件里。`);
+  }
   const warnings: string[] = [];
-  if (candidates.length > 1)
+  if (wanted === undefined && candidates.length > 1)
     warnings.push(`检测到 ${candidates.length} 个模型文件，已加载「${main.file.name}」。`);
 
   const urls = new Map<string, string>();
   const created: string[] = [];
   const register = (raw: string, url: string) => {
-    const key = normalizePath(raw);
+    const key = normalizePath(raw, { lowerCase: true });
     if (!key) return;
     if (!urls.has(key)) urls.set(key, url);
     const base = key.slice(key.lastIndexOf('/') + 1);
@@ -71,7 +91,7 @@ export async function loadModelFiles(files: File[]): Promise<LoadedModel> {
     const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
     if (relative) register(relative, url);
   }
-  const mainUrl = urls.get(normalizePath(main.file.name))!;
+  const mainUrl = urls.get(normalizePath(main.file.name, { lowerCase: true }))!;
 
   const known = new Set(created);
   const manager = new THREE.LoadingManager();
@@ -96,7 +116,7 @@ export async function loadModelFiles(files: File[]): Promise<LoadedModel> {
     if (known.has(url)) return url;
     let decoded = url;
     try { decoded = decodeURIComponent(url); } catch { /* keep raw */ }
-    const clean = normalizePath(decoded.split(/[?#]/)[0] ?? '');
+    const clean = normalizePath(decoded.split(/[?#]/)[0] ?? '', { lowerCase: true });
     const base = clean.slice(clean.lastIndexOf('/') + 1);
     const exact = urls.get(clean) ?? urls.get(base);
     if (exact) return exact;
@@ -170,6 +190,12 @@ async function parseModel(
     const gltf = await loader.loadAsync(url);
     if (/\.vrm$/i.test(file.name))
       warnings.push('VRM 以 glTF 基础网格读取；脸和身体材质会保留，表情与物理不会进入输出。');
+    // MToon 的真实颜色/透明/剔除写在扩展里，映射规则与桌面端共用。
+    const mtoon = await applyVrmMtoonMaterials(gltf);
+    if (mtoon.applied)
+      warnings.push('VRM MToon 材质已按基础色、主贴图、透明度和双面映射；卡通光照、描边、rim/阴影贴图和 UV 动画不会保留。');
+    if (mtoon.unmatched)
+      warnings.push(`${mtoon.unmatched} 个 VRM MToon 材质在场景里没有对应对象，已保留 glTF 原始材质。`);
     const humanoidRoles = gltfHumanoidRoles(gltf);
     if (gltf.parser.json.extensions?.VRM || gltf.parser.json.extensions?.VRMC_vrm)
       warnings.push('已读取 VRM 人形骨骼，可用于六部位绑定。');
@@ -307,10 +333,6 @@ function disposeScene(scene: THREE.Object3D) {
   for (const geometry of geometries) geometry.dispose();
   for (const material of materials) material.dispose();
   for (const texture of textures) texture.dispose();
-}
-
-function normalizePath(value: string) {
-  return value.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '').toLowerCase();
 }
 
 function friendlyError(error: unknown): Error {

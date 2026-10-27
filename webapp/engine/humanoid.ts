@@ -4,32 +4,12 @@ import {
   HUMANOID_REQUIRED_ROLES,
   partForHumanoidRole,
 } from '../../src/humanoid-binding.ts';
+import {
+  HUMANOID_ROLE_ALIASES,
+  humanoidAliases,
+} from '../../src/humanoid-roles.ts';
+import { readVrmHumanBones } from '../../src/vrm-humanoid.ts';
 import type { HumanoidPart, Vec3 } from './types.ts';
-
-/** Exact, normalized aliases. Ambiguous matches are never guessed. */
-const ROLE_ALIASES: Record<string, readonly string[]> = {
-  hips: ['腰', '下半身', 'hips', 'pelvis', 'jbipchips'],
-  head: ['頭', '头', 'head', 'jbipchead'],
-  neck: ['首', 'neck', 'jbipcneck'],
-  leftUpperArm: [
-    '左腕', '左臂', 'leftupperarm', 'leftarm', 'mixamorigleftarm',
-    'upperarml', 'larm', 'lupperarm', 'jbiplupperarm',
-  ],
-  rightUpperArm: [
-    '右腕', '右臂', 'rightupperarm', 'rightarm', 'mixamorigrightarm',
-    'upperarmr', 'rarm', 'rupperarm', 'jbiprupperarm',
-  ],
-  leftHand: ['左手首', '左手腕', 'lefthand', 'mixamoriglefthand', 'handl', 'lhand', 'jbiplhand'],
-  rightHand: ['右手首', '右手腕', 'righthand', 'mixamorigrighthand', 'handr', 'rhand', 'jbiprhand'],
-  leftUpperLeg: [
-    '左足d', '左足', '左太もも', 'leftupperleg', 'leftupleg',
-    'mixamorigleftupleg', 'thighl', 'lupperleg', 'jbiplupperleg',
-  ],
-  rightUpperLeg: [
-    '右足d', '右足', '右太もも', 'rightupperleg', 'rightupleg',
-    'mixamorigrightupleg', 'thighr', 'rupperleg', 'jbiprupperleg',
-  ],
-};
 
 export interface HumanoidRig {
   /** Scene root that owns the rig; used for matrix updates. */
@@ -59,42 +39,11 @@ export function vrmHumanoidRoles(
   nodeForIndex: (index: number) => THREE.Object3D | undefined,
 ): Record<string, THREE.Object3D> {
   const roles: Record<string, THREE.Object3D> = {};
-  const extensions = (json as { extensions?: Record<string, unknown> } | null)
-    ?.extensions;
-  if (!extensions) return roles;
-
-  const add = (role: unknown, index: unknown) => {
-    if (typeof role !== 'string' || typeof index !== 'number') return;
-    const node = nodeForIndex(index);
-    if (node) roles[role] = node;
-  };
-
-  // VRM 0.x: { humanoid: { humanBones: [{ bone, node }] } }
-  const vrm0 = extensions.VRM as
-    | {
-        humanoid?: {
-          humanBones?:
-            | { bone?: unknown; node?: unknown }[]
-            | Record<string, { node?: unknown }>;
-        };
-      }
-    | undefined;
-  const vrm0Bones = vrm0?.humanoid?.humanBones;
-  if (Array.isArray(vrm0Bones))
-    for (const entry of vrm0Bones) add(entry?.bone, entry?.node);
-  else if (vrm0Bones && typeof vrm0Bones === 'object')
-    for (const [role, entry] of Object.entries(vrm0Bones))
-      add(role, entry?.node);
-
-  // VRM 1.0: { humanoid: { humanBones: { hips: { node } } } }
-  const vrm1 = extensions.VRMC_vrm as
-    | { humanoid?: { humanBones?: Record<string, { node?: unknown }> } }
-    | undefined;
-  const bones = vrm1?.humanoid?.humanBones;
-  if (bones && typeof bones === 'object')
-    for (const [role, entry] of Object.entries(bones))
-      add(role, entry?.node);
-
+  // 共享解析只给 role → node 索引；找不到对象时保持跳过。
+  for (const { bone, node } of readVrmHumanBones(json)) {
+    const object = nodeForIndex(node);
+    if (object) roles[bone] = object;
+  }
   return roles;
 }
 
@@ -125,8 +74,9 @@ export function detectHumanoidRig(
   for (const [role, object] of Object.entries(provided))
     if (available.has(object)) selected.set(role, object);
 
-  for (const [role, aliases] of Object.entries(ROLE_ALIASES)) {
+  for (const role of Object.keys(HUMANOID_ROLE_ALIASES)) {
     if (selected.has(role)) continue;
+    const aliases = humanoidAliases(role);
     const found = uniqueMatch(bones, aliases) ?? uniqueMatch(objects, aliases);
     if (found) selected.set(role, found);
   }

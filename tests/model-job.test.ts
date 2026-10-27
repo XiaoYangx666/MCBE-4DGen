@@ -21,6 +21,8 @@ function batch(
     uvs: null,
     color: [1, 1, 1],
     opacity: 1,
+    alphaMode: 'BLEND',
+    alphaCutoff: 0.5,
     doubleSided,
     texture: null,
     uvBounds: null,

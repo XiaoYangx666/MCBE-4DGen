@@ -1,11 +1,17 @@
 import { expandModelArchives } from './model-zip.ts';
-import { formatOf, loadModelFiles, type LoadedModel } from './import-model.ts';
+import { formatOf, loadModelFiles, modelFilePath, type LoadedModel } from './import-model.ts';
 import {
-  applyPmxMaterialNames,
+  listModelCandidates,
+  modelFormatOf,
+  type ModelCandidate,
+} from '../../src/model-candidates.ts';
+import {
+  applyPmxMaterials,
   convertPmxModel,
   isPmdModel,
   isPmxModel,
 } from './pmx.ts';
+import { PMX_MATERIAL_MISMATCH, type PmxMaterialSource } from '../../src/pmx-materials.ts';
 import { convertTgaTextures } from './textures.ts';
 import { detectArmRig, type ArmRig } from './pose.ts';
 import { detectHumanoidRig, type HumanoidRig } from './humanoid.ts';
@@ -28,10 +34,43 @@ function assertActive(isCurrent: () => boolean) {
   if (!isCurrent()) throw new ModelJobCancelled();
 }
 
+function isPreparedInput(
+  input: readonly File[] | PreparedModelInput,
+): input is PreparedModelInput {
+  return !Array.isArray(input);
+}
+
 export interface LoadModelJobOptions {
   onPhase?: (phase: string) => void;
   /** Return false when a newer load should win; the partial model is disposed. */
   isCurrent?: () => boolean;
+  /** Candidate path picked in the UI; omitted means auto-pick. */
+  main?: string;
+}
+
+export interface PreparedModelInput {
+  /** Unpacked files; archive-relative paths live on `webkitRelativePath`. */
+  files: File[];
+  /** Every model file found, best candidate first. */
+  candidates: ModelCandidate[];
+  warnings: string[];
+}
+
+/**
+ * Unpack archives and list the models inside. The UI shows this list when an
+ * archive holds more than one model, then passes the picked path back to
+ * `loadModelJob` so nothing is unpacked twice.
+ */
+export async function prepareModelInput(
+  incoming: readonly File[],
+): Promise<PreparedModelInput> {
+  const expanded = await expandModelArchives([...incoming]);
+  const candidates = listModelCandidates(
+    expanded.files.map((file) => ({ path: modelFilePath(file), bytes: file.size })),
+  );
+  if (!candidates.length)
+    throw new Error('没有找到支持的模型文件。支持 GLB、glTF、VRM、PMX、FBX、OBJ、DAE、STL、PLY，也可以导入包含模型和贴图的 ZIP。');
+  return { files: expanded.files, candidates, warnings: expanded.warnings };
 }
 
 export interface LoadedModelJob {
@@ -49,7 +88,7 @@ export interface LoadedModelJob {
  * extraction. React, preview roots and material visibility stay with the UI.
  */
 export async function loadModelJob(
-  incoming: readonly File[],
+  input: readonly File[] | PreparedModelInput,
   options: LoadModelJobOptions = {},
 ): Promise<LoadedModelJob> {
   const isCurrent = options.isCurrent ?? (() => true);
@@ -58,21 +97,32 @@ export async function loadModelJob(
   try {
     phase('读取文件…');
     await nextFrame();
-    const expanded = await expandModelArchives([...incoming]);
+    const prepared = isPreparedInput(input) ? input : await prepareModelInput(input);
     assertActive(isCurrent);
-    let files = expanded.files;
-    const warnings = [...expanded.warnings];
-    let pmxMaterialNames: string[] = [];
+    let files = prepared.files;
+    const warnings = [...prepared.warnings];
+    let pmxMaterials: PmxMaterialSource[] = [];
+    let main: string | File | undefined = options.main;
 
-    if (files.some((file) => isPmxModel(file) || isPmdModel(file))) {
+    if (options.main !== undefined && modelFormatOf(options.main) === 'pmd')
+      throw new Error('暂不支持 PMD，请先转换为 PMX 2.0/2.1。');
+
+    const hasPmx = files.some((file) => isPmxModel(file) || isPmdModel(file));
+    const wantsPmx = options.main === undefined || modelFormatOf(options.main) === 'pmx';
+    if (hasPmx && wantsPmx) {
       phase('转换 PMX 模型…');
       await nextFrame();
-      const pmx = await convertPmxModel(files);
+      const pmx = await convertPmxModel(
+        files,
+        options.main === undefined ? {} : { main: options.main },
+      );
       files = files
         .filter((file) => !isPmxModel(file) && !isPmdModel(file))
         .concat(pmx.file);
-      pmxMaterialNames = pmx.materialNames;
+      pmxMaterials = pmx.materials;
       warnings.push(...pmx.warnings);
+      // Load exactly the converted model, not another GLB inside the archive.
+      main = pmx.file;
       assertActive(isCurrent);
     }
 
@@ -96,12 +146,11 @@ export async function loadModelJob(
     }
 
     phase('解析模型…');
-    loaded = await loadModelFiles(files);
+    loaded = await loadModelFiles(files, main === undefined ? {} : { main });
     assertActive(isCurrent);
-    if (pmxMaterialNames.length) {
-      const applied = applyPmxMaterialNames(loaded.scene, pmxMaterialNames);
-      if (!applied)
-        warnings.push('PMX 材质数量与转换结果不一致，已保留通用材质名。');
+    if (pmxMaterials.length) {
+      const applied = applyPmxMaterials(loaded.scene, pmxMaterials);
+      if (!applied) warnings.push(PMX_MATERIAL_MISMATCH);
     }
 
     const rig = detectHumanoidRig(loaded.scene, loaded.humanoidRoles);

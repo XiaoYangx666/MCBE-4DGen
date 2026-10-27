@@ -1,20 +1,16 @@
 import type { Document, Node } from '@gltf-transform/core';
 import type { HumanoidProfile } from './humanoid.ts';
+import { HUMANOID_ROLE_ALIASES, humanoidAliases } from './humanoid-roles.ts';
 
 /** Recognize explicit rig conventions; ambiguous names never silently win. */
 export function autoProfile(doc: Document): HumanoidProfile | null {
   const nodes = doc.getRoot().listNodes();
-  const aliases: Record<string, string[]> = {
-    hips: ['腰', '下半身', 'hips'], head: ['頭', '头', 'head'], neck: ['首', 'neck'],
-    leftUpperArm: ['左腕', '左臂', 'leftUpperArm'], rightUpperArm: ['右腕', '右臂', 'rightUpperArm'],
-    leftHand: ['左手首', '左手腕', 'leftHand'], rightHand: ['右手首', '右手腕', 'rightHand'],
-    leftUpperLeg: ['左足D', '左足', 'leftUpperLeg'], rightUpperLeg: ['右足D', '右足', 'rightUpperLeg'],
-  };
   const selected = new Map<string, Node>();
-  for (const [role, names] of Object.entries(aliases)) {
+  for (const role of Object.keys(HUMANOID_ROLE_ALIASES)) {
     const semantic = nodes.filter(n => (n.getExtras()._vrmHumanBone ?? n.getExtras()._humanoidRole) === role);
     if (semantic.length === 1) { selected.set(role, semantic[0]!); continue; }
-    for (const name of names) {
+    // 桌面端只认 MMD 与规范角色名，历史行为保持不变。
+    for (const name of humanoidAliases(role, ['mmd', 'generic'])) {
       const matches = nodes.filter(n => n.getName().toLowerCase() === name.toLowerCase());
       if (matches.length === 1) { selected.set(role, matches[0]!); break; }
       if (matches.length > 1) break;

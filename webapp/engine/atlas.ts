@@ -1,3 +1,9 @@
+import {
+  bakeBaseColorPixels,
+  resolveAlpha,
+  srgbToLinear,
+  type AlphaMode,
+} from '../../src/texture-pixels.ts';
 import type { AtlasBuild, AtlasRect, TextureSource, Vec3 } from './types.ts';
 
 export interface AtlasInput {
@@ -7,6 +13,9 @@ export interface AtlasInput {
   /** sRGB tint, 0..1. */
   color: Vec3;
   opacity: number;
+  /** glTF alpha semantics; defaults to BLEND when omitted. */
+  alphaMode?: AlphaMode;
+  alphaCutoff?: number;
   /** Used to apportion atlas space. */
   area: number;
 }
@@ -137,6 +146,8 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
     const innerY = rect.y + rect.pad;
     const innerWidth = Math.max(1, rect.width - rect.pad * 2);
     const innerHeight = Math.max(1, rect.height - rect.pad * 2);
+    const alphaMode = input.alphaMode ?? 'BLEND';
+    const alphaCutoff = input.alphaCutoff ?? 0.5;
     const texture = input.texture;
     const bounds = input.uvBounds;
     let drawn = false;
@@ -153,11 +164,23 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
     }
     if (!drawn) {
       context.clearRect(innerX, innerY, innerWidth, innerHeight);
-      context.fillStyle = rgba(input.color, input.opacity);
+      context.fillStyle = rgba(input.color, resolveAlpha(input.opacity, alphaMode, alphaCutoff));
       context.fillRect(innerX, innerY, innerWidth, innerHeight);
-    } else if (needsPixelPass(input)) {
-      tintRect(context, innerX, innerY, innerWidth, innerHeight, input);
+      continue;
     }
+    // Bake the base-color factor and alpha mode exactly like the Node atlas.
+    const image = context.getImageData(innerX, innerY, innerWidth, innerHeight);
+    bakeBaseColorPixels(image.data, {
+      factor: [
+        srgbToLinear(input.color[0]),
+        srgbToLinear(input.color[1]),
+        srgbToLinear(input.color[2]),
+        input.opacity,
+      ],
+      alphaMode,
+      alphaCutoff,
+    });
+    context.putImageData(image, innerX, innerY);
   }
 
   return { canvas, size, rects, coverage: coverageOf(context, size) };
@@ -247,28 +270,6 @@ export function measureAtlasUsage(
 
 const rgba = (color: Vec3, alpha: number) =>
   `rgba(${Math.round(color[0] * 255)},${Math.round(color[1] * 255)},${Math.round(color[2] * 255)},${clamp(alpha, 0, 1)})`;
-
-function needsPixelPass(input: AtlasInput) {
-  return input.opacity < 0.999 ||
-    input.color[0] < 0.999 || input.color[1] < 0.999 || input.color[2] < 0.999;
-}
-
-function tintRect(
-  context: CanvasRenderingContext2D,
-  x: number, y: number, width: number, height: number,
-  input: AtlasInput,
-) {
-  const image = context.getImageData(x, y, width, height);
-  const data = image.data;
-  const [red, green, blue] = input.color;
-  for (let i = 0; i < data.length; i += 4) {
-    data[i] = data[i]! * red;
-    data[i + 1] = data[i + 1]! * green;
-    data[i + 2] = data[i + 2]! * blue;
-    data[i + 3] = data[i + 3]! * input.opacity;
-  }
-  context.putImageData(image, x, y);
-}
 
 function coverageOf(context: CanvasRenderingContext2D, size: number) {
   const data = context.getImageData(0, 0, size, size).data;

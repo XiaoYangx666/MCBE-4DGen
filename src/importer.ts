@@ -6,6 +6,7 @@ import { MeshoptDecoder } from 'meshoptimizer';
 import type { IntermediateModel } from './model.ts';
 import { ModelIO, ModelResources } from './resources.ts';
 import { readPMXMaterials } from './pmx-metadata.ts';
+import { PMX_MATERIAL_MISMATCH, planPmxMaterials } from './pmx-materials.ts';
 import { prepareVRM } from './avatar-import.ts';
 import { validateModel } from './validate-model.ts';
 import { decodeTGA } from './tga.ts';
@@ -121,13 +122,14 @@ export async function importModel(input: string, options: ImportOptions = {}): P
         warn('PMX four-component auxiliary UV channels are omitted; only renderable base-color UVs are retained.');
       }
     }
-    if (json.json.materials?.length !== pmx.materials.length) throw new Error('PMX material mapping changed during Assimp conversion');
-    pmx.materials.forEach((material, index) => {
+    if (json.json.materials?.length !== pmx.materials.length) throw new Error(PMX_MATERIAL_MISMATCH);
+    const plan = planPmxMaterials(pmx.materials, json.json.materials.length);
+    if (!plan) throw new Error(PMX_MATERIAL_MISMATCH);
+    plan.forEach((material, index) => {
       const target = json.json.materials![index]!;
       target.doubleSided = material.doubleSided;
       target.name = material.name;
-      // PMX always multiplies diffuse/PNG alpha; it has no glTF OPAQUE/MASK switch.
-      target.alphaMode = 'BLEND';
+      target.alphaMode = material.alphaMode;
       const pbr = target.pbrMetallicRoughness ??= {};
       pbr.baseColorFactor = [...(pbr.baseColorFactor ?? [1, 1, 1, 1])];
       pbr.baseColorFactor[3] = material.alpha;

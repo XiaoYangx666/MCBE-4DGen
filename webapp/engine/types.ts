@@ -1,7 +1,9 @@
 export type Vec3 = [number, number, number];
 
 // Binding rules, codes and the player skeleton are shared with the Node exporter.
-export type { HumanoidPart } from '../../src/humanoid-binding.ts';
+import type { AlphaMode } from '../../src/texture-pixels.ts';
+import type { HumanoidPart } from '../../src/humanoid-binding.ts';
+export type { AlphaMode, HumanoidPart };
 export {
   CODE_PART,
   HUMANOID_PARTS,
@@ -29,6 +31,10 @@ export interface SourceBatch {
   uvs: Float32Array | null;
   color: Vec3;
   opacity: number;
+  /** glTF alpha semantics; shared with the Node atlas baker. */
+  alphaMode: AlphaMode;
+  /** MASK threshold, 0.5 when the source does not specify one. */
+  alphaCutoff: number;
   doubleSided: boolean;
   texture: TextureSource | null;
   /** Tight UV rectangle of this material, clamped to 0..1. */

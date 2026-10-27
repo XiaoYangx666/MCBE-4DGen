@@ -1,4 +1,10 @@
 import { MeshoptSimplifier } from 'meshoptimizer/simplifier';
+import {
+  isValidReduceMaxError,
+  isValidReduceRatio,
+  REDUCE_ATTRIBUTE_WEIGHTS,
+  REDUCE_SIMPLIFY_OPTIONS,
+} from '../../src/reduce-policy.ts';
 import type { SourceBatch } from './types.ts';
 
 export interface ReduceOptions {
@@ -32,9 +38,9 @@ export async function reduceBatches(
   batches: readonly SourceBatch[],
   options: ReduceOptions,
 ): Promise<ReduceResult> {
-  if (!Number.isFinite(options.ratio) || options.ratio <= 0 || options.ratio > 1)
+  if (!isValidReduceRatio(options.ratio))
     throw new Error('保留面数比例需在 1%–100% 之间');
-  if (!Number.isFinite(options.maxError) || options.maxError < 0)
+  if (!isValidReduceMaxError(options.maxError))
     throw new Error('形状变化容限不能为负数');
   if (!MeshoptSimplifier.supported)
     throw new Error('当前浏览器不支持减面所需的 WebAssembly');
@@ -197,17 +203,22 @@ function simplifyBatch(batch: SourceBatch, options: ReduceOptions) {
     attributes[i * 5 + 4] = hasUvs ? welded.uvs[i * 2 + 1]! : 0;
   }
 
+  // UV 缺失时后两维权重清零，避免简化器按空 UV 做误差评估。
+  const weights = hasUvs
+    ? [...REDUCE_ATTRIBUTE_WEIGHTS]
+    : [REDUCE_ATTRIBUTE_WEIGHTS[0], REDUCE_ATTRIBUTE_WEIGHTS[1], REDUCE_ATTRIBUTE_WEIGHTS[2], 0, 0];
+
   const [indices, error] = MeshoptSimplifier.simplifyWithAttributes(
     welded.indices,
     welded.positions,
     3,
     attributes,
     5,
-    [0.25, 0.25, 0.25, hasUvs ? 1 : 0, hasUvs ? 1 : 0],
+    weights,
     null,
     target * 3,
     options.maxError,
-    ['Permissive'],
+    [...REDUCE_SIMPLIFY_OPTIONS],
   );
   if (!indices.length) throw new Error('减面后没有剩余三角面');
 
