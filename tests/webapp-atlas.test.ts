@@ -14,6 +14,47 @@ function input(key: string, area: number, bounds: [number, number, number, numbe
 }
 
 describe('webapp atlas planner', () => {
+  it('gives flat materials a minimal texel instead of an area share', () => {
+    const flat: AtlasInput = { ...input('flat', 10000, null), texture: null };
+    const layout = planAtlas([flat, input('textured', 1)], 128, 1);
+    const flatRect = layout.rects.get('flat')!;
+    const texturedRect = layout.rects.get('textured')!;
+    expect(flatRect.width * flatRect.height).toBeLessThanOrEqual(9);
+    expect(texturedRect.width * texturedRect.height).toBeGreaterThan(
+      flatRect.width * flatRect.height * 4,
+    );
+  });
+
+  it('uses sublinear surface-area budgeting for textured materials', () => {
+    const layout = planAtlas([input('large', 64), input('small', 1)], 128, 1);
+    const large = layout.rects.get('large')!;
+    const small = layout.rects.get('small')!;
+    const ratio =
+      (large.width * large.height) / (small.width * small.height);
+    expect(ratio).toBeGreaterThan(20);
+    expect(ratio).toBeLessThan(50); // 64^0.85 ≈ 34, not 64.
+  });
+
+  it('packs many flat materials without giving them atlas area', () => {
+    const many = Array.from({ length: 64 }, (_, index) => ({
+      ...input(`flat${index}`, 1000, null),
+      texture: null,
+    }));
+    const layout = planAtlas(many, 128, 1);
+    expect(layout.rects.size).toBe(64);
+    for (const rect of layout.rects.values()) {
+      expect(rect.width * rect.height).toBeLessThanOrEqual(9);
+      expect(rect.x + rect.width).toBeLessThanOrEqual(128);
+      expect(rect.y + rect.height).toBeLessThanOrEqual(128);
+    }
+  });
+
+  it('gives a single flat material a single texel', () => {
+    const flat: AtlasInput = { ...input('only-flat', 1000, null), texture: null };
+    const rect = planAtlas([flat], 128, 1).rects.get('only-flat')!;
+    expect(rect.width * rect.height).toBeLessThanOrEqual(9);
+  });
+
   it('packs multiple materials without overlap', () => {
     const layout = planAtlas([input('a', 10), input('b', 5), input('c', 2), input('d', 1)], 128, 1);
     expect(layout.rects.size).toBe(4);

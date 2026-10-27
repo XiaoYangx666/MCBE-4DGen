@@ -23,6 +23,7 @@ export function ConversionReport({
   const ratio = result.report.sourceTriangles > 0
     ? `${Math.round((result.report.triangles / result.report.sourceTriangles) * 100)}%`
     : '—';
+  const uvCoverage = report.uvUtilization ?? result.textureCoverage;
   return (
     <ConversionSummary
       className="report-panel conversion-report"
@@ -36,7 +37,7 @@ export function ConversionReport({
       facts={(
         <>
           源三角面 {result.report.sourceTriangles.toLocaleString('zh-CN')} · 转换后比例 {ratio} · 材质{' '}
-          {result.report.materials.length} · 贴图覆盖 {Math.round(result.textureCoverage * 100)}%
+          {result.report.materials.length} · 有效 UV 覆盖 {Math.round(uvCoverage * 100)}%
           {result.binding === 'humanoid' ? ' · 六部位人形绑定' : ' · 静态整体绑定'}
         </>
       )}
