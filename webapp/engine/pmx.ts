@@ -3,6 +3,7 @@ import { DoubleSide, FrontSide } from 'three';
 import type * as THREE from 'three';
 import { readPMXMaterials } from '../../src/pmx-metadata.ts';
 import { planPmxMaterials, type PmxMaterialSource } from '../../src/pmx-materials.ts';
+import { ASSIMP_IMPORT_POST_PROCESS } from '../../src/assimp-import.ts';
 import { modelFilePath } from './import-model.ts';
 import { reporter, type ProgressHandler } from './progress.ts';
 import { indexResources } from './resources.ts';
@@ -98,11 +99,10 @@ export async function convertPmxModel(
           if (!found) missing.add(name);
           return found;
         },
-        // Assimp's default pipeline also runs `joinIdenticalVertices`, which
-        // takes minutes on MMD-sized models (measured: 70 s vs 0.8 s for a
-        // 116k-triangle PMX) and only changes vertex sharing. The web exporter
-        // works from triangle soup, so keep the geometry, skip the weld.
-        postProcess: ['triangulate', 'sortByPrimitiveType'],
+        // Shared with the desktop importer; it skips Assimp's
+        // `joinIdenticalVertices`, which takes minutes on MMD-sized models and
+        // only changes vertex sharing. Both exporters work from triangle soup.
+        postProcess: ASSIMP_IMPORT_POST_PROCESS,
       },
     );
     const output = result.files[0];

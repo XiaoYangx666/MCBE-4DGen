@@ -15,6 +15,7 @@
     "./**/*.ts",
     "./**/*.tsx",
     "../src/bedrock-types.ts",
+    "../src/assimp-import.ts",
     "../src/geometry-validator.ts",
     "../src/humanoid-roles.ts",
     "../src/model-candidates.ts",

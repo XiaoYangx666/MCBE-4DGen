@@ -10,6 +10,7 @@ import { PMX_MATERIAL_MISMATCH, planPmxMaterials } from './pmx-materials.ts';
 import { prepareVRM } from './avatar-import.ts';
 import { validateModel } from './validate-model.ts';
 import { decodeTGA } from './tga.ts';
+import { ASSIMP_IMPORT_POST_PROCESS } from './assimp-import.ts';
 import sharp from 'sharp';
 import type { Document } from '@gltf-transform/core';
 
@@ -45,18 +46,8 @@ export interface ImportOptions {
 }
 
 /**
- * Assimp's default post-process also runs `joinIdenticalVertices`, which is
- * pathological for large PMX meshes: on an 82k-vertex model it took 60 s and
- * expanded the mesh to 347k vertices. The remaining steps keep the output valid
- * (triangles, UVs, one primitive type) and finish in under a second.
+ * Only formats covered by import and full conversion tests are advertised.
  */
-const IMPORT_POST_PROCESS = [
-  'triangulate',
-  'generateUvCoordinates',
-  'sortByPrimitiveType',
-] as const;
-
-/** Only formats covered by import and full conversion tests are advertised. */
 export const INPUT_FORMATS = ['obj', 'glb', 'gltf', 'fbx', 'dae', 'stl', 'ply', 'pmx', 'vrm'] as const;
 
 export async function importModel(input: string, options: ImportOptions = {}): Promise<IntermediateModel> {
@@ -89,7 +80,7 @@ export async function importModel(input: string, options: ImportOptions = {}): P
       const missing = new Set<string>();
       const result = await assimp.convert({ name: basename(path), bytes: await resources.read(path) }, {
         to: 'glb',
-        postProcess: IMPORT_POST_PROCESS,
+        postProcess: ASSIMP_IMPORT_POST_PROCESS,
         resolve: async (name) => {
           try { return await resources.read(name); }
           catch (error) {
