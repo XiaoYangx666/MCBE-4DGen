@@ -107,7 +107,7 @@ npm run test:node
 - `engine/convert.ts`：图集 → 几何 → 皮肤包 → ZIP 流程。
 - `engine/image-skin.ts`：图片平面皮肤。
 - `engine/model-zip.ts`、`engine/pmx.ts`、`engine/textures.ts`、`engine/pose.ts`、`engine/reduce.ts`、`engine/model-job.ts`、`engine/types.ts`：模型 ZIP、PMX→GLB、TGA→PNG、手臂姿势、按材质/部位减面、导入/转换编排与转换数据类型。
-- `engine/frame.ts`、`engine/canvas.ts`、`engine/names.ts`：帧让步、Canvas PNG 编码与皮肤名称校验。
+- `engine/frame.ts`、`engine/canvas.ts`、`engine/names.ts`、`engine/progress.ts`：帧让步、Canvas PNG 编码、皮肤名称校验与导入/转换阶段进度。
 - `lib/output-preview.ts`：共享 poly_mesh 预览的薄封装，自动识别皮肤包里的几何标识。
 - `lib/pack-types.ts`、`lib/pack-store.ts`、`lib/pack-context.tsx`：单包数据结构、IndexedDB 持久化与 React 状态。
 - `lib/pack-import.ts`：读取 legacy poly_mesh 皮肤包 ZIP 并转换成单包里的皮肤。

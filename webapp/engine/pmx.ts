@@ -4,6 +4,7 @@ import type * as THREE from 'three';
 import { readPMXMaterials } from '../../src/pmx-metadata.ts';
 import { planPmxMaterials, type PmxMaterialSource } from '../../src/pmx-materials.ts';
 import { modelFilePath } from './import-model.ts';
+import { reporter, type ProgressHandler } from './progress.ts';
 import { normalizePath } from './paths.ts';
 
 const PMX_PATTERN = /\.pmx$/i;
@@ -41,6 +42,8 @@ export interface ConvertedPmx {
 export interface ConvertPmxOptions {
   /** Candidate path the user picked; defaults to the largest PMX. */
   main?: string;
+  /** Stage updates for the busy UI. */
+  onProgress?: ProgressHandler;
 }
 
 /**
@@ -65,7 +68,10 @@ export async function convertPmxModel(
 
   const lookup = buildLookup(files);
   const missing = new Set<string>();
+  const report = reporter(options.onProgress);
+  if (!runtime) report('加载 PMX 转换引擎…', '首次使用约 12 MB WebAssembly');
   const assimp = await getAssimp();
+  report('转换 PMX 模型…', `${(main.size / 1024 / 1024).toFixed(1)} MB`);
 
   let bytes: Uint8Array;
   let materials: PmxMaterialSource[] = [];
@@ -92,6 +98,11 @@ export async function convertPmxModel(
           if (!found) missing.add(name);
           return found;
         },
+        // Assimp's default pipeline also runs `joinIdenticalVertices`, which
+        // takes minutes on MMD-sized models (measured: 70 s vs 0.8 s for a
+        // 116k-triangle PMX) and only changes vertex sharing. The web exporter
+        // works from triangle soup, so keep the geometry, skip the weld.
+        postProcess: ['triangulate', 'sortByPrimitiveType'],
       },
     );
     const output = result.files[0];

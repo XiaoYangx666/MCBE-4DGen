@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { dominantHumanoidPart } from '../../src/humanoid-binding.ts';
-import { faceNormal } from './geometry-math.ts';
 import { humanoidPivots, type HumanoidRig } from './humanoid.ts';
 import {
   PART_CODE,
@@ -144,11 +143,12 @@ export function extractModel(
     const partOfTriangle = (a: number, b: number, c: number): HumanoidPart => {
       if (!classify) return 'body';
       partScores.clear();
-      for (const index of [a, b, c]) {
+      for (let corner = 0; corner < 3; corner++) {
+        const vertexIndex = corner === 0 ? a : corner === 1 ? b : c;
         for (let i = 0; i < 4; i++) {
-          const weight = skinWeight!.getComponent(index, i);
+          const weight = skinWeight!.getComponent(vertexIndex, i);
           if (!(weight > 0)) continue;
-          const joint = skeleton!.bones[skinIndex!.getComponent(index, i)];
+          const joint = skeleton!.bones[skinIndex!.getComponent(vertexIndex, i)];
           const part = rig!.partForNode(joint);
           partScores.set(part, (partScores.get(part) ?? 0) + weight);
         }
@@ -168,42 +168,58 @@ export function extractModel(
         let ib = index ? index.getX(i + 1) : i + 1;
         let ic = index ? index.getX(i + 2) : i + 2;
         if (mirrored) [ib, ic] = [ic, ib];
+        triangleIndices[0] = ia;
+        triangleIndices[1] = ib;
+        triangleIndices[2] = ic;
 
-        const a = cornerPosition(position, ia, matrix, skinned, bake);
-        const b = cornerPosition(position, ib, matrix, skinned, bake);
-        const c = cornerPosition(position, ic, matrix, skinned, bake);
-        const face = faceNormal(a, b, c);
-        const corners = [
-          { index: ia, position: a },
-          { index: ib, position: b },
-          { index: ic, position: c },
-        ];
-        for (const corner of corners) {
-          accumulator.positions.push(corner.position[0], corner.position[1], corner.position[2]);
-          let n: Vec3;
+        cornerPositionInto(position, ia, matrix, skinned, bake, cornerA);
+        cornerPositionInto(position, ib, matrix, skinned, bake, cornerB);
+        cornerPositionInto(position, ic, matrix, skinned, bake, cornerC);
+        const edge1x = cornerB[0]! - cornerA[0]!, edge1y = cornerB[1]! - cornerA[1]!, edge1z = cornerB[2]! - cornerA[2]!;
+        const edge2x = cornerC[0]! - cornerA[0]!, edge2y = cornerC[1]! - cornerA[1]!, edge2z = cornerC[2]! - cornerA[2]!;
+        const crossX = edge1y * edge2z - edge1z * edge2y;
+        const crossY = edge1z * edge2x - edge1x * edge2z;
+        const crossZ = edge1x * edge2y - edge1y * edge2x;
+        const crossLength = Math.hypot(crossX, crossY, crossZ);
+        // Unit face normal, falling back to +Y for degenerate triangles.
+        const faceX = crossLength > 0 ? crossX / crossLength : 0;
+        const faceY = crossLength > 0 ? crossY / crossLength : 1;
+        const faceZ = crossLength > 0 ? crossZ / crossLength : 0;
+
+        for (let corner = 0; corner < 3; corner++) {
+          const point = corner === 0 ? cornerA : corner === 1 ? cornerB : cornerC;
+          accumulator.positions.push(point[0]!, point[1]!, point[2]!);
+          let nx = faceX, ny = faceY, nz = faceZ;
           if (normal) {
-            const posed = bake ? skinnedNormal(skinned, corner.index) : null;
-            if (posed) {
-              skinnedNormalVector.set(posed[0], posed[1], posed[2]).applyMatrix3(normalMatrix);
+            const vertexIndex = triangleIndices[corner]!;
+            if (bake && skinnedNormalInto(skinned, vertexIndex, scratchNormal)) {
+              skinnedNormalVector
+                .set(scratchNormal[0]!, scratchNormal[1]!, scratchNormal[2]!)
+                .applyMatrix3(normalMatrix);
               const length = skinnedNormalVector.length();
-              n = length > 0
-                ? [skinnedNormalVector.x / length, skinnedNormalVector.y / length, skinnedNormalVector.z / length]
-                : face;
+              if (length > 0) {
+                nx = skinnedNormalVector.x / length;
+                ny = skinnedNormalVector.y / length;
+                nz = skinnedNormalVector.z / length;
+              }
             } else {
-              n = vertex(normal, corner.index, null, normalMatrix);
-              const length = Math.hypot(n[0], n[1], n[2]);
-              n = length > 0 ? [n[0] / length, n[1] / length, n[2] / length] : face;
+              vertexInto(normal, vertexIndex, null, normalMatrix, scratchNormal);
+              const length = Math.hypot(scratchNormal[0]!, scratchNormal[1]!, scratchNormal[2]!);
+              if (length > 0) {
+                nx = scratchNormal[0]! / length;
+                ny = scratchNormal[1]! / length;
+                nz = scratchNormal[2]! / length;
+              }
             }
-          } else {
-            n = face;
           }
-          accumulator.normals.push(n[0], n[1], n[2]);
+          accumulator.normals.push(nx, ny, nz);
         }
 
         if (uv) {
           if (!accumulator.uvs) accumulator.uvs = [];
-          for (const corner of corners) {
-            const [u, v] = imageUv(accumulator.material.map ?? null, uv, corner.index);
+          for (let corner = 0; corner < 3; corner++) {
+            imageUvInto(accumulator.material.map ?? null, uv, triangleIndices[corner]!, scratchUv);
+            const u = scratchUv[0]!, v = scratchUv[1]!;
             accumulator.uvs.push(u, v);
             accumulator.minU = Math.min(accumulator.minU, u);
             accumulator.minV = Math.min(accumulator.minV, v);
@@ -215,13 +231,7 @@ export function extractModel(
           accumulator.missingUv = true;
         }
 
-        const edge1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]] as Vec3;
-        const edge2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]] as Vec3;
-        accumulator.area += Math.hypot(
-          edge1[1] * edge2[2] - edge1[2] * edge2[1],
-          edge1[2] * edge2[0] - edge1[0] * edge2[2],
-          edge1[0] * edge2[1] - edge1[1] * edge2[0],
-        ) / 2;
+        accumulator.area += crossLength / 2;
         accumulator.parts.push(PART_CODE[partOfTriangle(ia, ib, ic)]);
         accumulator.triangles++;
         sourceTriangles++;
@@ -350,11 +360,12 @@ function textureSource(map: THREE.Texture | null, warnings: Set<string>): Textur
   return { image: image as CanvasImageSource, width, height, key };
 }
 
-function imageUv(
+function imageUvInto(
   map: THREE.Texture | null,
   attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
   index: number,
-): [number, number] {
+  out: number[],
+) {
   let u = attribute.getX(index);
   let v = attribute.getY(index);
   if (map) {
@@ -366,8 +377,17 @@ function imageUv(
     v = transformedV;
     if (map.flipY) v = 1 - v;
   }
-  return [u, v];
+  out[0] = u;
+  out[1] = v;
 }
+
+/** Reused corner buffers: extraction runs over millions of triangles. */
+const cornerA: Vec3 = [0, 0, 0];
+const cornerB: Vec3 = [0, 0, 0];
+const cornerC: Vec3 = [0, 0, 0];
+const scratchNormal: Vec3 = [0, 0, 0];
+const scratchUv = [0, 0];
+const triangleIndices = [0, 0, 0];
 
 const matrixVector = new THREE.Vector3();
 const normalVector = new THREE.Vector3();
@@ -377,29 +397,33 @@ const skinAccumulator = new THREE.Matrix4();
 const skinBoneMatrix = new THREE.Matrix4();
 const skinNormalMatrix = new THREE.Matrix3();
 
-function cornerPosition(
+function cornerPositionInto(
   attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
   index: number,
   matrix: THREE.Matrix4,
   mesh: THREE.SkinnedMesh,
   bake: boolean,
-): Vec3 {
+  out: Vec3,
+) {
   if (bake) {
     skinnedPosition.set(attribute.getX(index), attribute.getY(index), attribute.getZ(index));
     mesh.applyBoneTransform(index, skinnedPosition);
     skinnedPosition.applyMatrix4(matrix);
-    return [skinnedPosition.x, skinnedPosition.y, skinnedPosition.z];
+    out[0] = skinnedPosition.x;
+    out[1] = skinnedPosition.y;
+    out[2] = skinnedPosition.z;
+    return;
   }
-  return vertex(attribute, index, matrix);
+  vertexInto(attribute, index, matrix, undefined, out);
 }
 
 /** Skinned normal in mesh-local space, matching three's skinning shader. */
-function skinnedNormal(mesh: THREE.SkinnedMesh, index: number): Vec3 | null {
+function skinnedNormalInto(mesh: THREE.SkinnedMesh, index: number, out: Vec3): boolean {
   const geometry = mesh.geometry;
   const skinIndex = geometry.getAttribute('skinIndex');
   const skinWeight = geometry.getAttribute('skinWeight');
   const normal = geometry.getAttribute('normal');
-  if (!skinIndex || !skinWeight || !normal || !mesh.skeleton) return null;
+  if (!skinIndex || !skinWeight || !normal || !mesh.skeleton) return false;
 
   skinAccumulator.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   const accumulated = skinAccumulator.elements;
@@ -422,29 +446,41 @@ function skinnedNormal(mesh: THREE.SkinnedMesh, index: number): Vec3 | null {
   skinnedNormalVector
     .set(normal.getX(index), normal.getY(index), normal.getZ(index))
     .applyMatrix3(skinNormalMatrix);
-  if (skinnedNormalVector.lengthSq() < 1e-12) return null;
+  if (skinnedNormalVector.lengthSq() < 1e-12) return false;
   skinnedNormalVector.normalize();
-  return [skinnedNormalVector.x, skinnedNormalVector.y, skinnedNormalVector.z];
+  out[0] = skinnedNormalVector.x;
+  out[1] = skinnedNormalVector.y;
+  out[2] = skinnedNormalVector.z;
+  return true;
 }
 
-function vertex(
+function vertexInto(
   attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
   index: number,
   matrix: THREE.Matrix4 | null,
-  normalMatrix?: THREE.Matrix3,
-): Vec3 {
+  normalMatrix: THREE.Matrix3 | undefined,
+  out: Vec3,
+) {
   const x = attribute.getX(index);
   const y = attribute.getY(index);
   const z = attribute.getZ(index);
   if (matrix) {
     matrixVector.set(x, y, z).applyMatrix4(matrix);
-    return [matrixVector.x, matrixVector.y, matrixVector.z];
+    out[0] = matrixVector.x;
+    out[1] = matrixVector.y;
+    out[2] = matrixVector.z;
+    return;
   }
   if (normalMatrix) {
     normalVector.set(x, y, z).applyMatrix3(normalMatrix);
-    return [normalVector.x, normalVector.y, normalVector.z];
+    out[0] = normalVector.x;
+    out[1] = normalVector.y;
+    out[2] = normalVector.z;
+    return;
   }
-  return [x, y, z];
+  out[0] = x;
+  out[1] = y;
+  out[2] = z;
 }
 
 function srgb(color: THREE.Color): Vec3 {

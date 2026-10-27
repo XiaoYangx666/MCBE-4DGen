@@ -5,6 +5,7 @@ import {
   REDUCE_ATTRIBUTE_WEIGHTS,
   REDUCE_SIMPLIFY_OPTIONS,
 } from '../../src/reduce-policy.ts';
+import { yieldToBrowser } from './progress.ts';
 import type { SourceBatch } from './types.ts';
 
 export interface ReduceOptions {
@@ -12,6 +13,8 @@ export interface ReduceOptions {
   ratio: number;
   /** Shape error budget; the desktop workbench default is 0.03. */
   maxError: number;
+  /** Called before each material so the UI can show `3/12`. */
+  onProgress?: (done: number, total: number, name: string) => void;
 }
 
 export interface ReduceDetail {
@@ -52,9 +55,12 @@ export async function reduceBatches(
   let before = 0;
   let after = 0;
 
-  for (const batch of batches) {
+  for (let index = 0; index < batches.length; index++) {
+    const batch = batches[index]!;
     const triangles = batch.positions.length / 9;
     before += triangles;
+    options.onProgress?.(index, batches.length, batch.name);
+    await yieldToBrowser();
     if (options.ratio >= 0.999 || triangles <= 1) {
       output.push(batch);
       after += triangles;
@@ -80,6 +86,7 @@ export async function reduceBatches(
     }
   }
 
+  options.onProgress?.(batches.length, batches.length, '');
   if (details.length) {
     warnings.push(
       `减面：${Math.round(before).toLocaleString('zh-CN')} → ${Math.round(after).toLocaleString('zh-CN')} 面（保留 ${Math.round((after / Math.max(1, before)) * 100)}%）。`,
@@ -256,36 +263,76 @@ function simplifyBatch(batch: SourceBatch, options: ReduceOptions) {
 
 /** Collapse exact duplicate corners so the simplifier sees shared edges. */
 function weld(batch: SourceBatch) {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const uvs: number[] = [];
-  const indices = new Uint32Array(batch.positions.length / 3);
-  const lookup = new Map<string, number>();
+  const vertexCount = batch.positions.length / 3;
+  const positions = new Float32Array(batch.positions.length);
+  const normals = new Float32Array(batch.normals.length);
   const hasUvs = !!batch.uvs;
+  const uvs = new Float32Array(hasUvs ? vertexCount * 2 : 0);
+  const indices = new Uint32Array(vertexCount);
+  // Open-addressed buckets over unique vertices avoid a string key per corner,
+  // which used to dominate large-model reduction time.
+  const bucketCount = 1 << Math.ceil(Math.log2(Math.max(16, vertexCount)));
+  const buckets = new Int32Array(bucketCount).fill(-1);
+  const chain = new Int32Array(vertexCount).fill(-1);
+  let unique = 0;
 
-  for (let i = 0; i < batch.positions.length / 3; i++) {
+  for (let i = 0; i < vertexCount; i++) {
     const px = batch.positions[i * 3]!, py = batch.positions[i * 3 + 1]!, pz = batch.positions[i * 3 + 2]!;
     const nx = batch.normals[i * 3]!, ny = batch.normals[i * 3 + 1]!, nz = batch.normals[i * 3 + 2]!;
     const u = hasUvs ? batch.uvs![i * 2]! : 0;
     const v = hasUvs ? batch.uvs![i * 2 + 1]! : 0;
-    const key = `${px},${py},${pz}|${nx},${ny},${nz}|${u},${v}`;
-    let index = lookup.get(key);
-    if (index === undefined) {
-      index = positions.length / 3;
-      positions.push(px, py, pz);
-      normals.push(nx, ny, nz);
-      uvs.push(u, v);
-      lookup.set(key, index);
+    const slot = weldHash(px, py, pz, nx, ny, nz, u, v) & (bucketCount - 1);
+    let index = -1;
+    for (let candidate = buckets[slot]!; candidate !== -1; candidate = chain[candidate]!) {
+      const at = candidate * 3;
+      if (
+        positions[at] === px && positions[at + 1] === py && positions[at + 2] === pz &&
+        normals[at] === nx && normals[at + 1] === ny && normals[at + 2] === nz &&
+        (!hasUvs || (uvs[candidate * 2] === u && uvs[candidate * 2 + 1] === v))
+      ) {
+        index = candidate;
+        break;
+      }
+    }
+    if (index === -1) {
+      index = unique;
+      positions[index * 3] = px;
+      positions[index * 3 + 1] = py;
+      positions[index * 3 + 2] = pz;
+      normals[index * 3] = nx;
+      normals[index * 3 + 1] = ny;
+      normals[index * 3 + 2] = nz;
+      uvs[index * 2] = u;
+      uvs[index * 2 + 1] = v;
+      chain[index] = buckets[slot]!;
+      buckets[slot] = index;
+      unique++;
     }
     indices[i] = index;
   }
 
   return {
-    positions: new Float32Array(positions),
-    normals: new Float32Array(normals),
-    uvs: new Float32Array(uvs),
+    positions: positions.slice(0, unique * 3),
+    normals: normals.slice(0, unique * 3),
+    uvs: uvs.slice(0, unique * 2),
     indices,
   };
+}
+
+const hashBuffer = new ArrayBuffer(8);
+const hashFloats = new Float64Array(hashBuffer);
+const hashWords = new Uint32Array(hashBuffer);
+
+/** FNV-style mix over the raw bits of eight corner components. */
+function weldHash(a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) {
+  let hash = 0x811c9dc5;
+  const mix = (value: number) => {
+    hashFloats[0] = value;
+    hash = Math.imul(hash ^ hashWords[0]!, 0x01000193);
+    hash = Math.imul(hash ^ hashWords[1]!, 0x01000193);
+  };
+  mix(a); mix(b); mix(c); mix(d); mix(e); mix(f); mix(g); mix(h);
+  return hash >>> 0;
 }
 
 function surfaceArea(positions: Float32Array): number {

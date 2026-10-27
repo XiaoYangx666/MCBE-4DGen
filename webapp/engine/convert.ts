@@ -10,6 +10,7 @@ import {
 import { canvasPng } from './canvas.ts';
 import { nextFrame } from './frame.ts';
 import { validateName } from './names.ts';
+import { reporter, type ProgressHandler } from './progress.ts';
 import type { HumanoidPart, SourceBatch } from './types.ts';
 
 export type BindingMode = 'static' | 'humanoid';
@@ -21,7 +22,8 @@ export interface ConvertOptions {
   rig?: GeometryRig;
   /** Pre-reduction triangle count, for the report only. */
   sourceTriangles?: number;
-  onPhase?: (phase: string) => void;
+  /** Stage updates for the busy UI. */
+  onProgress?: ProgressHandler;
 }
 
 export interface TextureReport {
@@ -92,10 +94,15 @@ export async function convertBatches(
     area: batch.area,
   }));
 
-  options.onPhase?.('构建 128×128 贴图图集…');
+  const report = reporter(options.onProgress);
+  report('规划 128×128 图集…', `${inputs.length} 个材质`);
   await nextFrame();
   const layout = planAtlas(inputs, 128, 1);
+  report('绘制 128×128 贴图图集…', `${layout.rects.size} 个图块`);
+  await nextFrame();
   const atlas = renderAtlas(inputs, layout);
+  report('重映射 UV…', `${batches.length} 个材质`);
+  await nextFrame();
   for (const batch of batches) {
     const rect = layout.rects.get(atlasKey(batch));
     if (!rect) continue;
@@ -103,7 +110,14 @@ export async function convertBatches(
     remapUvs(uvs, batch.uvBounds, rect, layout.size);
     batch.uvs = uvs;
   }
-  const usage = measureAtlasUsage(atlas.canvas, batches, layout.size);
+  const usage = await measureAtlasUsage(atlas.canvas, batches, layout.size, {
+    onProgress: (done, total, name) =>
+      report(
+        '统计贴图覆盖率…',
+        name ? `${done + 1}/${total} 个材质` : undefined,
+      ),
+  });
+  report('汇总贴图报告…');
   const totalPixels = layout.size * layout.size;
   let contentPixels = 0;
   for (const rect of layout.rects.values())
@@ -135,11 +149,13 @@ export async function convertBatches(
     materials: usage.materials,
   };
 
-  options.onPhase?.('导出 4D 骨骼几何…');
+  report('编码 128×128 PNG…');
   await nextFrame();
   const png = await canvasPng(atlas.canvas);
+  report('导出 4D 骨骼几何…', `${batches.reduce((sum, batch) => sum + batch.triangles, 0).toLocaleString('zh-CN')} 面`);
+  await nextFrame();
   const binding: BindingMode = options.rig ? 'humanoid' : 'static';
-  const { file, report } = buildBedrockGeometry(batches, {
+  const { file, report: geometryReport } = buildBedrockGeometry(batches, {
     height: options.height,
     doubleSided: options.doubleSided,
     ...(options.sourceTriangles !== undefined
@@ -147,7 +163,7 @@ export async function convertBatches(
       : {}),
     ...(options.rig ? { rig: options.rig } : {}),
   });
-  options.onPhase?.('打包皮肤包…');
+  report('打包皮肤包…', `${geometryReport.triangles.toLocaleString('zh-CN')} 面`);
   await nextFrame();
   const files = buildSkinPack({
     geometry: file,
@@ -159,12 +175,12 @@ export async function convertBatches(
     files,
     geometry: file,
     png,
-    report,
+    report: geometryReport,
     textureReport,
     textureCoverage: atlas.coverage,
     textureUrl: atlas.canvas.toDataURL('image/png'),
-    triangles: report.triangles,
+    triangles: geometryReport.triangles,
     binding,
-    ...(report.parts ? { parts: report.parts } : {}),
+    ...(geometryReport.parts ? { parts: geometryReport.parts } : {}),
   };
 }

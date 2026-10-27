@@ -2,22 +2,51 @@ import type { PolyMesh, V2, V3 } from './bedrock-types.ts';
 
 /**
  * Deduplicate numeric vertex tuples while preserving first-seen order. Shared
- * by the Node glTF exporter and the browser triangle-soup exporter.
+ * by the Node glTF exporter and the browser triangle-soup exporter. Buckets
+ * are keyed by the raw bits of each component, so large models no longer pay
+ * for a string key per corner.
  */
 export class VertexStream<T extends number[]> {
   readonly values: T[] = [];
-  private readonly indices = new Map<string, number>();
+  private readonly buckets = new Map<number, number | number[]>();
 
   add(value: T): number {
     const clean = value.map((v) => (Object.is(v, -0) ? 0 : v)) as T;
-    const key = clean.join(',');
-    const existing = this.indices.get(key);
-    if (existing !== undefined) return existing;
+    const hash = tupleHash(clean);
+    const bucket = this.buckets.get(hash);
+    if (typeof bucket === 'number') {
+      if (sameTuple(this.values[bucket]!, clean)) return bucket;
+    } else if (bucket) {
+      for (const existing of bucket)
+        if (sameTuple(this.values[existing]!, clean)) return existing;
+    }
     const index = this.values.length;
     this.values.push(clean);
-    this.indices.set(key, index);
+    if (bucket === undefined) this.buckets.set(hash, index);
+    else if (typeof bucket === 'number') this.buckets.set(hash, [bucket, index]);
+    else bucket.push(index);
     return index;
   }
+}
+
+const hashBuffer = new ArrayBuffer(8);
+const hashFloats = new Float64Array(hashBuffer);
+const hashWords = new Uint32Array(hashBuffer);
+
+function tupleHash(values: readonly number[]) {
+  let hash = 0x811c9dc5;
+  for (const value of values) {
+    hashFloats[0] = value;
+    hash = Math.imul(hash ^ hashWords[0]!, 0x01000193);
+    hash = Math.imul(hash ^ hashWords[1]!, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+function sameTuple(a: readonly number[], b: readonly number[]) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 export interface PolyMeshStreams {

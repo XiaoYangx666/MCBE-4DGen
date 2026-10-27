@@ -1688,6 +1688,12 @@ button.text-danger:hover:not(:disabled) { background: transparent; color: var(--
   backdrop-filter: blur(2px);
 }
 .busy-overlay small { color: var(--muted); font-size: 10px; }
+.task-step {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: left;
+}
 .spinner {
   width: 16px;
   height: 16px;
