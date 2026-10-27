@@ -231,7 +231,7 @@ export function mergeUvCharts(
 
   const entries = charts
     .map((_, index) => index)
-    .sort((a, b) => chartArea(boxes[b]!) - chartArea(boxes[a]!) || a - b);
+    .sort((a, b) => chartArea(boxes[a]!) - chartArea(boxes[b]!) || a - b);
 
   for (let pass = 0; pass < 4; pass++) {
     let changed = false;
