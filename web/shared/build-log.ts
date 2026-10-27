@@ -23,6 +23,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    build: '#12',
+    date: '2026-10-27',
+    title: '网页版模型站点加载优化',
+    changes: [
+      { tag: '优化', text: '网页版「获取模型」弹窗随模型页一起加载，首次打开不再等待额外的代码块和开发服务器编译。' },
+    ],
+  },
+  {
     build: '#11',
     date: '2026-10-27',
     title: '精简顶栏与构建编号',
