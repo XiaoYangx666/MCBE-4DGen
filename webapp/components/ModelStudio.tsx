@@ -17,6 +17,7 @@ import {
 import { extractModel, type ExtractedModel } from '../engine/extract';
 import type { DoubleSidedPolicy } from '../engine/bedrock';
 import { nextFrame } from '../engine/frame';
+import type { TaskProgress } from '../engine/progress';
 import {
   convertExtractedModel,
   loadModelJob,
@@ -117,7 +118,8 @@ export function ModelStudio() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [phase, setPhase] = useState('');
+  /** Latest pipeline step; keeps the overlay informative on large models. */
+  const [progress, setProgress] = useState<TaskProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [packBusy, setPackBusy] = useState(false);
   const [packMessage, setPackMessage] = useState('');
@@ -207,7 +209,10 @@ export function ModelStudio() {
     humanoidRig.current = null;
     previewRootRef.current = null;
     setPreviewRoot(null);
-    sourcePose.current = '0|0';
+    // The import already extracted the bind pose without rotation or arm spread,
+    // so the first convert of a static model can reuse it instead of repeating
+    // the whole extraction. Key shape matches convert(): rotation|spread|binding.
+    sourcePose.current = '0|0|static';
     customRotation.current = false;
     modelRef.current?.dispose();
     modelRef.current = null;
@@ -219,12 +224,12 @@ export function ModelStudio() {
     const token = ++loadId.current;
     setError(null);
     setLoading(true);
-    setPhase('读取文件…');
+    setProgress({ label: '读取文件…' });
     resetLoadState();
     try {
       const job = await loadModelJob(prepared, {
         ...(main === undefined ? {} : { main }),
-        onPhase: setPhase,
+        onProgress: setProgress,
         isCurrent: () => token === loadId.current,
       });
       if (token !== loadId.current) {
@@ -256,7 +261,7 @@ export function ModelStudio() {
     } finally {
       if (token === loadId.current) {
         setLoading(false);
-        setPhase('');
+        setProgress(null);
       }
     }
   };
@@ -266,7 +271,7 @@ export function ModelStudio() {
     const token = ++loadId.current;
     setError(null);
     setLoading(true);
-    setPhase('读取文件…');
+    setProgress({ label: '读取文件…' });
     setPending(null);
     try {
       const prepared = await prepareModelInput(incoming);
@@ -277,7 +282,7 @@ export function ModelStudio() {
         // Let the user pick instead of silently loading the first model.
         setPending({ input: prepared, main: candidate.path });
         setLoading(false);
-        setPhase('');
+        setProgress(null);
         return;
       }
       await runJob(prepared, candidate.path);
@@ -285,7 +290,7 @@ export function ModelStudio() {
       if (token === loadId.current) {
         setError(cause instanceof Error ? cause.message : String(cause));
         setLoading(false);
-        setPhase('');
+        setProgress(null);
       }
     }
   };
@@ -317,13 +322,18 @@ export function ModelStudio() {
     if (!model || busy) return;
     setBusy(true);
     setError(null);
-    setPhase('读取网格…');
+    setProgress({ label: '提取网格…' });
     const startedAt = performance.now();
     try {
       await nextFrame();
       let extracted = source;
       const poseKey = `${rotationY}|${armSpread}|${binding}`;
       if (!extracted || sourcePose.current !== poseKey) {
+        setProgress({
+          label: '按当前姿势重新提取网格…',
+          detail: `${model.stats.triangles.toLocaleString('zh-CN')} 个三角面`,
+        });
+        await nextFrame();
         const root = previewRootRef.current;
         const saved = root?.rotation.y ?? 0;
         if (root) {
@@ -362,7 +372,7 @@ export function ModelStudio() {
         maxError,
         included,
         weights,
-        onPhase: setPhase,
+        onProgress: setProgress,
       });
       setResult({
         ...converted.result,
@@ -380,7 +390,7 @@ export function ModelStudio() {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
-      setPhase('');
+      setProgress(null);
     }
   };
 
@@ -811,9 +821,15 @@ export function ModelStudio() {
             <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
           )}
           {error && <p className="error-message" role="alert"><Icon name="alert" size={15} />{error}</p>}
+          {(busy || loading) && (
+            <p className="task-step" role="status">
+              {progress?.label ?? (busy ? '正在转换…' : '正在读取文件…')}
+              {progress?.detail ? ` · ${progress.detail}` : ''}
+            </p>
+          )}
           <button type="button" className="primary" disabled={!model || busy || loading || !name.trim() || !heightValid || !included.size} onClick={() => void convert()}>
             <Icon name={busy ? 'reset' : 'spark'} size={15} className={busy ? 'spin' : undefined} />
-            {busy ? phase || '正在转换…' : result ? '重新转换' : '转换为 4D 皮肤'}
+            {busy ? '正在转换…' : result ? '重新转换' : '转换为 4D 皮肤'}
           </button>
         </div>
       </div>
@@ -876,8 +892,8 @@ export function ModelStudio() {
               {loading ? (
                 <>
                   <span className="spinner" />
-                  <h2>{phase || '正在解析模型…'}</h2>
-                  <p>大模型需要几秒钟，请保持页面打开。</p>
+                  <h2>{progress?.label || '正在解析模型…'}</h2>
+                  <p>{progress?.detail ? `${progress.detail}，` : ''}大模型需要十几秒，请保持页面打开。</p>
                 </>
               ) : (
                 <>
@@ -905,8 +921,11 @@ export function ModelStudio() {
           {(busy || loading) && viewObject && (
             <div className="busy-overlay">
               <span className="spinner" />
-              <b>{phase || (busy ? '正在转换…' : '正在读取文件…')}</b>
-              <small>大模型可能需要几秒钟</small>
+              <b>{progress?.label || (busy ? '正在转换…' : '正在读取文件…')}</b>
+              <small>
+                {progress?.detail ? `${progress.detail}，` : ''}
+                大模型需要十几秒，请保持页面打开。
+              </small>
             </div>
           )}
         </div>

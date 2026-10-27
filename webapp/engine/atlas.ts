@@ -4,6 +4,7 @@ import {
   srgbToLinear,
   type AlphaMode,
 } from '../../src/texture-pixels.ts';
+import { yieldToBrowser } from './progress.ts';
 import type { AtlasBuild, AtlasRect, TextureSource, Vec3 } from './types.ts';
 
 export interface AtlasInput {
@@ -358,15 +359,21 @@ export interface AtlasUsage {
   materials: AtlasMaterialUsage[];
 }
 
+export interface AtlasUsageOptions {
+  /** Called before each material is rasterized, so the UI can show `3/12`. */
+  onProgress?: (done: number, total: number, name: string) => void;
+}
+
 /**
  * Rasterize the final atlas UVs to measure how many pixels each material
  * actually covers. Mirrors the desktop workbench's texture report.
  */
-export function measureAtlasUsage(
+export async function measureAtlasUsage(
   canvas: HTMLCanvasElement,
   batches: readonly { name: string; positions: Float32Array; uvs: Float32Array | null }[],
   size: number,
-): AtlasUsage {
+  options: AtlasUsageOptions = {},
+): Promise<AtlasUsage> {
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) return { sampledUtilization: 0, uvUtilization: 0, sampledPixels: 0, uvPixels: 0, materials: [] };
   const alpha = context.getImageData(0, 0, size, size).data;
@@ -384,7 +391,10 @@ export function measureAtlasUsage(
     return mask;
   };
 
-  for (const batch of batches) {
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex]!;
+    options.onProgress?.(batchIndex, batches.length, batch.name);
+    await yieldToBrowser();
     const mask = maskFor(batch.name, false);
     const uvMask = maskFor(batch.name, true);
     const uvs = batch.uvs;
@@ -415,13 +425,18 @@ export function measureAtlasUsage(
       const x1 = Math.min(size - 1, Math.ceil(Math.max(ax, bx, cx)));
       const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy)));
       const y1 = Math.min(size - 1, Math.ceil(Math.max(ay, by, cy)));
+      // Edge functions are linear, so step them along each scanline instead of
+      // recomputing three cross products per pixel.
+      const e0dx = ay - by;
+      const e1dx = by - cy;
+      const e2dx = cy - ay;
+      const startX = x0 + 0.5;
       for (let y = y0; y <= y1; y++) {
         const py = y + 0.5;
-        for (let x = x0; x <= x1; x++) {
-          const px = x + 0.5;
-          const e0 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
-          const e1 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
-          const e2 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
+        let e0 = (bx - ax) * (py - ay) - (by - ay) * (startX - ax);
+        let e1 = (cx - bx) * (py - by) - (cy - by) * (startX - bx);
+        let e2 = (ax - cx) * (py - cy) - (ay - cy) * (startX - cx);
+        for (let x = x0; x <= x1; x++, e0 += e0dx, e1 += e1dx, e2 += e2dx) {
           if (!((e0 >= 0 && e1 >= 0 && e2 >= 0) || (e0 <= 0 && e1 <= 0 && e2 <= 0))) continue;
           const index = y * size + x;
           uvMask[index] = 1;
