@@ -50,14 +50,29 @@ export interface TextureAtlasReport {
   width: number;
   height: number;
   bytes: number;
+  /** Share of atlas pixels covered by a triangle with non-zero alpha. */
   sampledUtilization?: number;
+  /** Share of atlas pixels covered by a triangle, including transparent texels. */
+  uvUtilization?: number;
   contentUtilization: number;
   allocatedUtilization: number;
+  sampledPixels?: number;
+  uvPixels?: number;
+  contentPixels?: number;
+  allocatedPixels?: number;
+  gutterPixels?: number;
+  emptyPixels?: number;
+  gutterUtilization?: number;
+  emptyUtilization?: number;
+  /** Share of chart bounding-box pixels that a triangle actually covers. */
+  chartCoverage?: number;
 }
 
 export interface TextureMaterialUsage {
   name: string;
   pixels: number;
+  /** Triangle-covered pixels, including transparent texels. */
+  uvPixels?: number;
   regions: number[];
 }
 
