@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { dominantHumanoidPart } from '../../src/humanoid-binding.ts';
 import { humanoidPivots, type HumanoidRig } from './humanoid.ts';
+import { sourceAlphaOf } from './preview-materials.ts';
 import {
   PART_CODE,
   type AlphaMode,
@@ -305,6 +306,9 @@ function accumulatorFor(
   const texture = textureSource(material.map ?? null, warnings);
   const color = material.color ? srgb(material.color) : ([1, 1, 1] as Vec3);
   const alphaTest = material.alphaTest ?? 0;
+  // The preview policy may have rewritten alphaTest/transparent for display;
+  // conversions must keep the alpha semantics the source file declared.
+  const sourceAlpha = sourceAlphaOf(material);
   const accumulator: Accumulator = {
     material,
     key: material.uuid,
@@ -316,8 +320,8 @@ function accumulatorFor(
     opacity: material.opacity ?? 1,
     // Same mapping the Node importer relies on: glTF alphaTest => MASK,
     // transparent => BLEND, everything else is opaque.
-    alphaMode: alphaTest > 0 ? 'MASK' : material.transparent ? 'BLEND' : 'OPAQUE',
-    alphaCutoff: alphaTest > 0 ? alphaTest : 0.5,
+    alphaMode: sourceAlpha?.alphaMode ?? (alphaTest > 0 ? 'MASK' : material.transparent ? 'BLEND' : 'OPAQUE'),
+    alphaCutoff: sourceAlpha?.alphaCutoff ?? (alphaTest > 0 ? alphaTest : 0.5),
     doubleSided: material.side === THREE.DoubleSide,
     texture,
     parts: [],
