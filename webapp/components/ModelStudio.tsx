@@ -17,6 +17,7 @@ import {
 import { extractModel, type ExtractedModel } from '../engine/extract';
 import type { DoubleSidedPolicy } from '../engine/bedrock';
 import { nextFrame } from '../engine/frame';
+import { preparePreviewMaterials } from '../engine/preview-materials';
 import type { TaskProgress } from '../engine/progress';
 import {
   convertExtractedModel,
@@ -236,6 +237,9 @@ export function ModelStudio() {
         job.model.dispose();
         return;
       }
+      // Same preview material rules as the desktop workbench: blended
+      // opaque-alpha materials become cutouts instead of translucent films.
+      preparePreviewMaterials(job.model.scene);
       originalVisibility.current = collectMaterialVisibility(job.model.scene);
       humanoidRig.current = job.rig;
       setRigAvailable(!!job.rig);

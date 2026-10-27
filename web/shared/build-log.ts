@@ -23,6 +23,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    build: '#13',
+    date: '2026-10-27',
+    title: '网页版转换速度与预览材质',
+    changes: [
+      { tag: '优化', text: 'PMX 转 glTF 跳过 Assimp 的顶点焊接后处理：11 万面的 MMD 模型从约 70 秒降到 1 秒以内，输出 GLB 也从 33 MB 降到 9 MB。' },
+      { tag: '修复', text: '网页版预览沿用桌面工作台的材质规则，「EYE hi」这类不透明底色加透明贴图的眼睛高光不再显示成盖住眼睛的半透明白色片。' },
+      { tag: '优化', text: '导入和转换显示当前处理阶段，大模型处理时不再像卡死。' },
+    ],
+  },
+  {
     build: '#12',
     date: '2026-10-27',
     title: '网页版模型站点加载优化',
