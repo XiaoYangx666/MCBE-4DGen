@@ -14,6 +14,7 @@ import {
 } from '../../src/model-candidates.ts';
 import { vrmHumanoidRoles } from './humanoid.ts';
 import { normalizePath } from './paths.ts';
+import { indexResources } from './resources.ts';
 import { applyVrmMtoonMaterials } from './vrm-materials.ts';
 
 /** Formats this loader can open directly; PMX is converted first, PMD is desktop-only. */
@@ -84,14 +85,17 @@ export async function loadModelFiles(
     const base = key.slice(key.lastIndexOf('/') + 1);
     if (base && !urls.has(base)) urls.set(base, url);
   };
-  for (const file of files) {
+  const index = indexResources(files, main.path);
+  for (const file of index.files) {
     const url = URL.createObjectURL(file);
     created.push(url);
+    register(modelFilePath(file), url);
+    const local = index.localPath(file);
+    if (local) register(local, url);
     register(file.name, url);
-    const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-    if (relative) register(relative, url);
   }
-  const mainUrl = urls.get(normalizePath(main.file.name, { lowerCase: true }))!;
+  const mainUrl = urls.get(normalizePath(main.path, { lowerCase: true }))
+    ?? urls.get(normalizePath(main.file.name, { lowerCase: true }))!;
 
   const known = new Set(created);
   const manager = new THREE.LoadingManager();

@@ -5,7 +5,7 @@ import { readPMXMaterials } from '../../src/pmx-metadata.ts';
 import { planPmxMaterials, type PmxMaterialSource } from '../../src/pmx-materials.ts';
 import { modelFilePath } from './import-model.ts';
 import { reporter, type ProgressHandler } from './progress.ts';
-import { normalizePath } from './paths.ts';
+import { indexResources } from './resources.ts';
 
 const PMX_PATTERN = /\.pmx$/i;
 const PMD_PATTERN = /\.pmd$/i;
@@ -66,7 +66,7 @@ export async function convertPmxModel(
     throw new Error(`所选模型「${options.main}」不是 PMX 文件。`);
   const main = picked ?? candidates[0]!;
 
-  const lookup = buildLookup(files);
+  const lookup = buildLookup(files, main);
   const missing = new Set<string>();
   const report = reporter(options.onProgress);
   if (!runtime) report('加载 PMX 转换引擎…', '首次使用约 12 MB WebAssembly');
@@ -122,11 +122,18 @@ export async function convertPmxModel(
     );
   }
 
+  const glbName = main.name.replace(PMX_PATTERN, '') + '.glb';
   const glb = new File(
     [toArrayBuffer(bytes)],
-    main.name.replace(PMX_PATTERN, '') + '.glb',
+    glbName,
     { type: 'model/gltf-binary' },
   );
+  // Keep the PMX's folder so later sidecar lookups stay scoped to this model
+  // when the archive also contains other models with the same texture names.
+  const sourcePath = modelFilePath(main);
+  const slash = sourcePath.lastIndexOf('/');
+  if (slash >= 0)
+    Object.defineProperty(glb, 'webkitRelativePath', { value: sourcePath.slice(0, slash + 1) + glbName });
   return { file: glb, warnings, materials };
 }
 
@@ -166,30 +173,14 @@ export function applyPmxMaterials(
   return targets.length;
 }
 
-function buildLookup(files: File[]) {
-  const byPath = new Map<string, File>();
-  const byBase = new Map<string, File>();
-  for (const file of files) {
-    if (isPmxModel(file) || isPmdModel(file)) continue;
-    const path = relativePath(file);
-    if (!byPath.has(path)) byPath.set(path, file);
-    const base = path.slice(path.lastIndexOf('/') + 1);
-    if (!byBase.has(base)) byBase.set(base, file);
-  }
-  const paths = [...byPath.keys()];
+function buildLookup(files: File[], main: File) {
+  const index = indexResources(files.filter((file) => !isPmxModel(file) && !isPmdModel(file)), modelFilePath(main));
   const cache = new Map<File, Uint8Array>();
-  const find = (raw: string): File | undefined => {
-    const path = normalizePath(raw, { lowerCase: true });
-    const base = path.slice(path.lastIndexOf('/') + 1);
-    return byPath.get(path)
-      ?? byBase.get(base)
-      ?? byPath.get(paths.find((key) => key.endsWith(`/${path}`)) ?? '');
-  };
 
   return {
-    has: (raw: string) => !!find(raw),
+    has: (raw: string) => !!index.find(raw),
     resolve: async (raw: string): Promise<Uint8Array | undefined> => {
-      const file = find(raw);
+      const file = index.find(raw);
       if (!file) return undefined;
       let bytes = cache.get(file);
       if (!bytes) {
@@ -207,11 +198,6 @@ function readPmxMetadata(bytes: Uint8Array) {
   } catch {
     return null;
   }
-}
-
-function relativePath(file: File): string {
-  const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-  return normalizePath(relative || file.name, { lowerCase: true });
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
