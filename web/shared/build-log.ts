@@ -23,6 +23,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    build: '2026.10.27.1',
+    date: '2026-10-27',
+    title: '手机端侧边栏整理',
+    changes: [
+      { tag: '优化', text: '侧边栏拆成「工作台 / 外观 / 关于」三栏，页面切换、主题配色和更新日志不再挤在一起。' },
+      { tag: '优化', text: '收紧顶部、分组和底部留白，导航行与配色行更紧凑。' },
+      { tag: '优化', text: '更新日志移到「关于」栏，底部不再堆放多个入口。' },
+    ],
+  },
+  {
     build: '2026.10.26.4',
     date: '2026-10-26',
     title: '构建号与更新日志',
