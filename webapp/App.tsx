@@ -1,15 +1,16 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { ImageStudio } from './components/ImageStudio';
 import { PackStudio } from './components/PackStudio';
 import { AppDrawer, type Mode } from './components/AppDrawer';
+import { AboutStudio } from './components/AboutStudio';
+import { SettingsStudio } from './components/SettingsStudio';
 import { Icon } from './components/Icons';
-import { Changelog } from '../web/shared/Changelog';
 import { BUILD_LABEL } from '../web/shared/build-log';
 import { useSkinPack, SkinPackProvider } from './lib/pack-context';
 import { REPO } from './lib/links';
 import { useCompactViewport } from './lib/use-compact-viewport';
 import {
-  applyAppearance, initialPalette, initialTheme, PALETTES,
+  applyAppearance, initialPalette, initialTheme,
   rememberPalette, rememberTheme, type Palette, type Theme,
 } from './lib/theme';
 
@@ -21,7 +22,9 @@ const ModelStudio = lazy(async () => {
 
 function readMode(): Mode {
   const value = window.location.hash.replace('#', '').split('?')[0];
-  return value === 'model' ? 'model' : value === 'pack' ? 'pack' : 'image';
+  if (value === 'model' || value === 'pack' || value === 'settings' || value === 'about')
+    return value;
+  return 'image';
 }
 
 export function App() {
@@ -36,6 +39,8 @@ const MODE_TITLES: Record<Mode, string> = {
   image: '图片皮肤',
   model: '3D 模型',
   pack: '皮肤包',
+  settings: '设置',
+  about: '关于',
 };
 
 function AppShell() {
@@ -45,9 +50,7 @@ function AppShell() {
   const [modelVisited, setModelVisited] = useState(() => readMode() === 'model');
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [palette, setPalette] = useState<Palette>(initialPalette);
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const paletteControl = useRef<HTMLDivElement>(null);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   useEffect(() => {
@@ -67,25 +70,7 @@ function AppShell() {
   }, [theme, palette]);
 
   useEffect(() => {
-    if (!paletteOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!paletteControl.current?.contains(event.target as Node)) setPaletteOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setPaletteOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [paletteOpen]);
-
-  useEffect(() => {
-    document.title = mode === 'image'
-      ? '4DGen Web · 图片皮肤'
-      : mode === 'model' ? '4DGen Web · 3D 模型' : '4DGen Web · 我的皮肤包';
+    document.title = `4DGen Web · ${MODE_TITLES[mode]}`;
     if (mode === 'model') setModelVisited(true);
     setDrawerOpen(false);
   }, [mode]);
@@ -116,7 +101,6 @@ function AppShell() {
             <Icon name="menu" size={20} />
           </button>
           <span className="mobile-page-title">{MODE_TITLES[mode]}</span>
-          <Changelog compact />
           <span className="local"><b /> 本机处理</span>
         </header>
       ) : (
@@ -139,7 +123,7 @@ function AppShell() {
               className={mode === 'model' ? 'active' : ''}
               onClick={() => switchMode('model')}
             >
-              3D 模型 <em>BETA</em>
+              3D 模型
             </button>
             <button
               type="button"
@@ -149,61 +133,23 @@ function AppShell() {
               皮肤包
               {!!pack?.skins.length && <span className="nav-count">{pack.skins.length}</span>}
             </button>
-          </nav>
-          <div className="header-right">
-            <Changelog compact />
-            <span className="local"><b /> 本机处理</span>
-            <div className="palette-control" ref={paletteControl}>
-              <button
-                type="button"
-                className="icon-button"
-                title="界面配色"
-                aria-label="界面配色"
-                aria-haspopup="menu"
-                aria-expanded={paletteOpen}
-                onClick={() => setPaletteOpen((open) => !open)}
-              >
-                <Icon name="palette" size={16} />
-              </button>
-              {paletteOpen && (
-                <div className="palette-popover" role="menu" aria-label="界面配色">
-                  {PALETTES.map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={palette === item.key}
-                      className={palette === item.key ? 'selected' : ''}
-                      onClick={() => {
-                        setPalette(item.key);
-                        setPaletteOpen(false);
-                      }}
-                    >
-                      <span className={`palette-swatch ${item.key}`} aria-hidden="true">
-                        <i /><i /><i />
-                      </span>
-                      <span className="palette-copy">
-                        <b>{item.label}</b>
-                        <small>{item.hint}</small>
-                      </span>
-                      {palette === item.key && <Icon name="check" size={13} />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
             <button
               type="button"
-              className="icon-button"
-              title={theme === 'dark' ? '切换到浅色' : '切换到深色'}
-              aria-label={theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'}
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className={mode === 'settings' ? 'active' : ''}
+              onClick={() => switchMode('settings')}
             >
-              <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />
+              设置
             </button>
-            <a className="header-link" href={REPO} target="_blank" rel="noreferrer">
-              <Icon name="github" size={15} /> GitHub
-            </a>
+            <button
+              type="button"
+              className={mode === 'about' ? 'active' : ''}
+              onClick={() => switchMode('about')}
+            >
+              关于
+            </button>
+          </nav>
+          <div className="header-right">
+            <span className="local"><b /> 本机处理</span>
           </div>
         </header>
       )}
@@ -212,19 +158,13 @@ function AppShell() {
           open={drawerOpen}
           mode={mode}
           packCount={pack?.skins.length ?? 0}
-          theme={theme}
-          palette={palette}
           onClose={closeDrawer}
           onNavigate={switchMode}
-          onTheme={setTheme}
-          onPalette={setPalette}
         />
       )}
 
       <main className="page-content">
-        <h1 className="sr-only">
-          {mode === 'image' ? '图片皮肤' : mode === 'model' ? '3D 模型' : '我的皮肤包'}
-        </h1>
+        <h1 className="sr-only">{MODE_TITLES[mode]}</h1>
         <div className="studio-host">
           <div hidden={mode !== 'image'}><ImageStudio /></div>
           {modelVisited && (
@@ -235,11 +175,20 @@ function AppShell() {
             </div>
           )}
           <div hidden={mode !== 'pack'}><PackStudio /></div>
+          <div hidden={mode !== 'settings'}>
+            <SettingsStudio
+              theme={theme}
+              palette={palette}
+              onTheme={setTheme}
+              onPalette={setPalette}
+            />
+          </div>
+          <div hidden={mode !== 'about'}><AboutStudio /></div>
         </div>
       </main>
 
       <footer>
-        <span>4DGen Web · {BUILD_LABEL}</span>
+        <span>4DGen Web · 构建 {BUILD_LABEL}</span>
         <span>
           文件在本机处理，不会上传 · <a href={REPO} target="_blank" rel="noreferrer">GitHub</a> · GPL-3.0
         </span>

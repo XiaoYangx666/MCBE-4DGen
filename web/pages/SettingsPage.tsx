@@ -392,7 +392,7 @@ export function SettingsPage({ onAbout }: { onAbout: () => void }) {
               4DGen 本地模型与皮肤工作台。查看版本、运行环境和数据目录。
             </p>
             <div className="settings-save">
-              <span>{BUILD_LABEL}</span>
+              <span>构建 {BUILD_LABEL}</span>
               <Changelog compact />
               <button type="button" onClick={onAbout}>
                 关于 4DGen

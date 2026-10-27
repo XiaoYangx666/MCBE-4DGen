@@ -70,7 +70,7 @@ export function Changelog({
                 <path d="M10 6.4V10l2.6 1.6" />
               </svg>
             </span>
-            <span className="changelog-beta">BETA</span>
+            <span className="changelog-label">更新日志</span>
             <span className="changelog-build">{CURRENT_BUILD.build}</span>
           </>
         )}
