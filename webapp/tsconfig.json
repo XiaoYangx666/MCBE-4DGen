@@ -18,6 +18,7 @@
     "../src/geometry-validator.ts",
     "../src/humanoid-roles.ts",
     "../src/model-candidates.ts",
+    "../src/model-orientation.ts",
     "../src/mtoon-materials.ts",
     "../src/pmx-materials.ts",
     "../src/pmx-metadata.ts",

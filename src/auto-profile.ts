@@ -1,6 +1,7 @@
 import type { Document, Node } from '@gltf-transform/core';
 import type { HumanoidProfile } from './humanoid.ts';
 import { HUMANOID_ROLE_ALIASES, humanoidAliases } from './humanoid-roles.ts';
+import { defaultRotationYDegrees } from './model-orientation.ts';
 
 /** Recognize explicit rig conventions; ambiguous names never silently win. */
 export function autoProfile(doc: Document): HumanoidProfile | null {
@@ -29,5 +30,5 @@ export function autoProfile(doc: Document): HumanoidProfile | null {
     if (nodes.filter(n => n.getName() === node.getName()).length !== 1) return null;
     boneMap[role] = node.getName();
   }
-  return { boneMap, rotationYDegrees: doc.getRoot().listNodes().some(n => n.getName() === '左腕') ? 180 : 0, armSpreadDegrees: 0, shoulderOutset: 0 };
+  return { boneMap, rotationYDegrees: defaultRotationYDegrees(nodes.map(n => n.getName())), armSpreadDegrees: 0, shoulderOutset: 0 };
 }
