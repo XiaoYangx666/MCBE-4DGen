@@ -711,3 +711,65 @@
   .changelog-list { padding: 0 16px 4px; }
   .changelog-foot { padding: 11px 16px; }
 }
+
+/* ---------- shared dialog shell (web/shared/Dialog.tsx) ---------- */
+.pick-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--canvas) 80.0%, transparent);
+  backdrop-filter: blur(3px);
+}
+.pick-box {
+  width: min(560px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 22px;
+  box-shadow: 0 30px 80px color-mix(in srgb, var(--canvas) 53.3%, transparent);
+}
+.pick-box h3 { margin: 0; font-size: 16px; color: var(--ink); }
+.pick-box p { font-size: 11px; color: var(--accent); line-height: 1.7; margin: 8px 0 14px; }
+.card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.card-top h2 { margin: 0; font-size: 18px; }
+
+/* ---------- model candidate picker (web/shared/ModelCandidateList.tsx) ---------- */
+.pick-list { display: grid; gap: 6px; max-height: 260px; overflow: auto; }
+.pick-list label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.pick-list label.on { border-color: var(--line); background: var(--selected); }
+.pick-list input { accent-color: var(--ink); }
+.pick-list span { overflow-wrap: anywhere; }
+.pick-name { flex: 1 1 auto; min-width: 0; }
+.pick-meta { color: var(--accent); font-size: 10px; white-space: nowrap; }
+.pick-note { flex-basis: 100%; color: var(--danger); font-size: 10px; }
+.pick-empty { color: var(--accent); }
+.pick-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.pick-actions button.primary {
+  padding: 8px 16px;
+  background: var(--accent);
+  color: var(--canvas);
+  border: none;
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  .pick-box { padding: 16px; }
+  .pick-box p { font-size: 12px; }
+  .pick-list label { font-size: 13px; padding: 11px; }
+  .pick-actions button { min-height: 44px; }
+}

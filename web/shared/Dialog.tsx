@@ -1,0 +1,70 @@
+import { useRef, type ReactNode } from 'react';
+import { useDialogDismiss } from './useDialogDismiss';
+
+export interface DialogProps {
+  title: ReactNode;
+  label: string;
+  eyebrow?: string;
+  className?: string;
+  busy?: boolean;
+  closeLabel?: string;
+  closeOnBackdrop?: boolean;
+  autoFocusClose?: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}
+
+/**
+ * Shared dialog shell: overlay, title, close button and Escape handling.
+ * Styles live in `web/styles/shared.css`, so the workbench and the browser
+ * build render identical dialogs.
+ */
+export function Dialog({
+  title,
+  label,
+  eyebrow,
+  className = '',
+  busy = false,
+  closeLabel = '关闭弹窗',
+  closeOnBackdrop = false,
+  autoFocusClose = false,
+  onClose,
+  children,
+}: DialogProps) {
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const { backdropProps } = useDialogDismiss({
+    onDismiss: onClose,
+    enabled: !busy,
+    closeOnBackdrop,
+    initialFocus: autoFocusClose ? closeButton : undefined,
+  });
+
+  return (
+    <div
+      className="pick-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      {...backdropProps}
+    >
+      <div className={'pick-box ' + className}>
+        <div className="card-top">
+          <div>
+            {eyebrow && <span className="eyebrow">{eyebrow}</span>}
+            <h2>{title}</h2>
+          </div>
+          <button
+            ref={closeButton}
+            type="button"
+            disabled={busy}
+            aria-label={closeLabel}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
