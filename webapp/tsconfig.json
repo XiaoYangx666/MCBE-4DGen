@@ -39,6 +39,7 @@
     "../tests/webapp-pmx.test.ts",
     "../tests/webapp-pose.test.ts",
     "../tests/webapp-materials.test.ts",
+    "../tests/webapp-output-preview.test.ts",
     "../tests/webapp-preview-materials.test.ts",
     "../tests/webapp-progress.test.ts",
     "../tests/webapp-reduce.test.ts",
