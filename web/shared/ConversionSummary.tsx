@@ -14,6 +14,8 @@ export interface ConversionSummaryProps {
   atlas?: {
     allocatedUtilization: number;
     sampledUtilization?: number | null;
+    /** Optional; includes transparent texels sampled by UV triangles. */
+    uvUtilization?: number | null;
   } | null;
   /** Host-specific facts kept as one sentence after utilization. */
   facts?: ReactNode;
@@ -62,8 +64,11 @@ export function ConversionSummary({
       {timing && <p>{timing}</p>}
       {atlas && (
         <p>
-          包间空白 {(Math.max(0, 1 - atlas.allocatedUtilization) * 100).toFixed(1)}% · 实际非透明 UV 覆盖{' '}
-          {((atlas.sampledUtilization ?? 0) * 100).toFixed(1)}%
+          包间空白 {(Math.max(0, 1 - atlas.allocatedUtilization) * 100).toFixed(1)}%
+          {atlas.uvUtilization !== undefined && atlas.uvUtilization !== null
+            ? ` · 有效 UV 覆盖 ${(atlas.uvUtilization * 100).toFixed(1)}%`
+            : ''}
+          {' · '}非透明 UV 覆盖 {((atlas.sampledUtilization ?? 0) * 100).toFixed(1)}%
         </p>
       )}
       {facts && <p>{facts}</p>}

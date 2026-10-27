@@ -29,9 +29,23 @@ export interface TextureReport {
   allocatedUtilization: number;
   /** Pixels actually covered by a non-transparent triangle. */
   sampledUtilization: number;
+  /** Triangle-covered pixels, including transparent texels. */
+  uvUtilization?: number;
+  /** Content rectangles without padding. */
+  contentUtilization?: number;
+  sampledPixels?: number;
+  uvPixels?: number;
+  contentPixels?: number;
+  allocatedPixels?: number;
+  gutterPixels?: number;
+  emptyPixels?: number;
+  gutterUtilization?: number;
+  emptyUtilization?: number;
+  /** Share of content-rectangle pixels covered by a triangle. */
+  chartCoverage?: number | undefined;
   size: number;
   /** Pixel count per material name; shared pixels count for every material. */
-  materials: { name: string; pixels: number }[];
+  materials: { name: string; pixels: number; uvPixels?: number }[];
 }
 
 export interface ConvertResult {
@@ -90,11 +104,33 @@ export async function convertBatches(
     batch.uvs = uvs;
   }
   const usage = measureAtlasUsage(atlas.canvas, batches, layout.size);
-  const allocated = [...layout.rects.values()]
-    .reduce((sum, rect) => sum + rect.width * rect.height, 0) / (layout.size * layout.size);
+  const totalPixels = layout.size * layout.size;
+  let contentPixels = 0;
+  for (const rect of layout.rects.values())
+    contentPixels +=
+      Math.max(1, rect.width - rect.pad * 2) *
+      Math.max(1, rect.height - rect.pad * 2);
+  const allocatedPixels = [...layout.rects.values()].reduce(
+    (sum, rect) => sum + rect.width * rect.height,
+    0,
+  );
+  const gutterPixels = Math.max(0, allocatedPixels - contentPixels);
+  const emptyPixels = Math.max(0, totalPixels - allocatedPixels);
   const textureReport: TextureReport = {
-    allocatedUtilization: Math.min(1, allocated),
+    allocatedUtilization: allocatedPixels / totalPixels,
     sampledUtilization: usage.sampledUtilization,
+    uvUtilization: usage.uvUtilization,
+    contentUtilization: contentPixels / totalPixels,
+    sampledPixels: usage.sampledPixels,
+    uvPixels: usage.uvPixels,
+    contentPixels,
+    allocatedPixels,
+    gutterPixels,
+    emptyPixels,
+    gutterUtilization: gutterPixels / totalPixels,
+    emptyUtilization: emptyPixels / totalPixels,
+    chartCoverage:
+      contentPixels > 0 ? usage.uvPixels / contentPixels : undefined,
     size: layout.size,
     materials: usage.materials,
   };

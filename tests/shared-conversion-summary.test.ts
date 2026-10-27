@@ -13,7 +13,7 @@ describe('shared conversion summary', () => {
           removedMaterials: 2,
           stale: true,
           timing: '完整生成用时 1.2 秒',
-          atlas: { allocatedUtilization: 0.5, sampledUtilization: 0.25 },
+          atlas: { allocatedUtilization: 0.5, sampledUtilization: 0.25, uvUtilization: 0.3 },
           facts: '源三角面 2,000',
           materials: [{ name: 'body', pixels: 100 }],
           totalPixels: 16_384,
@@ -27,7 +27,8 @@ describe('shared conversion summary', () => {
     expect(markup).toContain('参数已修改，请重新转换');
     expect(markup).toContain('完整生成用时 1.2 秒');
     expect(markup).toContain('包间空白 50.0%');
-    expect(markup).toContain('实际非透明 UV 覆盖 25.0%');
+    expect(markup).toContain('有效 UV 覆盖 30.0%');
+    expect(markup).toContain('非透明 UV 覆盖 25.0%');
     expect(markup).toContain('源三角面 2,000');
     expect(markup).toContain('body');
     expect(markup).toContain('额外明细');
