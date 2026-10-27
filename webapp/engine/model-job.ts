@@ -1,4 +1,6 @@
 import { expandModelArchives } from './model-zip.ts';
+import type * as THREE from 'three';
+import { defaultRotationYDegrees } from '../../src/model-orientation.ts';
 import { formatOf, loadModelFiles, modelFilePath, type LoadedModel } from './import-model.ts';
 import {
   listModelCandidates,
@@ -81,6 +83,26 @@ export interface LoadedModelJob {
   armRig: ArmRig | null;
   /** Complete six-part rig, when the source provides one. */
   rig: HumanoidRig | null;
+  /** 默认 Y 轴朝向：MMD 来源 180°，其余 0°，与桌面工作台一致。 */
+  defaultRotationY: number;
+}
+
+/** 场景节点名，包含挂在骨骼链上但不在场景图里的关节。 */
+function sceneNodeNames(root: THREE.Object3D): string[] {
+  const names: string[] = [];
+  const seen = new Set<THREE.Object3D>();
+  const collect = (object: THREE.Object3D) => {
+    if (seen.has(object)) return;
+    seen.add(object);
+    if (object.name) names.push(object.name);
+  };
+  root.traverse((object) => {
+    collect(object);
+    const skinned = object as THREE.SkinnedMesh;
+    if (skinned.isSkinnedMesh)
+      for (const bone of skinned.skeleton?.bones ?? []) collect(bone);
+  });
+  return names;
 }
 
 /**
@@ -172,6 +194,7 @@ export async function loadModelJob(
       warnings: [...new Set([...warnings, ...loaded.warnings, ...extracted.warnings])],
       armRig,
       rig,
+      defaultRotationY: defaultRotationYDegrees(sceneNodeNames(loaded.scene)),
     };
   } catch (cause) {
     loaded?.dispose();

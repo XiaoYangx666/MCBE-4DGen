@@ -16,6 +16,7 @@ test('MMD mapping resolves arms and hands consistently for preview and conversio
   expect(profile?.boneMap?.leftUpperArm).toBe('左腕');
   expect(profile?.boneMap?.leftHand).toBe('左手首');
   expect(profile?.boneMap?.rightUpperLeg).toBe('右足D');
+  expect(profile?.rotationYDegrees).toBe(180);
 });
 test('missing, ambiguous or disconnected arm chains do not enable humanoid mode', () => {
   const missing = rig();

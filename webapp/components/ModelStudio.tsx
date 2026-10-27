@@ -129,6 +129,8 @@ export function ModelStudio() {
   const modelRef = useRef<LoadedModel | null>(null);
   const loadId = useRef(0);
   const customName = useRef(false);
+  /** 用户手动改过朝向之后，加载新模型不再自动套用默认旋转。 */
+  const customRotation = useRef(false);
   const modelInput = useRef<HTMLInputElement>(null);
   const closeSources = useCallback(() => setSourcesOpen(false), []);
 
@@ -206,6 +208,7 @@ export function ModelStudio() {
     previewRootRef.current = null;
     setPreviewRoot(null);
     sourcePose.current = '0|0';
+    customRotation.current = false;
     modelRef.current?.dispose();
     modelRef.current = null;
     setModel(null);
@@ -245,6 +248,8 @@ export function ModelStudio() {
       setIncluded(new Set(job.extracted.batches.map((batch) => batch.key)));
       setWarnings(job.warnings);
       if (!customName.current) setName(job.model.name.slice(0, 60) || DEFAULT_NAME);
+      // MMD 来源默认转 180°，与桌面工作台一致；用户手动改过就保留。
+      if (!customRotation.current) setRotationY(job.defaultRotationY);
     } catch (cause) {
       if (!(cause instanceof ModelJobCancelled) && token === loadId.current)
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -659,7 +664,10 @@ export function ModelStudio() {
             <div className="settings-section-title">姿势与朝向</div>
             <PoseControls
               rotationY={rotationY}
-              onRotationY={setRotationY}
+              onRotationY={(value) => {
+                customRotation.current = true;
+                setRotationY(value);
+              }}
               armSpread={armSpread}
               onArmSpread={setArmSpread}
               showArm={!!model}
