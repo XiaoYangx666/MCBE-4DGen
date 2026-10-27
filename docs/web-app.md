@@ -86,7 +86,7 @@ Workers Builds 会自动安装依赖，并在 Cloudflare 侧生成/复用自己�
 
 1. 在浏览器里解析模型和贴图。
 2. 读取 VRM 0.x / 1.0 人形骨骼元数据，或用常见 MMD / Mixamo / 英文骨骼名识别头、躯干、双臂和双腿。
-3. 把所有材质的贴图按表面积预算拼进一张 128 × 128 图集。
+3. 把每个材质的 UV 连通分岛，按表面积预算把每个岛拼进一张 128 × 128 图集；负数和跨接缝的 UV 按贴图环绕模式采样。
 4. 应用世界变换、居中、落地、缩放到指定高度，并镜像到 Bedrock 坐标系。
 5. 识别到完整人形骨骼时，按源权重把三角面分到 `body / head / leftArm / rightArm / leftLeg / rightLeg` 六个玩家骨骼；否则生成单骨骼 `body`。背面跟随源材质的双面设置。
 6. 用共享的 `src/skin-pack-files.ts` 打包成平铺 `.zip`，皮肤文件直接位于压缩包顶层。
@@ -94,6 +94,8 @@ Workers Builds 会自动安装依赖，并在 Cloudflare 侧生成/复用自己�
 PMX 会先用 `libassimp` 的 WebAssembly 后端转换成 GLB，再走同一条 glTF 流程；`libassimp` 只在第一次导入 PMX 时按需下载（约 12 MB，gzip 后约 3 MB）。一个 ZIP 里有多个 PMX 时，会加载体积最大的那个并在警告里说明。PMX 只保留绑定姿势；常见 MMD 骨骼名可以识别为六部位，骨骼动画、表情、物理和 toon 材质不会进入输出。PMX 常用的 TGA 贴图会在浏览器里转成 PNG，并把超过 1024 px 的贴图缩到 1024 px 以内；BMP/PNG/JPEG 直接交给浏览器解码。
 
 转 GLB 时关闭了 Assimp 默认的 `joinIdenticalVertices` 后处理：它只改变顶点复用方式，却会在 MMD 体量上耗时几分钟（11.9 MB / 11.6 万面的样本从约 70 秒降到约 0.8 秒，三角面、UV、法线、骨骼权重逐面比对一致）。网页版按三角面汤导出，不需要这一步；`triangulate` 和 `sortByPrimitiveType` 仍保留。
+
+网页版图集与桌面工作台共用 `src/texture-chart-math.ts` 的分岛规则：按共享 UV 角点拆分连通岛，再用「包围盒增长 ≤ 20% 且保留 80% 覆盖」的启发式合并相邻岛。每个岛单独分配矩形（128 × 128、1 像素边距、面积需求按 `area^0.85` 压缩），小到眼睛高光这类岛也至少保留 3 × 3 内容像素，因此不会再把稀疏 UV 平均成一整块近乎不可见的糊图。UV 落在 0–1 之外时不再裁切，而是按源贴图的重复 / 钳制 / 镜像环绕模式采样。
 
 ### 转换设置
 
@@ -195,7 +197,7 @@ PMX 会先用 `libassimp` 的 WebAssembly 后端转换成 GLB，再走同一条 
 没有直接共用：
 
 - 模型导入与导出。桌面版基于 `glTF-transform`、`sharp`、`libassimp`；浏览器版基于 three.js 加载器和 Canvas。强行抽象会把 Node 依赖带进浏览器。
-- 图集规划。桌面版有 UV 连通分岛、材质权重和逐岛重采样；网页版使用适合 128×128 的轻量 shelf packing。
+- 图集规划。桌面版和网页版共用 `src/texture-chart-math.ts` 的 UV 连通分岛、合并启发式和展开边界；网页版在此基础上按 128×128 的轻量 MaxRects 打包，桌面版继续使用 `sharp` 逐岛重采样。
 - 布局 CSS。桌面工作台是固定 `100dvh`、三栏、密集表单；网页版需要单列滚动和触控尺寸，只共用设计变量与视觉规范。弹窗外壳（桌面 `web/ui/Modal.tsx`、网页 `.sources-dialog` / `.preview-dialog`）也各自保留，但 Esc、背景点击与初始焦点统一走 `web/shared/useDialogDismiss.ts`。
 - 数据与持久化。`/api/...`、`window.desktop`、IndexedDB 和皮肤包模型都不进入 `web/shared/`。
 - 体积格式化。桌面设置页的 `formatSize` 使用 `zh-CN` 本地化数字并支持 TB，网页版 `formatBytes` 是紧凑格式（最多 MB、固定小数位）；语义不同，未合并。
@@ -226,7 +228,7 @@ PMX 会先用 `libassimp` 的 WebAssembly 后端转换成 GLB，再走同一条 
 - PMX 只保留基础网格、材质颜色和贴图；toon、球面贴图、描边、物理、表情和骨骼动画都会丢弃。一个 ZIP 里有多个 PMX 时只加载体积最大的那个。
 - 手臂下放优先使用 VRM 人形元数据；非 VRM 模型按常见 MMD 日文名、Mixamo 或英文骨骼名识别，自定义骨骼名可能识别不到。只旋转左右上臂，不处理肘部、手腕和手指。
 - TGA 贴图会转成 PNG，最长边超过 1024 px 时会先缩小；4K 贴图较多的包首次导入可能需要几十秒。
-- UV 超出 0–1 的材质会按裁切后的范围导出，可能出现接缝。
+- UV 超出 0–1 的材质会按贴图的重复 / 钳制 / 镜像环绕模式采样，不再裁切；重复跨度很大时仍受 128 图集分辨率限制，可能出现模糊。
 - 顶点色会被忽略，只保留材质基础色与贴图。
 - Draco、KTX2/Basis 压缩暂不支持；请先用普通 glTF/GLB 或 PNG/JPEG 贴图。
 - 多材质模型会共享 128 × 128 图集，材质越多，单个材质的有效分辨率越低。
@@ -259,11 +261,11 @@ webapp/
     model-zip.ts          解包模型 ZIP（模型 + .bin/.mtl/贴图）
     pmx.ts                PMX → GLB（libassimp WASM），多 PMX 选最大
     textures.ts           TGA → PNG（最长边限制 1024），保留相对路径
-    extract.ts            世界变换、材质分组、UV 归一化、蒙皮姿势烘焙
+    extract.ts            世界变换、材质分组、UV 展开、蒙皮姿势烘焙
     humanoid.ts           VRM / MMD / Mixamo 六部位骨骼识别与部位归属
     pose.ts               左右手臂骨骼识别与实时下放
     reduce.ts             按材质和部位减面（meshoptimizer），法线/UV 权重固定
-    atlas.ts              128 图集规划、绘制与 UV 重映射
+    atlas.ts              128 图集分岛规划、绘制与逐岛 UV 重映射
     bedrock.ts            poly_mesh 导出
     convert.ts            图集 → 几何 → 皮肤包流程
     image-skin.ts         图片平面皮肤
