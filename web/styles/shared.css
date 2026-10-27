@@ -528,16 +528,8 @@
   background: var(--hover);
 }
 .changelog-trigger.compact { padding: 4px 7px; gap: 5px; }
-.changelog-beta {
-  padding: 2px 4px;
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
-  border-radius: 3px;
-  color: var(--accent);
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.8px;
-}
-.changelog-build { font-variant-numeric: tabular-nums; letter-spacing: 0.2px; }
+.changelog-label { color: var(--ink); font-size: 10px; }
+.changelog-build { color: var(--muted); font-variant-numeric: tabular-nums; letter-spacing: 0.2px; }
 .changelog-pill-icon { display: grid; place-items: center; width: 12px; height: 12px; color: var(--muted); }
 .changelog-pill-icon svg {
   width: 12px;

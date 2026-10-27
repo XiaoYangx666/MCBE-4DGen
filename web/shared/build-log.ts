@@ -1,7 +1,7 @@
 /**
  * Build history shared by the desktop workbench and the browser web app.
  *
- * There is no public release yet, so entries are Beta build codes instead of
+ * There is no public release yet, so entries are build codes instead of
  * semantic versions. When a release is cut, keep the entries and merge the
  * builds covered by that release into one release section.
  */
@@ -14,7 +14,7 @@ export interface ChangelogChange {
 }
 
 export interface ChangelogEntry {
-  /** Beta build code shown in the UI, e.g. 2026.10.26.3. */
+  /** Incremental build number shown in the UI, e.g. #11. */
   build: string;
   date: string;
   title: string;
@@ -23,7 +23,36 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
-    build: '2026.10.27.1',
+    build: '#11',
+    date: '2026-10-27',
+    title: '精简顶栏与构建编号',
+    changes: [
+      { tag: '优化', text: '移除界面中的测试版标识，构建号改为递增编号。' },
+      { tag: '优化', text: '顶栏不再显示更新日志入口，更新日志保留在关于页。' },
+      { tag: '优化', text: '设置与关于保持独立页面，桌面和手机端入口保持一致。' },
+    ],
+  },
+  {
+    build: '#10',
+    date: '2026-10-27',
+    title: '独立设置与关于页',
+    changes: [
+      { tag: '新增', text: '新增独立的设置页和关于页，不再把主题、配色和更新日志塞进侧边栏。' },
+      { tag: '优化', text: '设置页集中主题、配色和本地数据说明；关于页放构建号、更新日志、GitHub 和许可。' },
+      { tag: '优化', text: '侧边栏恢复为简洁的页面导航，桌面顶栏也直接提供设置和关于入口。' },
+    ],
+  },
+  {
+    build: '#9',
+    date: '2026-10-27',
+    title: '修复安卓抽屉顶部空隙',
+    changes: [
+      { tag: '修复', text: '不再给抽屉顶部和底部叠加 safe-area 留白，避免 Android Chrome 在普通网页中额外增加状态栏高度。' },
+      { tag: '优化', text: '安卓和 iPhone 的抽屉上下间距现在保持一致。' },
+    ],
+  },
+  {
+    build: '#8',
     date: '2026-10-27',
     title: '手机端侧边栏整理',
     changes: [
@@ -33,17 +62,17 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
     ],
   },
   {
-    build: '2026.10.26.4',
+    build: '#7',
     date: '2026-10-26',
     title: '构建号与更新日志',
     changes: [
-      { tag: '新增', text: '桌面工作台、桌面应用和网页版共用 Beta 构建号与更新日志弹窗。' },
+      { tag: '新增', text: '桌面工作台、桌面应用和网页版共用构建号与更新日志弹窗。' },
       { tag: '新增', text: '顶栏、关于弹窗、设置页和移动端抽屉都可以查看当前构建与历史更新。' },
       { tag: '优化', text: '更新日志数据集中在 web/shared/build-log.ts，正式发版后可以把多个构建合并成版本记录。' },
     ],
   },
   {
-    build: '2026.10.26.3',
+    build: '#6',
     date: '2026-10-26',
     title: '绑定规则共享',
     changes: [
@@ -52,7 +81,7 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
     ],
   },
   {
-    build: '2026.10.26.2',
+    build: '#5',
     date: '2026-10-26',
     title: '网页版六部位与包名修复',
     changes: [
@@ -63,7 +92,7 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
     ],
   },
   {
-    build: '2026.10.26.1',
+    build: '#4',
     date: '2026-10-26',
     title: '网页版上线',
     changes: [
@@ -73,7 +102,7 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
     ],
   },
   {
-    build: '2026.10.25.1',
+    build: '#3',
     date: '2026-10-25',
     title: '网页版三维预览',
     changes: [
@@ -83,7 +112,7 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
     ],
   },
   {
-    build: '2026.10.24.1',
+    build: '#2',
     date: '2026-10-24',
     title: '纯浏览器工作流',
     changes: [
@@ -93,7 +122,7 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
     ],
   },
   {
-    build: '2026.10.19.1',
+    build: '#1',
     date: '2026-10-19',
     title: '桌面工作台',
     changes: [
@@ -108,8 +137,8 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
 export const CURRENT_BUILD = CHANGELOG[0]!;
 
 /** Short label used in headers and badges. */
-export const BUILD_LABEL = `BETA ${CURRENT_BUILD.build}`;
+export const BUILD_LABEL = CURRENT_BUILD.build;
 
 /** Note shown at the top of the build log. */
 export const CHANGELOG_NOTE =
-  '当前是 Beta 构建，版本号按构建递增。正式发版后会把覆盖的多个构建合并成一个版本记录。';
+  '当前为测试构建，版本号按构建递增。正式发版后会把覆盖的多个构建合并成一个版本记录。';

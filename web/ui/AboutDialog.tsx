@@ -63,7 +63,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
                 <dd>XiaoYangX666</dd>
               </div>
               <div>
-                <dt>版本</dt>
+                <dt>构建</dt>
                 <dd>{BUILD_LABEL}</dd>
               </div>
               <div>
