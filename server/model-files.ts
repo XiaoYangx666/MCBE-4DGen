@@ -1,7 +1,12 @@
 import { readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { IMPORTABLE_MODEL_EXTENSIONS } from '../src/model-candidates.ts';
 
-export const modelPattern = /\.(pmx|vrm|glb|gltf|obj|fbx|dae|stl|ply)$/i;
+/** Extensions the desktop importer can open, shared with the browser build. */
+export const modelPattern = new RegExp(
+  `\\.(${IMPORTABLE_MODEL_EXTENSIONS.join('|')})$`,
+  'i',
+);
 
 /** Recursively list importable model files without following links. */
 export async function modelFiles(folder: string): Promise<string[]> {

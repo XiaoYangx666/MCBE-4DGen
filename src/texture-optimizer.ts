@@ -6,6 +6,7 @@ import type { IntermediateModel } from "./model.ts";
 import { inspectModel } from "./inspect.ts";
 import { validateModel } from "./validate-model.ts";
 import { textureCharts } from "./texture-charts.ts";
+import { bakeBaseColorPixels } from "./texture-pixels.ts";
 
 export interface TextureOptions {
   /** Maximum dimension of each source image, preserving aspect ratio. Omit for Original. */
@@ -149,10 +150,6 @@ function pack(
   return result;
 }
 
-const linear = (v: number) =>
-  v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-const srgb = (v: number) =>
-  v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055;
 function sampleIndex(i: number, size: number, mode: number): number {
   if (mode === 33071) return Math.min(size - 1, Math.max(0, i));
   if (mode === 33648) {
@@ -559,25 +556,13 @@ export async function optimizeTextures(
     const rect = layout[id]!;
     const { w, h, pixels } = resampled[id]!;
     const factor = region.material?.getBaseColorFactor() ?? [1, 1, 1, 1];
-    if (factor.some((v) => !Number.isFinite(v) || v < 0 || v > 1))
-      throw new Error("Invalid base-color factor");
     const mode = region.material?.getAlphaMode() ?? "OPAQUE",
       cutoff = region.material?.getAlphaCutoff() ?? 0.5;
-    for (let i = 0; i < pixels.length; i += 4) {
-      for (let c = 0; c < 3; c++)
-        pixels[i + c] = Math.round(
-          srgb(linear(pixels[i + c]! / 255) * factor[c]!) * 255,
-        );
-      const alpha = (pixels[i + 3]! / 255) * factor[3]!;
-      pixels[i + 3] =
-        mode === "OPAQUE"
-          ? 255
-          : mode === "MASK"
-            ? alpha >= cutoff
-              ? 255
-              : 0
-            : Math.round(alpha * 255);
-    }
+    bakeBaseColorPixels(pixels, {
+      factor,
+      alphaMode: mode,
+      alphaCutoff: cutoff,
+    });
     // Fill both repeated/clamped/mirrored UV span and gutters with the source sampler's behavior.
     for (let y = -padding; y < region.height + padding; y++)
       for (let x = -padding; x < region.width + padding; x++) {

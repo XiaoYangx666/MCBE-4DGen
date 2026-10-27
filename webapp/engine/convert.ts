@@ -64,6 +64,8 @@ export async function convertBatches(
     batch.uvBounds?.map((value) => value.toFixed(4)).join(',') ?? 'none',
     batch.color.map((value) => value.toFixed(3)).join(','),
     batch.opacity.toFixed(3),
+    batch.alphaMode,
+    batch.alphaCutoff.toFixed(3),
   ].join('|');
   const inputs: AtlasInput[] = batches.map((batch) => ({
     key: atlasKey(batch),
@@ -71,6 +73,8 @@ export async function convertBatches(
     uvBounds: batch.uvBounds,
     color: batch.color,
     opacity: batch.opacity,
+    alphaMode: batch.alphaMode,
+    alphaCutoff: batch.alphaCutoff,
     area: batch.area,
   }));
 

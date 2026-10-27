@@ -1,6 +1,10 @@
 import type { Assimp } from 'libassimp';
+import { DoubleSide, FrontSide } from 'three';
 import type * as THREE from 'three';
 import { readPMXMaterials } from '../../src/pmx-metadata.ts';
+import { planPmxMaterials, type PmxMaterialSource } from '../../src/pmx-materials.ts';
+import { modelFilePath } from './import-model.ts';
+import { normalizePath } from './paths.ts';
 
 const PMX_PATTERN = /\.pmx$/i;
 const PMD_PATTERN = /\.pmd$/i;
@@ -30,8 +34,13 @@ export function isPmdModel(file: File): boolean {
 export interface ConvertedPmx {
   file: File;
   warnings: string[];
-  /** Original PMX material names, in material order. */
-  materialNames: string[];
+  /** PMX material table, applied to the loaded scene by `applyPmxMaterials`. */
+  materials: PmxMaterialSource[];
+}
+
+export interface ConvertPmxOptions {
+  /** Candidate path the user picked; defaults to the largest PMX. */
+  main?: string;
 }
 
 /**
@@ -39,19 +48,27 @@ export interface ConvertedPmx {
  * build, then reuse the existing glTF pipeline. PMX has no browser-native
  * loader, so this mirrors the desktop importer's Assimp path.
  */
-export async function convertPmxModel(files: File[]): Promise<ConvertedPmx> {
+export async function convertPmxModel(
+  files: File[],
+  options: ConvertPmxOptions = {},
+): Promise<ConvertedPmx> {
   const pmd = files.find(isPmdModel);
   if (pmd) throw new Error(`暂不支持 PMD（${pmd.name}），请先转换为 PMX 2.0/2.1。`);
   const candidates = files.filter(isPmxModel).sort((a, b) => b.size - a.size);
-  const main = candidates[0];
-  if (!main) throw new Error('没有找到 PMX 文件。');
+  if (!candidates.length) throw new Error('没有找到 PMX 文件。');
+  const picked = options.main === undefined
+    ? undefined
+    : candidates.find((file) => modelFilePath(file) === options.main || file.name === options.main);
+  if (options.main !== undefined && !picked)
+    throw new Error(`所选模型「${options.main}」不是 PMX 文件。`);
+  const main = picked ?? candidates[0]!;
 
   const lookup = buildLookup(files);
   const missing = new Set<string>();
   const assimp = await getAssimp();
 
   let bytes: Uint8Array;
-  let materialNames: string[] = [];
+  let materials: PmxMaterialSource[] = [];
   try {
     const source = new Uint8Array(await main.arrayBuffer());
     const metadata = readPmxMetadata(source);
@@ -61,7 +78,11 @@ export async function convertPmxModel(files: File[]): Promise<ConvertedPmx> {
     for (const name of metadata?.textures ?? []) {
       if (name.trim() && !lookup.has(name)) missing.add(name);
     }
-    materialNames = metadata?.materials.map((material) => material.name) ?? [];
+    materials = metadata?.materials.map((material) => ({
+      name: material.name,
+      alpha: material.alpha,
+      doubleSided: material.doubleSided,
+    })) ?? [];
     const result = await assimp.convert(
       { name: main.name, bytes: source },
       {
@@ -81,7 +102,7 @@ export async function convertPmxModel(files: File[]): Promise<ConvertedPmx> {
   }
 
   const warnings = ['PMX 按静态绑定姿势转换；骨骼动画、表情、物理和 toon 材质不会保留。'];
-  if (candidates.length > 1)
+  if (options.main === undefined && candidates.length > 1)
     warnings.unshift(`检测到 ${candidates.length} 个 PMX，已加载体积最大的「${main.name}」。`);
   if (missing.size > 0) {
     const names = [...missing];
@@ -95,16 +116,19 @@ export async function convertPmxModel(files: File[]): Promise<ConvertedPmx> {
     main.name.replace(PMX_PATTERN, '') + '.glb',
     { type: 'model/gltf-binary' },
   );
-  return { file: glb, warnings, materialNames };
+  return { file: glb, warnings, materials };
 }
 
 /**
- * Assimp names PMX materials Mat_Face/Mat_Hair/…, so restore the names from
- * the PMX material table. The GLB keeps one primitive per PMX material in
- * order, which makes first-seen material order stable.
+ * Apply the PMX material table to the converted scene: names, diffuse alpha,
+ * and the double-sided draw flag that Assimp drops. Uses the same planner as
+ * the Node importer; returns 0 when the counts do not line up.
  */
-export function applyPmxMaterialNames(scene: THREE.Object3D, names: string[]): number {
-  const materials: THREE.Material[] = [];
+export function applyPmxMaterials(
+  scene: THREE.Object3D,
+  materials: readonly PmxMaterialSource[],
+): number {
+  const targets: THREE.Material[] = [];
   const seen = new Set<THREE.Material>();
   scene.traverse((object) => {
     const mesh = object as THREE.Mesh;
@@ -112,16 +136,23 @@ export function applyPmxMaterialNames(scene: THREE.Object3D, names: string[]): n
     for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
       if (material && !seen.has(material)) {
         seen.add(material);
-        materials.push(material);
+        targets.push(material);
       }
     }
   });
-  if (materials.length !== names.length) return 0;
-  materials.forEach((material, index) => {
-    const name = names[index]?.trim();
-    if (name) material.name = name;
+  const plan = planPmxMaterials(materials, targets.length);
+  if (!plan) return 0;
+  plan.forEach((entry, index) => {
+    const target = targets[index]!;
+    target.name = entry.name?.trim() || `材质 ${index + 1}`;
+    target.side = entry.doubleSided ? DoubleSide : FrontSide;
+    target.opacity = entry.alpha;
+    // PMX has no OPAQUE/MASK switch: keep texture alpha and blend it.
+    target.transparent = true;
+    target.alphaTest = 0;
+    target.needsUpdate = true;
   });
-  return materials.length;
+  return targets.length;
 }
 
 function buildLookup(files: File[]) {
@@ -137,7 +168,7 @@ function buildLookup(files: File[]) {
   const paths = [...byPath.keys()];
   const cache = new Map<File, Uint8Array>();
   const find = (raw: string): File | undefined => {
-    const path = normalizePath(raw);
+    const path = normalizePath(raw, { lowerCase: true });
     const base = path.slice(path.lastIndexOf('/') + 1);
     return byPath.get(path)
       ?? byBase.get(base)
@@ -169,11 +200,7 @@ function readPmxMetadata(bytes: Uint8Array) {
 
 function relativePath(file: File): string {
   const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-  return normalizePath(relative || file.name);
-}
-
-function normalizePath(value: string): string {
-  return value.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '').toLowerCase();
+  return normalizePath(relative || file.name, { lowerCase: true });
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

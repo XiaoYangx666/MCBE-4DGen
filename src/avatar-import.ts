@@ -1,8 +1,8 @@
 import type { JSONDocument } from '@gltf-transform/core';
+import { mapMtoonMaterial, hasExplicitBaseColor } from './mtoon-materials.ts';
+import { readVrmHumanBones } from './vrm-humanoid.ts';
 
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const finiteColor = (v: unknown): v is [number, number, number, number] =>
-  Array.isArray(v) && v.length === 4 && v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1);
 
 /** Explicit static fallback for VRM avatars. Never implies MToon, springs or humanoid animation support. */
 export function prepareVRM(json: JSONDocument, warn: (message: string) => void) {
@@ -14,56 +14,33 @@ export function prepareVRM(json: JSONDocument, warn: (message: string) => void) 
   const version = vrm.specVersion ?? (vrm0 ? '0.x' : undefined);
   if (typeof version !== 'string' || (vrm1 ? version !== '1.0' : !/^0\.(?:\d+|x)$/.test(version))) throw new Error('Unsupported VRM specVersion');
   const meta = record(vrm.meta) ? vrm.meta : {};
-  const humanoid = record(vrm.humanoid) ? vrm.humanoid : {};
-  const humanBones = Array.isArray(humanoid.humanBones) ? humanoid.humanBones :
-    record(humanoid.humanBones) ? Object.entries(humanoid.humanBones).map(([bone, value]) =>
-      record(value) ? { ...value, bone } : {}) : [];
-  for (const value of humanBones) {
-    if (!record(value) || typeof value.bone !== 'string' || typeof value.node !== 'number') continue;
+  // 宽松解析共用；specVersion 与扩展数量的严格校验仍在本函数上方。
+  for (const value of readVrmHumanBones(vrm)) {
     const node = root.nodes?.[value.node];
     if (node) node.extras = { ...node.extras, _vrmHumanBone: value.bone };
   }
   warn(`VRM ${version}: importing static initial pose only; humanoid animation, expressions, spring bones, constraints and first-person rules are not evaluated.`);
-  if (vrm0 && Array.isArray(vrm.materialProperties)) {
-    for (const [index, properties] of vrm.materialProperties.entries()) {
-      if (!record(properties) || properties.shader !== 'VRM/MToon') continue;
+  if (vrm0 && Array.isArray(vrm0.materialProperties)) {
+    for (const [index, properties] of vrm0.materialProperties.entries()) {
+      // 映射规则与浏览器端共用；Node 侧保持严格：任何无法表达的值都直接报错。
+      const mapping = mapMtoonMaterial(properties, {
+        textureCount: root.textures?.length ?? 0,
+        strict: true,
+      });
+      if (!mapping.isMtoon) continue;
       const material = root.materials?.[index];
       if (!material) throw new Error('VRM MToon material index is outside glTF materials');
-      const vectors = record(properties.vectorProperties) ? properties.vectorProperties : {};
-      const floats = record(properties.floatProperties) ? properties.floatProperties : {};
-      const textures = record(properties.textureProperties) ? properties.textureProperties : {};
+      if (mapping.errors.length) throw new Error(mapping.errors[0]!);
+      const { patch } = mapping;
       const pbr = material.pbrMetallicRoughness ??= {};
-      if (vectors._Color !== undefined) {
-        if (!finiteColor(vectors._Color)) throw new Error('Invalid VRM MToon base color');
-        pbr.baseColorFactor = [...vectors._Color];
-      }
-      if (textures._MainTex === -1) delete pbr.baseColorTexture;
-      if (textures._MainTex !== undefined && textures._MainTex !== -1) {
-        const texture = textures._MainTex;
-        if (typeof texture !== 'number' || !Number.isSafeInteger(texture) || texture < 0 || !root.textures?.[texture]) throw new Error('Invalid VRM MToon main texture index');
-        pbr.baseColorTexture = { index: texture };
-      }
-      if (vectors._MainTex !== undefined) {
-        const transform = vectors._MainTex;
-        if (!Array.isArray(transform) || transform.length !== 4 || !transform.every((n) => typeof n === 'number' && Number.isFinite(n))) throw new Error('Invalid VRM MToon texture transform');
-        if (transform.some((n, i) => n !== [0, 0, 1, 1][i])) throw new Error('Nonidentity VRM 0 MToon texture transforms are not supported; bake them before conversion');
-      }
-      const blend = floats._BlendMode;
-      if (blend !== undefined) {
-        if (![0, 1, 2, 3].includes(blend as number)) throw new Error('Invalid VRM MToon blend mode');
-        material.alphaMode = blend === 0 ? 'OPAQUE' : blend === 1 ? 'MASK' : 'BLEND';
-        if (blend === 1) {
-          const cutoff = floats._Cutoff ?? 0.5;
-          if (typeof cutoff !== 'number' || !Number.isFinite(cutoff) || cutoff < 0 || cutoff > 1) throw new Error('Invalid VRM MToon cutoff');
-          material.alphaCutoff = cutoff;
-        }
-      }
-      const cull = floats._CullMode;
-      if (cull === 1) throw new Error('VRM MToon front-face culling is not supported; fix material winding before conversion');
-      if (cull !== undefined) {
-        if (cull !== 0 && cull !== 2) throw new Error('Invalid VRM MToon cull mode');
-        material.doubleSided = cull === 0;
-      }
+      if (patch.baseColorFactor && !hasExplicitBaseColor(pbr.baseColorFactor))
+        pbr.baseColorFactor = [...patch.baseColorFactor];
+      if (patch.baseColorTexture === null) delete pbr.baseColorTexture;
+      else if (patch.baseColorTexture !== undefined)
+        pbr.baseColorTexture = { index: patch.baseColorTexture };
+      if (patch.alphaMode) material.alphaMode = patch.alphaMode;
+      if (patch.alphaCutoff !== undefined) material.alphaCutoff = patch.alphaCutoff;
+      if (patch.doubleSided !== undefined) material.doubleSided = patch.doubleSided;
     }
   }
   warn('VRM MToon fallback preserves base color, main texture, alpha and supported culling only; toon lighting, outlines, rim/shade maps and UV animation are not reproduced.');

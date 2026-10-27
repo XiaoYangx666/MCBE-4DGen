@@ -5,6 +5,7 @@ import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 import {
   buildSkinPackCollection,
   randomUuid,
+  SKIN_NAME_MAX_LENGTH,
 } from '../../src/skin-pack-files.ts';
 import { zipSkinPackBlob } from '../../src/skin-pack-zip.ts';
 import { zipFileName } from '../../web/shared/file-save.ts';
@@ -256,7 +257,8 @@ export function useSkinPack() {
 
 function validateName(value: string, fallback: string) {
   const trimmed = value.trim() || fallback;
-  if (trimmed.length > 128) throw new Error('名称不能超过 128 个字符');
+  if (trimmed.length > SKIN_NAME_MAX_LENGTH)
+    throw new Error(`名称不能超过 ${SKIN_NAME_MAX_LENGTH} 个字符`);
   return trimmed;
 }
 

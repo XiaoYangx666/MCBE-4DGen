@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { png } from './fixtures.ts';
 import { pmxFixture } from './pmx-fixture.ts';
-import { applyPmxMaterialNames, convertPmxModel, isPmdModel, isPmxModel } from '../webapp/engine/pmx.ts';
+import { applyPmxMaterials, convertPmxModel, isPmdModel, isPmxModel } from '../webapp/engine/pmx.ts';
 
 describe('webapp PMX conversion', () => {
   it('converts PMX to GLB and resolves sidecar textures by basename', async () => {
@@ -14,19 +14,27 @@ describe('webapp PMX conversion', () => {
     const glb = new Uint8Array(await result.file.arrayBuffer());
     expect(new TextDecoder().decode(glb.subarray(0, 4))).toBe('glTF');
     expect(result.warnings.some((warning) => warning.includes('静态'))).toBe(true);
-    expect(result.materialNames.length).toBe(2);
+    expect(result.materials.length).toBe(2);
   }, 60_000);
 
-  it('restores PMX material names on the loaded scene in order', () => {
+  it('restores PMX names, diffuse alpha and the double-sided flag in order', () => {
     const face = new THREE.MeshBasicMaterial({ name: 'Mat_Face' });
     const hair = new THREE.MeshBasicMaterial({ name: 'Mat_Hair' });
     const scene = new THREE.Scene();
     scene.add(new THREE.Mesh(new THREE.BufferGeometry(), [face, hair]));
 
-    expect(applyPmxMaterialNames(scene, ['颜', '髮'])).toBe(2);
+    expect(applyPmxMaterials(scene, [
+      { name: '颜', alpha: 1, doubleSided: true },
+      { name: '髮', alpha: 0.6, doubleSided: false },
+    ])).toBe(2);
     expect(face.name).toBe('颜');
+    expect(face.side).toBe(THREE.DoubleSide);
+    expect(face.opacity).toBe(1);
     expect(hair.name).toBe('髮');
-    expect(applyPmxMaterialNames(scene, ['只有一个'])).toBe(0);
+    expect(hair.opacity).toBe(0.6);
+    expect(hair.transparent).toBe(true);
+    expect(hair.side).toBe(THREE.FrontSide);
+    expect(applyPmxMaterials(scene, [{ name: '只有一个', alpha: 1, doubleSided: false }])).toBe(0);
   });
 
   it('warns about missing textures and rejects PMD', async () => {

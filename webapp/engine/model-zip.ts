@@ -1,6 +1,8 @@
 import JSZip from 'jszip';
+import { MODEL_EXTENSIONS } from '../../src/model-candidates.ts';
+import { normalizePath } from './paths.ts';
 
-const MODEL_EXTENSIONS = new Set(['glb', 'gltf', 'vrm', 'fbx', 'obj', 'dae', 'stl', 'ply', 'pmx', 'pmd']);
+const MODEL_EXTENSION_SET = new Set(MODEL_EXTENSIONS);
 const SIDECAR_EXTENSIONS = new Set([
   'bin', 'mtl',
   'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'svg', 'tga', 'dds',
@@ -42,7 +44,7 @@ export function isModelArchive(file: File): boolean {
 
 export function isModelAsset(name: string): boolean {
   const extension = name.split('.').pop()?.toLowerCase() ?? '';
-  return MODEL_EXTENSIONS.has(extension) || SIDECAR_EXTENSIONS.has(extension);
+  return MODEL_EXTENSION_SET.has(extension) || SIDECAR_EXTENSIONS.has(extension);
 }
 
 /**
@@ -131,10 +133,6 @@ function isIgnored(name: string): boolean {
   if (parts.some((part) => part === '__MACOSX' || part.startsWith('._'))) return true;
   const base = parts[parts.length - 1]?.toLowerCase() ?? '';
   return base === '.ds_store' || base === 'thumbs.db' || base === 'desktop.ini';
-}
-
-function normalizePath(value: string): string {
-  return value.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+/, '');
 }
 
 function uncompressedSize(entry: JSZip.JSZipObject): number {

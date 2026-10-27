@@ -3,6 +3,9 @@ import { validateGeometry } from './geometry-validator.ts';
 
 export type SkinPackFiles = Record<string, Uint8Array>;
 
+/** 皮肤包名与皮肤名的统一长度上限，两端校验共用。 */
+export const SKIN_NAME_MAX_LENGTH = 128;
+
 const encoder = new TextEncoder();
 const text = (value: unknown) => encoder.encode(JSON.stringify(value));
 
@@ -97,7 +100,7 @@ function assertPng(value: Uint8Array, skinName: string) {
  */
 export function buildSkinPackCollection(input: SkinPackCollectionInput): SkinPackCollectionResult {
   const name = (input.packName ?? 'Custom Skin Pack').trim();
-  if (!name || name.length > 128) throw new Error('Pack name must be 1-128 characters');
+  if (!name || name.length > SKIN_NAME_MAX_LENGTH) throw new Error('Pack name must be 1-128 characters');
   if (!input.skins.length) throw new Error('A skin pack needs at least one skin');
   const headerId = isUuid(input.headerId) ? input.headerId : randomUuid();
   const moduleId = isUuid(input.moduleId) ? input.moduleId : randomUuid();
@@ -112,7 +115,7 @@ export function buildSkinPackCollection(input: SkinPackCollectionInput): SkinPac
 
   input.skins.forEach((skin, index) => {
     const label = skin.name.trim();
-    if (!label || label.length > 128) throw new Error('Skin name must be 1-128 characters');
+    if (!label || label.length > SKIN_NAME_MAX_LENGTH) throw new Error('Skin name must be 1-128 characters');
     const source = singleGeometry(skin.geometry, label);
     const identifier = `geometry.skin${index}` as const;
     const localizationName = `skin${index}`;

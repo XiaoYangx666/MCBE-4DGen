@@ -22,6 +22,8 @@ function quad(overrides: Partial<SourceBatch> = {}): SourceBatch {
     ]),
     color: [1, 1, 1],
     opacity: 1,
+    alphaMode: 'BLEND',
+    alphaCutoff: 0.5,
     doubleSided: false,
     texture: null,
     uvBounds: [0, 0, 1, 1],

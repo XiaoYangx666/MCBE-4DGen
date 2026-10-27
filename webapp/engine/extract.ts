@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { dominantHumanoidPart } from '../../src/humanoid-binding.ts';
+import { faceNormal } from './geometry-math.ts';
 import { humanoidPivots, type HumanoidRig } from './humanoid.ts';
 import {
   PART_CODE,
+  type AlphaMode,
   type HumanoidPart,
   type SourceBatch,
   type TextureSource,
@@ -31,6 +33,8 @@ interface Accumulator {
   uvs: number[] | null;
   color: Vec3;
   opacity: number;
+  alphaMode: AlphaMode;
+  alphaCutoff: number;
   doubleSided: boolean;
   texture: TextureSource | null;
   /** PART_CODE per triangle. */
@@ -50,6 +54,8 @@ interface MaterialFields {
   color?: THREE.Color;
   map?: THREE.Texture | null;
   opacity?: number;
+  alphaTest?: number;
+  transparent?: boolean;
   side?: THREE.Side;
   colorWrite?: boolean;
   vertexColors?: boolean;
@@ -254,6 +260,8 @@ export function extractModel(
       uvs: accumulator.uvs ? new Float32Array(accumulator.uvs) : null,
       color: accumulator.color,
       opacity: clamp01(accumulator.material.opacity ?? 1),
+      alphaMode: accumulator.alphaMode,
+      alphaCutoff: accumulator.alphaCutoff,
       doubleSided: accumulator.doubleSided,
       texture: accumulator.texture,
       uvBounds: bounds && bounds[2] - bounds[0] > 1e-6 && bounds[3] - bounds[1] > 1e-6 ? bounds : null,
@@ -286,6 +294,7 @@ function accumulatorFor(
   if (existing) return existing;
   const texture = textureSource(material.map ?? null, warnings);
   const color = material.color ? srgb(material.color) : ([1, 1, 1] as Vec3);
+  const alphaTest = material.alphaTest ?? 0;
   const accumulator: Accumulator = {
     material,
     key: material.uuid,
@@ -295,6 +304,10 @@ function accumulatorFor(
     uvs: null,
     color,
     opacity: material.opacity ?? 1,
+    // Same mapping the Node importer relies on: glTF alphaTest => MASK,
+    // transparent => BLEND, everything else is opaque.
+    alphaMode: alphaTest > 0 ? 'MASK' : material.transparent ? 'BLEND' : 'OPAQUE',
+    alphaCutoff: alphaTest > 0 ? alphaTest : 0.5,
     doubleSided: material.side === THREE.DoubleSide,
     texture,
     parts: [],
@@ -432,16 +445,6 @@ function vertex(
     return [normalVector.x, normalVector.y, normalVector.z];
   }
   return [x, y, z];
-}
-
-function faceNormal(a: Vec3, b: Vec3, c: Vec3): Vec3 {
-  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-  const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-  const x = uy * vz - uz * vy;
-  const y = uz * vx - ux * vz;
-  const z = ux * vy - uy * vx;
-  const length = Math.hypot(x, y, z);
-  return length > 0 ? [x / length, y / length, z / length] : [0, 1, 0];
 }
 
 function srgb(color: THREE.Color): Vec3 {

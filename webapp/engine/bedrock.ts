@@ -15,6 +15,7 @@ import {
   visibleBounds,
 } from '../../src/poly-mesh-writer.ts';
 import { CODE_PART, type HumanoidPart, type SourceBatch } from './types.ts';
+import { isDegenerateTriangle } from './geometry-math.ts';
 
 export type DoubleSidedPolicy = 'source' | 'all' | 'front';
 
@@ -48,15 +49,6 @@ export interface GeometryReport {
 }
 
 const STATIC_BODY = PLAYER_SKELETON.find((bone) => bone.name === 'body')!;
-
-function isDegenerate(a: V3, b: V3, c: V3) {
-  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-  const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-  const x = uy * vz - uz * vy;
-  const y = uz * vx - ux * vz;
-  const z = ux * vy - uy * vx;
-  return Math.hypot(x, y, z) < 1e-9;
-}
 
 /**
  * Convert world-space triangle soup into a legacy Bedrock poly_mesh. The model
@@ -136,7 +128,7 @@ export function buildBedrockGeometry(batches: readonly SourceBatch[], options: G
       const a3 = fit(batch.positions[offset]!, batch.positions[offset + 1]!, batch.positions[offset + 2]!);
       const b3 = fit(batch.positions[offset + 3]!, batch.positions[offset + 4]!, batch.positions[offset + 5]!);
       const c3 = fit(batch.positions[offset + 6]!, batch.positions[offset + 7]!, batch.positions[offset + 8]!);
-      if (isDegenerate(a3, b3, c3)) {
+      if (isDegenerateTriangle(a3, b3, c3)) {
         skippedDegenerate++;
         continue;
       }
