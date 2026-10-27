@@ -1,6 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { DropZone } from './DropZone';
+import { ModelSourcesDialog } from './ModelSourcesDialog';
 import { DownloadButtons, WarningList } from './Common';
 import { Icon } from './Icons';
 import { Viewport } from './Viewport';
@@ -33,11 +34,6 @@ import { formatBytes } from '../../web/shared/format';
 import { useCompactViewport } from '../lib/use-compact-viewport';
 import { PoseControls } from '../../web/shared/PoseControls';
 import { MaterialList, type MaterialListItem } from '../../web/shared/MaterialList';
-
-const ModelSourcesDialog = lazy(async () => {
-  const module = await import('./ModelSourcesDialog');
-  return { default: module.ModelSourcesDialog };
-});
 
 const DEFAULT_NAME = '我的 4D 皮肤';
 const thumbnailCache = new Map<string, string | null>();
@@ -893,19 +889,7 @@ export function ModelStudio() {
         )}
       </section>
 
-      {sourcesOpen && (
-        <Suspense
-          fallback={(
-            <div className="dialog-backdrop">
-              <div className="preview-dialog preview-dialog-loading" role="status">
-                <span className="spinner" /> 正在加载模型站点…
-              </div>
-            </div>
-          )}
-        >
-          <ModelSourcesDialog onClose={closeSources} />
-        </Suspense>
-      )}
+      {sourcesOpen && <ModelSourcesDialog onClose={closeSources} />}
     </div>
   );
 }
