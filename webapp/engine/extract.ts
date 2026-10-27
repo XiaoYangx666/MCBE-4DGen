@@ -249,18 +249,20 @@ export function extractModel(
   for (const accumulator of accumulators.values()) {
     if (!accumulator.triangles) continue;
     if (accumulator.outsideUv)
-      warnings.add(`材质「${accumulator.name}」的 UV 超出 0–1，已按裁切后的范围导出。`);
+      warnings.add(`材质「${accumulator.name}」的 UV 超出 0–1，将按贴图环绕模式展开图集。`);
     if (accumulator.missingUv && !accumulator.texture)
       warnings.add(`材质「${accumulator.name}」没有 UV，已使用纯色填充。`);
     if (accumulator.vertexColors)
       warnings.add(`材质「${accumulator.name}」使用顶点色，网页版只保留基础色与贴图。`);
     const hasBounds = Number.isFinite(accumulator.minU) && Number.isFinite(accumulator.minV);
+    // Keep the continuous range: negative / seam-crossing UVs are rendered
+    // with the source wrap mode instead of being clipped to a single tile.
     const bounds: [number, number, number, number] | null = hasBounds
       ? [
-          Math.max(0, accumulator.minU),
-          Math.max(0, accumulator.minV),
-          Math.min(1, accumulator.maxU),
-          Math.min(1, accumulator.maxV),
+          accumulator.minU,
+          accumulator.minV,
+          accumulator.maxU,
+          accumulator.maxV,
         ]
       : null;
     batches.push({
@@ -361,7 +363,15 @@ function textureSource(map: THREE.Texture | null, warnings: Set<string>): Textur
   if (!(width > 0 && height > 0)) return null;
   const source = map.source;
   const key = `${source?.uuid ?? map.uuid}:${map.flipY ? 'flip' : 'keep'}`;
-  return { image: image as CanvasImageSource, width, height, key };
+  return {
+    image: image as CanvasImageSource,
+    width,
+    height,
+    key,
+    // PMX / glTF samplers default to repeat; three exposes 1000/1001/1002.
+    wrapS: map.wrapS ?? 1000,
+    wrapT: map.wrapT ?? 1000,
+  };
 }
 
 function imageUvInto(
