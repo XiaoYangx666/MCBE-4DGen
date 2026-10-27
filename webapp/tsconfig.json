@@ -27,6 +27,7 @@
     "../src/skin-pack-files.ts",
     "../src/source-sites.ts",
     "../src/tga.ts",
+    "../src/texture-chart-math.ts",
     "../src/texture-pixels.ts",
     "../src/vrm-humanoid.ts",
     "../web/shared/**/*.ts",

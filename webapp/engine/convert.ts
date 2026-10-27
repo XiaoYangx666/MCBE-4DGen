@@ -76,6 +76,7 @@ export async function convertBatches(
   // UVs are rewritten for the atlas, so keep the extracted batches reusable.
   const batches = source.map((batch) => ({ ...batch }));
   const atlasKey = (batch: SourceBatch) => [
+    batch.key,
     batch.texture?.key ?? 'solid',
     batch.uvBounds?.map((value) => value.toFixed(4)).join(',') ?? 'none',
     batch.color.map((value) => value.toFixed(3)).join(','),
@@ -87,28 +88,47 @@ export async function convertBatches(
     key: atlasKey(batch),
     texture: batch.texture,
     uvBounds: batch.uvBounds,
+    uvs: batch.uvs,
+    triangleAreas: triangleAreas(batch),
     color: batch.color,
     opacity: batch.opacity,
     alphaMode: batch.alphaMode,
     alphaCutoff: batch.alphaCutoff,
     area: batch.area,
   }));
+  const batchByInput = new Map(inputs.map((input, index) => [input.key, batches[index]!]));
 
   const report = reporter(options.onProgress);
   report('规划 128×128 图集…', `${inputs.length} 个材质`);
   await nextFrame();
   const layout = planAtlas(inputs, 128, 1);
-  report('绘制 128×128 贴图图集…', `${layout.rects.size} 个图块`);
+  report('绘制 128×128 贴图图集…', `${layout.charts.length} 个 UV 岛`);
   await nextFrame();
   const atlas = renderAtlas(inputs, layout);
-  report('重映射 UV…', `${batches.length} 个材质`);
+  report('重映射 UV…', `${layout.charts.length} 个 UV 岛`);
   await nextFrame();
+  const remapped = new Map<string, Float32Array>();
+  for (const chart of layout.charts) {
+    const batch = batchByInput.get(chart.inputKey);
+    if (!batch) continue;
+    let uvs = remapped.get(batch.key);
+    if (!uvs) {
+      uvs = batch.uvs
+        ? new Float32Array(batch.uvs)
+        : new Float32Array(batch.triangles * 6);
+      remapped.set(batch.key, uvs);
+    }
+    remapUvs(
+      uvs,
+      chart.bounds,
+      chart.rect,
+      layout.size,
+      chart.triangles.length ? chart.triangles : undefined,
+    );
+  }
   for (const batch of batches) {
-    const rect = layout.rects.get(atlasKey(batch));
-    if (!rect) continue;
-    const uvs = batch.uvs ? new Float32Array(batch.uvs) : new Float32Array(batch.triangles * 6);
-    remapUvs(uvs, batch.uvBounds, rect, layout.size);
-    batch.uvs = uvs;
+    const uvs = remapped.get(batch.key);
+    if (uvs) batch.uvs = uvs;
   }
   const usage = await measureAtlasUsage(atlas.canvas, batches, layout.size, {
     onProgress: (done, total, name) =>
@@ -120,12 +140,12 @@ export async function convertBatches(
   report('汇总贴图报告…');
   const totalPixels = layout.size * layout.size;
   let contentPixels = 0;
-  for (const rect of layout.rects.values())
+  for (const chart of layout.charts)
     contentPixels +=
-      Math.max(1, rect.width - rect.pad * 2) *
-      Math.max(1, rect.height - rect.pad * 2);
-  const allocatedPixels = [...layout.rects.values()].reduce(
-    (sum, rect) => sum + rect.width * rect.height,
+      Math.max(1, chart.rect.width - chart.rect.pad * 2) *
+      Math.max(1, chart.rect.height - chart.rect.pad * 2);
+  const allocatedPixels = layout.charts.reduce(
+    (sum, chart) => sum + chart.rect.width * chart.rect.height,
     0,
   );
   const gutterPixels = Math.max(0, allocatedPixels - contentPixels);
@@ -183,4 +203,43 @@ export async function convertBatches(
     binding,
     ...(geometryReport.parts ? { parts: geometryReport.parts } : {}),
   };
+}
+
+/**
+ * World-space area per triangle, scaled so the sum matches `batch.area`
+ * (which already includes the UI's material weight). Chart demand therefore
+ * follows the same surface-area curve as the desktop atlas.
+ */
+function triangleAreas(batch: SourceBatch): Float32Array | null {
+  const count = Math.floor(batch.positions.length / 9);
+  if (!count) return null;
+  const areas = new Float32Array(count);
+  let total = 0;
+  for (let triangle = 0; triangle < count; triangle++) {
+    const offset = triangle * 9;
+    const ax = batch.positions[offset]!;
+    const ay = batch.positions[offset + 1]!;
+    const az = batch.positions[offset + 2]!;
+    const abx = batch.positions[offset + 3]! - ax;
+    const aby = batch.positions[offset + 4]! - ay;
+    const abz = batch.positions[offset + 5]! - az;
+    const acx = batch.positions[offset + 6]! - ax;
+    const acy = batch.positions[offset + 7]! - ay;
+    const acz = batch.positions[offset + 8]! - az;
+    const area =
+      Math.hypot(
+        aby * acz - abz * acy,
+        abz * acx - abx * acz,
+        abx * acy - aby * acx,
+      ) / 2;
+    areas[triangle] = area;
+    total += area;
+  }
+  if (total > 0) {
+    const scale = batch.area / total;
+    for (let i = 0; i < areas.length; i++) areas[i] = areas[i]! * scale;
+  } else if (batch.area > 0) {
+    areas.fill(batch.area / count);
+  }
+  return areas;
 }
