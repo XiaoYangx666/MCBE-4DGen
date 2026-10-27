@@ -23,6 +23,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    build: '#14',
+    date: '2026-10-27',
+    title: '网页版图集与桌面分岛对齐',
+    changes: [
+      { tag: '优化', text: '网页版图集改用桌面工作台共享的 UV 连通分岛、合并启发式和展开边界：每个岛单独打包，眼睛高光等稀疏 UV 不再被平均成模糊色块，小岛保底 3×3 像素。' },
+      { tag: '修复', text: 'UV 超出 0–1 时按源贴图的重复 / 钳制 / 镜像环绕模式采样，不再裁切到单张贴图范围。' },
+    ],
+  },
+  {
     build: '#13',
     date: '2026-10-27',
     title: '网页版转换速度与预览材质',
