@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Changelog } from '../../web/shared/Changelog';
-import { BUILD_LABEL } from '../../web/shared/build-log';
 import { PALETTE_OPTIONS, type Palette } from '../../web/shared/palettes';
 import type { Theme } from '../lib/theme';
 import { REPO } from '../lib/links';
@@ -26,6 +25,13 @@ const MODES: { key: Mode; icon: IconName; label: string; hint: string }[] = [
   { key: 'pack', icon: 'archive', label: '皮肤包', hint: '管理与导出 ZIP' },
 ];
 
+type DrawerSection = 'nav' | 'appearance' | 'about';
+const SECTIONS: { key: DrawerSection; label: string }[] = [
+  { key: 'nav', label: '工作台' },
+  { key: 'appearance', label: '外观' },
+  { key: 'about', label: '关于' },
+];
+
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
@@ -47,8 +53,13 @@ export function AppDrawer({
   const closeButton = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef<HTMLElement | null>(null);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const [section, setSection] = useState<DrawerSection>('nav');
 
   const close = useCallback(() => onClose(), [onClose]);
+
+  useEffect(() => {
+    if (open) setSection('nav');
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -127,85 +138,111 @@ export function AppDrawer({
           </button>
         </div>
 
-        <div className="drawer-scroll">
-          <div className="drawer-section">
-            <span className="drawer-section-label">工作台</span>
-            {MODES.map((item) => {
-              const active = mode === item.key;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={`drawer-nav-item ${active ? 'active' : ''}`}
-                  aria-current={active ? 'page' : undefined}
-                  onClick={() => onNavigate(item.key)}
-                >
-                  <span className="drawer-nav-icon"><Icon name={item.icon} size={18} /></span>
-                  <span className="drawer-nav-copy">
-                    <b>{item.label}</b>
-                    <small>{item.hint}</small>
-                  </span>
-                  {item.key === 'model' && <span className="drawer-nav-badge">BETA</span>}
-                  {item.key === 'pack' && packCount > 0 && (
-                    <span className="drawer-nav-count">{packCount}</span>
-                  )}
-                  {active && <Icon name="check" size={15} className="drawer-nav-check" />}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="drawer-section">
-            <span className="drawer-section-label">外观</span>
-            <div className="drawer-theme">
-              <button
-                type="button"
-                className={theme === 'light' ? 'active' : ''}
-                aria-pressed={theme === 'light'}
-                onClick={() => onTheme('light')}
-              >
-                <Icon name="sun" size={16} /> 浅色
-              </button>
-              <button
-                type="button"
-                className={theme === 'dark' ? 'active' : ''}
-                aria-pressed={theme === 'dark'}
-                onClick={() => onTheme('dark')}
-              >
-                <Icon name="moon" size={16} /> 深色
-              </button>
-            </div>
-          </div>
-
-          <div className="drawer-section">
-            <span className="drawer-section-label">配色</span>
-            <div className="drawer-palettes">
-              {PALETTE_OPTIONS.map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  className={`drawer-palette ${palette === option.key ? 'active' : ''}`}
-                  aria-pressed={palette === option.key}
-                  onClick={() => onPalette(option.key)}
-                >
-                  <span className={`palette-swatch ${option.key}`} aria-hidden="true">
-                    <i /><i /><i />
-                  </span>
-                  <span className="drawer-palette-label">{option.label}</span>
-                  {palette === option.key && <Icon name="check" size={14} />}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="drawer-tabs" role="tablist" aria-label="菜单分类">
+          {SECTIONS.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              role="tab"
+              aria-selected={section === item.key}
+              className={section === item.key ? 'active' : ''}
+              onClick={() => setSection(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
 
-        <div className="drawer-foot">
-          <Changelog drawer onOpen={close} />
-          <a href={REPO} target="_blank" rel="noreferrer">
-            <Icon name="github" size={15} /> GitHub
-          </a>
-          <span className="local"><b /> 本机处理 · 文件不会上传</span>
-          <small>4DGen Web · {BUILD_LABEL} · GPL-3.0</small>
+        <div className="drawer-scroll" role="tabpanel">
+          {section === 'nav' && (
+            <div className="drawer-nav-list">
+              {MODES.map((item) => {
+                const active = mode === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={`drawer-nav-item ${active ? 'active' : ''}`}
+                    aria-current={active ? 'page' : undefined}
+                    onClick={() => onNavigate(item.key)}
+                  >
+                    <span className="drawer-nav-icon"><Icon name={item.icon} size={18} /></span>
+                    <span className="drawer-nav-copy">
+                      <b>{item.label}</b>
+                      <small>{item.hint}</small>
+                    </span>
+                    {item.key === 'model' && <span className="drawer-nav-badge">BETA</span>}
+                    {item.key === 'pack' && packCount > 0 && (
+                      <span className="drawer-nav-count">{packCount}</span>
+                    )}
+                    {active && <Icon name="check" size={15} className="drawer-nav-check" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {section === 'appearance' && (
+            <>
+              <div className="drawer-section">
+                <span className="drawer-section-label">主题</span>
+                <div className="drawer-theme">
+                  <button
+                    type="button"
+                    className={theme === 'light' ? 'active' : ''}
+                    aria-pressed={theme === 'light'}
+                    onClick={() => onTheme('light')}
+                  >
+                    <Icon name="sun" size={16} /> 浅色
+                  </button>
+                  <button
+                    type="button"
+                    className={theme === 'dark' ? 'active' : ''}
+                    aria-pressed={theme === 'dark'}
+                    onClick={() => onTheme('dark')}
+                  >
+                    <Icon name="moon" size={16} /> 深色
+                  </button>
+                </div>
+              </div>
+
+              <div className="drawer-section">
+                <span className="drawer-section-label">配色</span>
+                <div className="drawer-palettes">
+                  {PALETTE_OPTIONS.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`drawer-palette ${palette === option.key ? 'active' : ''}`}
+                      aria-pressed={palette === option.key}
+                      onClick={() => onPalette(option.key)}
+                    >
+                      <span className={`palette-swatch ${option.key}`} aria-hidden="true">
+                        <i /><i /><i />
+                      </span>
+                      <span className="drawer-palette-label">{option.label}</span>
+                      {palette === option.key && <Icon name="check" size={14} />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {section === 'about' && (
+            <div className="drawer-about">
+              <Changelog drawer onOpen={close} />
+              <a className="drawer-about-link" href={REPO} target="_blank" rel="noreferrer">
+                <Icon name="github" size={16} />
+                <span>GitHub</span>
+                <span className="drawer-about-arrow" aria-hidden="true">↗</span>
+              </a>
+              <div className="drawer-about-note">
+                <span className="local"><b /> 本机处理 · 文件不会上传</span>
+                <small>4DGen Web · GPL-3.0</small>
+              </div>
+            </div>
+          )}
         </div>
       </aside>
     </div>
