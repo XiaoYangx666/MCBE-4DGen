@@ -93,6 +93,7 @@ test("compact atlas crops disconnected used UV islands, shares equivalent materi
   assert.equal(coverage.name, p.getMaterial()!.getName());
   assert.equal(coverage.regions.length, 2);
   assert.equal(coverage.pixels, Math.round(result.report.atlas.sampledUtilization! * 128 * 128));
+  assert.ok(coverage.uvPixels! >= coverage.pixels);
   assert.ok(coverage.pixels > 0);
 
   assert.ok(
@@ -103,7 +104,9 @@ test("compact atlas crops disconnected used UV islands, shares equivalent materi
   const areas = result.report.regions
     .map((r) => r.width * r.height)
     .sort((a, b) => b - a);
-  assert.ok(Math.abs(areas[0]! / areas[1]! - 2) < 0.15); // Twice the rendered surface receives twice the budget.
+  // Allocation follows surface area monotonically, with a sublinear exponent so
+  // one dominant chart cannot crowd out small face/eye/trim charts.
+  assert.ok(areas[0]! / areas[1]! > 1.6 && areas[0]! / areas[1]! < 2);
   assert.equal(result.report.allocation, "surface-area");
   assert.equal(result.report.atlas.width, 128);
   const raw = await sharp(result.png).ensureAlpha().raw().toBuffer();
@@ -133,6 +136,147 @@ test("compact atlas crops disconnected used UV islands, shares equivalent materi
   assert.deepEqual(
     Array.from(p.getAttribute("TEXCOORD_0")!.getArray()!),
     Array.from(new Float32Array([0.1, 0.1, 0.2, 0.1, 0.1, 0.2])),
+  );
+});
+
+test("flat base-color materials receive a single sampleable chart, not a surface-area share", async () => {
+  const doc = await documentFixture(),
+    root = doc.getRoot(),
+    mesh = root.listMeshes()[0]!,
+    textured = mesh.listPrimitives()[0]!;
+  const flat = doc
+    .createMaterial("flat")
+    .setBaseColorFactor([0.2, 0.4, 0.8, 1])
+    .setAlphaMode("OPAQUE");
+  // Make the flat material dominate the model's surface area. It has no texture
+  // detail, so allocating it by area would silently starve every textured chart.
+  for (let i = 0; i < 12; i++) {
+    mesh.addPrimitive(textured.clone().setMaterial(flat));
+  }
+  const result = await optimizeTextures(model(doc), {
+    compactSize: 128,
+    padding: 1,
+    filter: "nearest",
+  });
+  const flatRegion = result.report.regions.find((r) =>
+    r.materials.includes("flat"),
+  )!;
+  const texturedRegion = result.report.regions.find((r) =>
+    r.materials.includes(textured.getMaterial()!.getName()),
+  )!;
+  assert.ok(flatRegion.width * flatRegion.height <= 9);
+  assert.ok(
+    texturedRegion.width * texturedRegion.height >
+      flatRegion.width * flatRegion.height * 4,
+  );
+  assert.equal(result.report.atlas.sampledUtilization! > 0.1, true);
+});
+
+test("atlas metrics separate sampled UVs, transparent UVs, gutters and free space", async () => {
+  const result = await optimizeTextures(model(await documentFixture()), {
+    compactSize: 128,
+    padding: 1,
+    filter: "nearest",
+  });
+  const atlas = result.report.atlas;
+  assert.ok(atlas.sampledUtilization !== undefined);
+  assert.ok(atlas.uvUtilization !== undefined);
+  assert.ok(atlas.sampledPixels !== undefined);
+  assert.ok(atlas.uvPixels !== undefined);
+  assert.ok(atlas.contentPixels !== undefined);
+  assert.ok(atlas.allocatedPixels !== undefined);
+  assert.ok(atlas.gutterPixels !== undefined);
+  assert.ok(atlas.emptyPixels !== undefined);
+  assert.ok(atlas.uvUtilization! >= atlas.sampledUtilization!);
+  assert.ok(atlas.uvPixels! >= atlas.sampledPixels!);
+  assert.equal(
+    atlas.contentPixels! + atlas.gutterPixels! + atlas.emptyPixels!,
+    128 * 128,
+  );
+  assert.equal(atlas.sampledPixels!, Math.round(atlas.sampledUtilization! * 128 * 128));
+  assert.equal(atlas.uvPixels!, Math.round(atlas.uvUtilization! * 128 * 128));
+  assert.ok(atlas.chartCoverage! > 0 && atlas.chartCoverage! <= 1.0001);
+  assert.ok(atlas.gutterUtilization! >= 0);
+  assert.ok(atlas.emptyUtilization! >= 0);
+});
+
+test("different materials sharing a texture are not merged when their UV areas do not coincide", async () => {
+  const doc = new Document();
+  const buffer = doc.createBuffer();
+  const texture = doc
+    .createTexture("shared")
+    .setImage(
+      await sharp({
+        create: { width: 64, height: 64, channels: 4, background: "#d08060" },
+      })
+        .png()
+        .toBuffer(),
+    )
+    .setMimeType("image/png");
+  const face = doc
+    .createMaterial("face")
+    .setBaseColorTexture(texture)
+    .setBaseColorFactor([1, 1, 1, 1])
+    .setAlphaMode("OPAQUE");
+  const eyelash = doc
+    .createMaterial("eyelash")
+    .setBaseColorTexture(texture)
+    .setBaseColorFactor([1, 1, 1, 1])
+    .setAlphaMode("OPAQUE");
+  const primitive = (material: typeof face, uv: number[]) => {
+    const position = doc
+      .createAccessor()
+      .setType("VEC3")
+      .setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]))
+      .setBuffer(buffer);
+    const normal = doc
+      .createAccessor()
+      .setType("VEC3")
+      .setArray(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]))
+      .setBuffer(buffer);
+    return doc
+      .createPrimitive()
+      .setAttribute("POSITION", position)
+      .setAttribute("NORMAL", normal)
+      .setAttribute(
+        "TEXCOORD_0",
+        doc
+          .createAccessor()
+          .setType("VEC2")
+          .setArray(new Float32Array(uv))
+          .setBuffer(buffer),
+      )
+      .setIndices(
+        doc
+          .createAccessor()
+          .setType("SCALAR")
+          .setArray(new Uint16Array([0, 1, 2]))
+          .setBuffer(buffer),
+      )
+      .setMaterial(material);
+  };
+  // The face fills most of the texture; the eyelash is a small island just below
+  // it. Their joined box grows only ~8%, so an area-only merge would accept it.
+  const mesh = doc
+    .createMesh("face+lashes")
+    .addPrimitive(
+      primitive(face, [0, 0, 1, 0, 0.5, 0.9]),
+    )
+    .addPrimitive(
+      primitive(eyelash, [0.4, 0.92, 0.6, 0.92, 0.5, 0.99]),
+    );
+  const node = doc.createNode("model").setMesh(mesh);
+  doc.getRoot().setDefaultScene(doc.createScene("main").addChild(node));
+  const result = await optimizeTextures(model(doc), {
+    compactSize: 128,
+    padding: 1,
+    filter: "nearest",
+  });
+  assert.equal(result.report.regions.length, 2);
+  assert.ok(
+    result.report.regions.every(
+      (r) => !(r.materials.includes("face") && r.materials.includes("eyelash")),
+    ),
   );
 });
 
@@ -212,6 +356,10 @@ test("compact allocation resamples the entire crop without cover-cropping its ed
   assert.deepEqual(rgbaAt(raw, 64, r.x, r.y), [255, 0, 0, 255]);
   assert.deepEqual(rgbaAt(raw, 64, r.x + r.width - 1, r.y), [0, 0, 255, 255]);
   assert.ok(r.width / r.height > 0.9 && r.width / r.height < 4.2); // Keep crop density proportional, rather than stretch into all free gaps.
+  // Packing may adjust the aspect slightly, but never by more than the 1.2
+  // width factor (1.44x aspect) that keeps source detail from visibly stretching.
+  const aspect = (r.width / r.height) / ((r.crop!.width / r.crop!.height) || 1);
+  assert.ok(aspect > 1 / 1.5 && aspect < 1.5);
   assert.ok(
     Math.abs(
       result.report.atlas.sampledUtilization! -
@@ -530,7 +678,9 @@ test("compact budget follows world surface area and manual weight, independently
     const a = r.report.regions.find((r) => r.materials.includes(name))!;
     return a.width * a.height;
   };
-  assert.ok(Math.abs(pixels(base, "clothes") / pixels(base, "eye") - 4) < 0.4);
+  // Four times the rendered surface area receives 4^0.85 ≈ 3.25x the pixels.
+  assert.ok(pixels(base, "clothes") / pixels(base, "eye") > 2.8);
+  assert.ok(pixels(base, "clothes") / pixels(base, "eye") < 3.7);
   const boosted = await optimizeTextures(input, {
     compactSize: 128,
     padding: 1,

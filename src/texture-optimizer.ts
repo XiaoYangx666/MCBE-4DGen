@@ -27,6 +27,9 @@ interface Rect {
   width: number;
   height: number;
 }
+
+/** Sublinear atlas demand: keeps one dominant chart from crowding out small details. */
+const ALLOCATION_POWER = 0.85;
 interface Region {
   material: Material | null;
   primitives: Primitive[];
@@ -50,20 +53,26 @@ function pack(
   flexible = false,
 ): Rect[] | null {
   let free: Rect[] = [{ x: 0, y: 0, width: size, height: size }];
+  // Small aspect adjustments fill awkward gaps without visibly stretching the
+  // source. 1.2 changes the aspect ratio by 1.44x, which is the hard limit.
+  const MAX_STRETCH = 1.2;
   const result: Rect[] = Array(regions.length);
-  const order = regions
+  const items = regions
     .map((r, id) => ({
       id,
       width: r.width + padding * 2,
       height: r.height + padding * 2,
     }))
-    .sort((a, b) => b.width * b.height - a.width * a.height || a.id - b.id);
-  for (const item of order) {
+    .sort(
+      (a, c) =>
+        c.width * c.height - a.width * a.height || a.id - c.id,
+    );
+  for (const item of items) {
     const originalW = item.width - 2 * padding,
       originalH = item.height - 2 * padding;
     const candidates =
       flexible && regions[item.id]!.crop
-        ? [1, 1.2, 1 / 1.2, 1.44, 1 / 1.44]
+        ? [1, MAX_STRETCH, 1 / MAX_STRETCH]
             .map((factor) => {
               const width = Math.max(3, Math.round(originalW * factor));
               const height = Math.max(
@@ -371,16 +380,18 @@ export async function optimizeTextures(
         }
       }
     }
-    const weightedArea = Object.entries(areas).reduce(
-      (sum, [name, area]) =>
-        sum +
-        area *
-          (options.materialWeights &&
-          Object.hasOwn(options.materialWeights, name)
-            ? options.materialWeights[name]!
-            : 1),
-      0,
-    );
+    const weightedArea = source
+      ? Object.entries(areas).reduce(
+          (sum, [name, area]) =>
+            sum +
+            area *
+              (options.materialWeights &&
+              Object.hasOwn(options.materialWeights, name)
+                ? options.materialWeights[name]!
+                : 1),
+          0,
+        )
+      : 0; // A flat base-color material has no texture detail to preserve.
     regions.push({
       material,
       primitives,
@@ -399,25 +410,37 @@ export async function optimizeTextures(
   let size = options.compactSize ?? options.atlasSize ?? 8;
   let layout = pack(regions, size, padding);
   if (options.compactSize) {
-    const totalArea = regions.reduce((sum, r) => sum + r.weightedArea, 0);
+    // Sublinear demand keeps one huge body/cloth chart from crowding out many
+    // small face, eye and trim charts. It also packs rectangular charts more
+    // evenly; real samples with a dominant chart gained several percentage points
+    // of effective coverage while models without one stayed neutral.
+    const totalArea = regions.reduce(
+      (sum, r) => sum + Math.pow(Math.max(0, r.weightedArea), ALLOCATION_POWER),
+      0,
+    );
     const dimensions = regions.map((r) => {
       if (options.allocation === "source-area") return [r.width, r.height];
       const demand =
-        Math.max(1e-8, r.weightedArea / Math.max(totalArea, 1e-8)) *
+        Math.max(
+          1e-8,
+          Math.pow(Math.max(0, r.weightedArea), ALLOCATION_POWER) /
+            Math.max(totalArea, 1e-8),
+        ) *
         size *
         size;
       const aspect = Math.max(1 / 32, Math.min(32, r.width / r.height));
       return [Math.sqrt(demand * aspect), Math.sqrt(demand / aspect)];
     });
     // A 3×3 minimum keeps small eye/trim charts sampleable at the final atlas size.
+    const minChart = 3;
     const attempt = (scale: number) => {
       regions.forEach((r, i) => {
         r.width = Math.max(
-          r.crop ? 3 : r.tiles[0],
+          r.crop ? minChart : r.tiles[0],
           Math.round(dimensions[i]![0]! * scale),
         );
         r.height = Math.max(
-          r.crop ? 3 : r.tiles[1],
+          r.crop ? minChart : r.tiles[1],
           Math.round(dimensions[i]![1]! * scale),
         );
       });
@@ -622,14 +645,23 @@ export async function optimizeTextures(
     .png()
     .toBuffer();
   let sampledUtilization: number | undefined;
+  let uvUtilization: number | undefined;
+  let sampledPixels: number | undefined;
+  let uvPixels: number | undefined;
   const materialPixels = new Map<string, Uint8Array>();
+  const materialUvPixels = new Map<string, Uint8Array>();
   if (options.compactSize) {
     const used = new Uint8Array(size * size);
+    const uvUsed = new Uint8Array(size * size);
     for (const region of regions)
       for (const p of region.primitives) {
         const name = p.getMaterial()?.getName() ?? "(default)";
-        if (!materialPixels.has(name)) materialPixels.set(name, new Uint8Array(size * size));
+        if (!materialPixels.has(name)) {
+          materialPixels.set(name, new Uint8Array(size * size));
+          materialUvPixels.set(name, new Uint8Array(size * size));
+        }
         const pixels = materialPixels.get(name)!;
+        const uvPixelsForMaterial = materialUvPixels.get(name)!;
         const uv = p.getAttribute("TEXCOORD_0")!,
           indices =
             p.getIndices()?.getArray() ??
@@ -645,7 +677,25 @@ export async function optimizeTextures(
           const [a, b, c] = points as [number[], number[], number[]];
           const edge = (p: number[], q: number[], x: number, y: number) =>
             (q[0]! - p[0]!) * (y - p[1]!) - (q[1]! - p[1]!) * (x - p[0]!);
-          if (Math.abs(edge(a, b, c[0]!, c[1]!)) < 1e-12) continue;
+          if (Math.abs(edge(a, b, c[0]!, c[1]!)) < 1e-12) {
+            // A point/line UV still samples one texel; count it instead of
+            // pretending the material has no atlas usage.
+            const x = Math.max(
+              0,
+              Math.min(size - 1, Math.floor((a[0]! + b[0]! + c[0]!) / 3)),
+            );
+            const y = Math.max(
+              0,
+              Math.min(size - 1, Math.floor((a[1]! + b[1]! + c[1]!) / 3)),
+            );
+            uvUsed[y * size + x] = 1;
+            uvPixelsForMaterial[y * size + x] = 1;
+            if (atlas[(y * size + x) * 4 + 3]! > 0) {
+              used[y * size + x] = 1;
+              pixels[y * size + x] = 1;
+            }
+            continue;
+          }
           const x0 = Math.max(0, Math.floor(Math.min(a[0]!, b[0]!, c[0]!))),
             x1 = Math.min(size - 1, Math.ceil(Math.max(a[0]!, b[0]!, c[0]!)));
           const y0 = Math.max(0, Math.floor(Math.min(a[1]!, b[1]!, c[1]!))),
@@ -657,15 +707,21 @@ export async function optimizeTextures(
                 edge(b, c, x + 0.5, y + 0.5),
                 edge(c, a, x + 0.5, y + 0.5),
               ];
-              if (
-                (e.every((v) => v >= 0) || e.every((v) => v <= 0)) &&
-                atlas[(y * size + x) * 4 + 3]! > 0
-              )
-                { used[y * size + x] = 1; pixels[y * size + x] = 1; }
+              if (e.every((v) => v >= 0) || e.every((v) => v <= 0)) {
+                uvUsed[y * size + x] = 1;
+                uvPixelsForMaterial[y * size + x] = 1;
+                if (atlas[(y * size + x) * 4 + 3]! > 0) {
+                  used[y * size + x] = 1;
+                  pixels[y * size + x] = 1;
+                }
+              }
             }
         }
       }
-    sampledUtilization = used.reduce((sum, v) => sum + v, 0) / used.length;
+    sampledPixels = used.reduce((sum, v) => sum + v, 0);
+    uvPixels = uvUsed.reduce((sum, v) => sum + v, 0);
+    sampledUtilization = sampledPixels / used.length;
+    uvUtilization = uvPixels / uvUsed.length;
   }
   const texture = doc
     .createTexture("atlas")
@@ -722,27 +778,54 @@ export async function optimizeTextures(
         height: t.height,
         bytes: t.bytes,
       })),
-      atlas: {
-        width: size,
-        height: size,
-        bytes: png.length,
-        sampledUtilization,
-        contentUtilization:
-          regions.reduce((n, r) => n + r.width * r.height, 0) / (size * size),
-        allocatedUtilization:
-          regions.reduce(
-            (n, r) => n + (r.width + 2 * padding) * (r.height + 2 * padding),
-            0,
-          ) /
-          (size * size),
-      },
+      atlas: (() => {
+        const contentPixels = regions.reduce(
+          (n, r) => n + r.width * r.height,
+          0,
+        );
+        const allocatedPixels = regions.reduce(
+          (n, r) => n + (r.width + 2 * padding) * (r.height + 2 * padding),
+          0,
+        );
+        const totalPixels = size * size;
+        return {
+          width: size,
+          height: size,
+          bytes: png.length,
+          sampledUtilization,
+          uvUtilization,
+          contentUtilization: contentPixels / totalPixels,
+          allocatedUtilization: allocatedPixels / totalPixels,
+          sampledPixels,
+          uvPixels,
+          contentPixels,
+          allocatedPixels,
+          gutterPixels: allocatedPixels - contentPixels,
+          emptyPixels: totalPixels - allocatedPixels,
+          gutterUtilization: (allocatedPixels - contentPixels) / totalPixels,
+          emptyUtilization: (totalPixels - allocatedPixels) / totalPixels,
+          chartCoverage:
+            contentPixels > 0 && uvPixels !== undefined
+              ? uvPixels / contentPixels
+              : undefined,
+        };
+      })(),
       filter,
       padding,
       allocation: options.compactSize
         ? (options.allocation ?? "surface-area")
         : "source-area",
       materialWeights: options.materialWeights ?? {},
-      materials: [...materialPixels].map(([name, pixels]) => ({ name, pixels: pixels.reduce((sum, v) => sum + v, 0), regions: reportRegions.filter(r => r.materials.includes(name)).map(r => r.id) })),
+      materials: [...materialPixels].map(([name, pixels]) => ({
+        name,
+        pixels: pixels.reduce((sum, v) => sum + v, 0),
+        uvPixels: materialUvPixels
+          .get(name)!
+          .reduce((sum, v) => sum + v, 0),
+        regions: reportRegions
+          .filter((r) => r.materials.includes(name))
+          .map((r) => r.id),
+      })),
       regions: reportRegions,
       warnings: model.warnings,
     },
