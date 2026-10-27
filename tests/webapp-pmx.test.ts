@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { png } from './fixtures.ts';
 import { pmxFixture } from './pmx-fixture.ts';
+import { ASSIMP_IMPORT_POST_PROCESS } from '../src/assimp-import.ts';
 import { applyPmxMaterials, convertPmxModel, isPmdModel, isPmxModel } from '../webapp/engine/pmx.ts';
 
 describe('webapp PMX conversion', () => {
@@ -53,6 +54,11 @@ describe('webapp PMX conversion', () => {
     expect(hair.transparent).toBe(true);
     expect(hair.side).toBe(THREE.FrontSide);
     expect(applyPmxMaterials(scene, [{ name: '只有一个', alpha: 1, doubleSided: false }])).toBe(0);
+  });
+
+  it('shares the lean Assimp post-process with the desktop importer', () => {
+    expect(ASSIMP_IMPORT_POST_PROCESS).not.toContain('joinIdenticalVertices');
+    expect(ASSIMP_IMPORT_POST_PROCESS).toContain('triangulate');
   });
 
   it('warns about missing textures and rejects PMD', async () => {
