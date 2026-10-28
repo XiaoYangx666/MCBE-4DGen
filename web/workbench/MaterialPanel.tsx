@@ -150,10 +150,6 @@ export function MaterialPanel({
         : {}),
     };
   });
-  const weightSum = studioMaterials
-    .filter((material) => material.included)
-    .reduce((sum, material) => sum + material.quality, 0);
-
   function adjust(key: string, value: number) {
     setMaterialWeights((weights) => ({
       ...weights,
@@ -265,18 +261,6 @@ export function MaterialPanel({
           >
             重置全部权重
           </button>
-          <span className="material-caption">
-            {" "}
-            · 权重占比{" "}
-            {weightSum
-              ? (
-                  ((studioMaterials.find((material) => material.selected)?.quality ?? 1) /
-                    weightSum) *
-                  100
-                ).toFixed(1)
-              : "0.0"}
-            %（仅供参考，不是最终像素占比）
-          </span>
         </div>
       )}
       <button

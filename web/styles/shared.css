@@ -1038,3 +1038,8 @@
 .texture-quality-result small.limited { color: #c08552; }
 .texture-part-group { flex: none; }
 .texture-studio-part-groups { min-height: 120px; }
+.texture-studio-note {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}

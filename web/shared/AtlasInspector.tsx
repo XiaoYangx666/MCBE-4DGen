@@ -180,10 +180,6 @@ export function AtlasInspector({
               })}
             </svg>
           </div>
-          <p className="field-help">
-            点击色块或右侧材质查看实际区域。虚线框是多个材质共享的矩形；
-            红色高亮（开启「高亮未使用」）表示没有三角面采样的像素。
-          </p>
           {selectedMaterial && (
             <div className="atlas-inspector-detail">
               <b style={{ color: colorOf.get(selectedMaterial.id ?? selectedMaterial.name) }}>
