@@ -7,6 +7,7 @@ import { inspectModel } from "./inspect.ts";
 import { validateModel } from "./validate-model.ts";
 import { textureCharts } from "./texture-charts.ts";
 import { bakeBaseColorPixels } from "./texture-pixels.ts";
+import { optimizeTexturesWithBudget } from "./atlas-desktop.ts";
 import {
   normalizeWrapMode,
   tileEdge,
@@ -26,6 +27,16 @@ export interface TextureOptions {
   /** Compact atlas demand follows world-space surface area; source-area is a diagnostic comparison. */
   allocation?: "surface-area" | "source-area";
   materialWeights?: Record<string, number>;
+  /**
+   * Opt-in texel-budget allocation shared with the browser planner. Keeps every
+   * material independent and reports technical floors instead of silently
+   * clamping. Leave undefined for the legacy compact path.
+   */
+  atlasBudget?: "texel-density" | "texel-retention";
+  /** With `atlasBudget`, reuse rectangles only for identical source pixels. */
+  atlasSharing?: boolean;
+  /** With `atlasBudget`, charge retention demand for sampled UV area. */
+  atlasCoverageAware?: boolean;
 }
 interface Rect {
   x: number;
@@ -211,6 +222,21 @@ export async function optimizeTextures(
       ))
   )
     throw new Error("Material weights must be in [0, 20]");
+  if (
+    options.atlasBudget !== undefined &&
+    !["texel-density", "texel-retention"].includes(options.atlasBudget)
+  )
+    throw new Error("Invalid atlas budget");
+  if (options.atlasBudget)
+    return optimizeTexturesWithBudget(input, {
+      size: options.compactSize ?? options.atlasSize ?? 128,
+      padding: options.padding ?? 1,
+      target: options.atlasBudget,
+      filter,
+      ...(options.materialWeights ? { materialWeights: options.materialWeights } : {}),
+      ...(options.atlasSharing ? { sharing: true } : {}),
+      ...(options.atlasCoverageAware ? { coverageAware: true } : {}),
+    });
   validateModel(input);
   const inspection = await inspectModel(input);
   const model: IntermediateModel = {
