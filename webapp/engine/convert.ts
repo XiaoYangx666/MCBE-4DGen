@@ -26,6 +26,25 @@ export interface ConvertOptions {
   onProgress?: ProgressHandler;
 }
 
+export interface AtlasRegion {
+  /** Unique chart key. */
+  key: string;
+  /** Source material name. */
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  pad: number;
+  /** Content pixels excluding padding. */
+  contentPixels: number;
+  /** Source texture size, when the material has a texture. */
+  sourceWidth?: number;
+  sourceHeight?: number;
+  /** Continuous source UV bounds, when available. */
+  bounds?: [number, number, number, number];
+}
+
 export interface TextureReport {
   /** Pixels inside the atlas, including per-rectangle padding. */
   allocatedUtilization: number;
@@ -48,6 +67,8 @@ export interface TextureReport {
   size: number;
   /** Pixel count per material name; shared pixels count for every material. */
   materials: { name: string; pixels: number; uvPixels?: number }[];
+  /** Per-island atlas rectangles, for the texture inspector. */
+  regions?: AtlasRegion[];
 }
 
 export interface ConvertResult {
@@ -97,6 +118,7 @@ export async function convertBatches(
     area: batch.area,
   }));
   const batchByInput = new Map(inputs.map((input, index) => [input.key, batches[index]!]));
+  const inputByKey = new Map(inputs.map((input) => [input.key, input]));
 
   const report = reporter(options.onProgress);
   report('规划 128×128 图集…', `${inputs.length} 个材质`);
@@ -150,6 +172,26 @@ export async function convertBatches(
   );
   const gutterPixels = Math.max(0, allocatedPixels - contentPixels);
   const emptyPixels = Math.max(0, totalPixels - allocatedPixels);
+  const regions: AtlasRegion[] = layout.charts.map((chart) => {
+    const batch = batchByInput.get(chart.inputKey);
+    const input = inputByKey.get(chart.inputKey);
+    const contentWidth = Math.max(1, chart.rect.width - chart.rect.pad * 2);
+    const contentHeight = Math.max(1, chart.rect.height - chart.rect.pad * 2);
+    return {
+      key: chart.key,
+      name: batch?.name ?? '未知材质',
+      x: chart.rect.x,
+      y: chart.rect.y,
+      width: chart.rect.width,
+      height: chart.rect.height,
+      pad: chart.rect.pad,
+      contentPixels: contentWidth * contentHeight,
+      ...(input?.texture
+        ? { sourceWidth: input.texture.width, sourceHeight: input.texture.height }
+        : {}),
+      ...(chart.bounds ? { bounds: chart.bounds } : {}),
+    };
+  });
   const textureReport: TextureReport = {
     allocatedUtilization: allocatedPixels / totalPixels,
     sampledUtilization: usage.sampledUtilization,
@@ -167,6 +209,7 @@ export async function convertBatches(
       contentPixels > 0 ? usage.uvPixels / contentPixels : undefined,
     size: layout.size,
     materials: usage.materials,
+    regions,
   };
 
   report('编码 128×128 PNG…');

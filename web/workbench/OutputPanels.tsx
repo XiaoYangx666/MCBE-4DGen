@@ -1,6 +1,9 @@
+import { useState } from "react";
 import type { TextureMaterialUsage } from "../../src/api-types";
 import type { Result, Session } from "./types";
 import { ConversionSummary } from "../shared/ConversionSummary";
+import { Dialog } from "../shared/Dialog";
+import { AtlasInspector } from "../shared/AtlasInspector";
 
 export function OutputPanels({
   result,
@@ -15,6 +18,7 @@ export function OutputPanels({
   selected: string | null;
   onSelect: (name: string) => void;
 }) {
+  const [atlasOpen, setAtlasOpen] = useState(false);
   const texture = result?.details?.texture;
   const total =
     (texture?.atlas?.width ?? 128) * (texture?.atlas?.height ?? 128);
@@ -33,6 +37,26 @@ export function OutputPanels({
     .sort(
       (a, b) => (b.measurement?.pixels ?? 0) - (a.measurement?.pixels ?? 0),
     );
+  const atlasRegions = (texture?.regions ?? []).map((region) => ({
+    id: String(region.id),
+    material: region.material,
+    materials: region.materials,
+    x: region.x,
+    y: region.y,
+    width: region.width,
+    height: region.height,
+    contentPixels: region.width * region.height,
+    source: `${region.resized.width}×${region.resized.height}`,
+  }));
+  const atlasMaterials = (texture?.materials ?? []).map((measurement) => ({
+    name: measurement.name,
+    allocated: atlasRegions
+      .filter((region) => region.materials.includes(measurement.name))
+      .reduce((sum, region) => sum + region.contentPixels, 0),
+    used: measurement.pixels,
+    uv: measurement.uvPixels ?? null,
+    weight: texture?.materialWeights?.[measurement.name],
+  }));
   return (
     <div className="bottom-panels">
       <section className="atlas-panel">
@@ -56,6 +80,13 @@ export function OutputPanels({
               <a href={`/api/job/${result.id}/texture`} download="skin0.png">
                 下载贴图 ↗
               </a>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setAtlasOpen(true)}
+              >
+                分区查看
+              </button>
             </div>
           </div>
         ) : (
@@ -149,6 +180,23 @@ export function OutputPanels({
           </>
         )}
       </section>
+
+      {atlasOpen && result && atlasRegions.length > 0 ? (
+        <Dialog
+          title="贴图分区"
+          label="贴图分区"
+          className="atlas-inspector-dialog"
+          closeLabel="关闭贴图分区"
+          onClose={() => setAtlasOpen(false)}
+        >
+          <AtlasInspector
+            src={`/api/job/${result.id}/texture`}
+            size={texture?.atlas?.width ?? 128}
+            regions={atlasRegions}
+            materials={atlasMaterials}
+          />
+        </Dialog>
+      ) : null}
     </div>
   );
 }
