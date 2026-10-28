@@ -34,6 +34,7 @@ import {
   type ModelFormat,
 } from '../../src/model-candidates.ts';
 import { Dialog } from '../../web/shared/Dialog';
+import { AtlasInspector } from '../../web/shared/AtlasInspector';
 import { ModelCandidateList } from '../../web/shared/ModelCandidateList';
 import { buildGeometryPreview } from '../lib/output-preview';
 import { useSkinPack } from '../lib/pack-context';
@@ -96,6 +97,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const compact = useCompactViewport();
   const [previewRoot, setPreviewRoot] = useState<THREE.Group | null>(null);
   const [weights, setWeights] = useState<Record<string, number>>({});
+  const [atlasOpen, setAtlasOpen] = useState(false);
   const [soloKey, setSoloKey] = useState<string | null>(null);
   const sourcePose = useRef('0|0');
   const armRig = useRef<ArmRig | null>(null);
@@ -426,6 +428,22 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     () => source ? buildMaterialLabels(source.batches) : new Map<string, string>(),
     [source],
   );
+  const atlasRegions = result?.textureReport.regions ?? [];
+  const atlasMaterials = useMemo(() => {
+    if (!result) return [];
+    const weightsByName = new Map(
+      (source?.batches ?? []).map((batch) => [batch.name, weights[batch.key] ?? 1]),
+    );
+    return (result.textureReport.materials ?? []).map((material) => ({
+      name: material.name,
+      allocated: atlasRegions
+        .filter((region) => region.name === material.name)
+        .reduce((sum, region) => sum + region.contentPixels, 0),
+      used: material.pixels,
+      uv: material.uvPixels ?? null,
+      weight: weightsByName.get(material.name),
+    }));
+  }, [result, source, weights, atlasRegions]);
 
   return (
     <div className={`studio-layout model-layout ${compact ? 'compact' : ''} ${stageFullscreen ? 'stage-hidden' : ''}`}>
@@ -615,6 +633,9 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                     {packBusy ? '正在加入…' : '加入皮肤包'}
                   </button>
                   <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
+                  <button type="button" className="button-link" onClick={() => setAtlasOpen(true)}>
+                    <Icon name="image" size={14} /> 贴图分区
+                  </button>
                 </div>
                 {packMessage && (
                   <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
@@ -916,11 +937,42 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                 <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
               )}
             </div>
+            <button type="button" className="button-link" onClick={() => setAtlasOpen(true)}>
+              <Icon name="image" size={14} /> 查看贴图分区
+            </button>
             {packError && <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>}
             <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
           </div>
         )}
       </section>
+
+      {atlasOpen && result?.textureReport.regions?.length ? (
+        <Dialog
+          title="贴图分区"
+          label="贴图分区"
+          className="atlas-inspector-dialog"
+          closeLabel="关闭贴图分区"
+          onClose={() => setAtlasOpen(false)}
+        >
+          <AtlasInspector
+            src={result.textureUrl}
+            size={result.textureReport.size}
+            regions={result.textureReport.regions.map((region) => ({
+              id: region.key,
+              material: region.name,
+              x: region.x,
+              y: region.y,
+              width: region.width,
+              height: region.height,
+              contentPixels: region.contentPixels,
+              ...(region.sourceWidth
+                ? { source: `${region.sourceWidth}×${region.sourceHeight}` }
+                : {}),
+            }))}
+            materials={atlasMaterials}
+          />
+        </Dialog>
+      ) : null}
 
       {pending && (
         <Dialog
