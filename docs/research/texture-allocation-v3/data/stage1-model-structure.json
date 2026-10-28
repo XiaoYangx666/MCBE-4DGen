@@ -1,0 +1,72 @@
+﻿{
+  "path": "shino-source.glb",
+  "nodes": 17,
+  "meshInstances": 17,
+  "meshes": 17,
+  "primitives": 17,
+  "triangles": 55966,
+  "materials": 17,
+  "duplicateMaterialNames": [],
+  "materialsSharedAcrossMeshInstances": [],
+  "instancedMeshInstances": 0
+}
+{
+  "path": "mingyin-source.glb",
+  "nodes": 14,
+  "meshInstances": 14,
+  "meshes": 14,
+  "primitives": 14,
+  "triangles": 87552,
+  "materials": 14,
+  "duplicateMaterialNames": [],
+  "materialsSharedAcrossMeshInstances": [],
+  "instancedMeshInstances": 0
+}
+{
+  "path": "girl-source.glb",
+  "nodes": 26,
+  "meshInstances": 26,
+  "meshes": 26,
+  "primitives": 26,
+  "triangles": 80794,
+  "materials": 26,
+  "duplicateMaterialNames": [],
+  "materialsSharedAcrossMeshInstances": [],
+  "instancedMeshInstances": 0
+}
+{
+  "path": "nana-source.glb",
+  "nodes": 15,
+  "meshInstances": 15,
+  "meshes": 15,
+  "primitives": 15,
+  "triangles": 61443,
+  "materials": 15,
+  "duplicateMaterialNames": [],
+  "materialsSharedAcrossMeshInstances": [],
+  "instancedMeshInstances": 0
+}
+{
+  "path": "lumine-source.glb",
+  "nodes": 20,
+  "meshInstances": 20,
+  "meshes": 20,
+  "primitives": 20,
+  "triangles": 22868,
+  "materials": 20,
+  "duplicateMaterialNames": [],
+  "materialsSharedAcrossMeshInstances": [],
+  "instancedMeshInstances": 0
+}
+{
+  "path": "furina-source.glb",
+  "nodes": 27,
+  "meshInstances": 27,
+  "meshes": 27,
+  "primitives": 27,
+  "triangles": 31186,
+  "materials": 27,
+  "duplicateMaterialNames": [],
+  "materialsSharedAcrossMeshInstances": [],
+  "instancedMeshInstances": 0
+}

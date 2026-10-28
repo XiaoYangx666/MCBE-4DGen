@@ -85,6 +85,63 @@ test('desktop budget path responds to per-material weights', async () => {
   assert.ok(area(boosted, 'green') / area(boosted, 'blue') > 2);
 });
 
+test('desktop budget path handles vertices shared by several triangles', async () => {
+  // A quad has two triangles sharing two vertices. Remapping per corner used to
+  // read the already-rewritten UV on the second visit and push vertices outside
+  // the atlas (regression guard).
+  const doc = await documentFixture();
+  const mesh = doc.getRoot().listMeshes()[0]!;
+  const primitive = mesh.listPrimitives()[0]!;
+  const buffer = doc.getRoot().listBuffers()[0]!;
+  primitive.setAttribute(
+    'POSITION',
+    doc
+      .createAccessor()
+      .setType('VEC3')
+      .setArray(new Float32Array([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]))
+      .setBuffer(buffer),
+  );
+  primitive.setAttribute(
+    'TEXCOORD_0',
+    doc
+      .createAccessor()
+      .setType('VEC2')
+      .setArray(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]))
+      .setBuffer(buffer),
+  );
+  primitive.setAttribute(
+    'NORMAL',
+    doc
+      .createAccessor()
+      .setType('VEC3')
+      .setArray(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]))
+      .setBuffer(buffer),
+  );
+  primitive.setIndices(
+    doc
+      .createAccessor()
+      .setType('SCALAR')
+      .setArray(new Uint16Array([0, 1, 2, 0, 2, 3]))
+      .setBuffer(buffer),
+  );
+  const result = await optimizeTextures(model(doc), {
+    compactSize: 128,
+    padding: 1,
+    atlasBudget: 'texel-retention',
+  });
+  const uv = result.model.document
+    .getRoot()
+    .listMeshes()[0]!
+    .listPrimitives()[0]!
+    .getAttribute('TEXCOORD_0')!;
+  const value: number[] = [];
+  for (let i = 0; i < uv.getCount(); i++) {
+    uv.getElement(i, value);
+    assert.ok((value[0] ?? 0) >= -1e-6 && (value[0] ?? 0) <= 1 + 1e-6);
+    assert.ok((value[1] ?? 0) >= -1e-6 && (value[1] ?? 0) <= 1 + 1e-6);
+  }
+});
+
 test('legacy compact output is unchanged when atlasBudget is absent', async () => {
   const result = await optimizeTextures(await twoMaterials(), {
     compactSize: 128,
