@@ -54,7 +54,8 @@
     "desktop": "node scripts/desktop/desktop.ts",
     "desktop:package": "node scripts/desktop/package-desktop.ts",
     "desktop:installer": "node scripts/desktop/package-installer.ts",
-    "test:desktop": "node scripts/checks/check-desktop.ts"
+    "test:desktop": "node scripts/checks/check-desktop.ts",
+    "test:texture-studio": "node scripts/checks/texture-studio-e2e.ts"
   },
   "engines": {
     "node": ">=24"

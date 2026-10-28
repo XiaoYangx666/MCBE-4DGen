@@ -130,7 +130,7 @@ export function MaterialList({
             type="button"
             className="shared-material-name"
             disabled={disabled || !onSelect}
-            title={onSelect ? '点击选择此材质' : undefined}
+            title={onSelect ? `${item.name} · 点击选择` : item.name}
             onClick={() => onSelect?.(item.id)}
           >
             {item.name}

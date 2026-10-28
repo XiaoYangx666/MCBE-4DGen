@@ -1036,3 +1036,5 @@
 .texture-quality-result em.down { color: #b35757; }
 .texture-quality-result small { flex-basis: 100%; }
 .texture-quality-result small.limited { color: #c08552; }
+.texture-part-group { flex: none; }
+.texture-studio-part-groups { min-height: 120px; }

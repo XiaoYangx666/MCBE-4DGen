@@ -302,8 +302,8 @@ export async function convertExtractedModel(
   const excludedBatches = extracted.batches.filter(
     (batch) => !options.included.has(batch.key) || !keptMaterialKeys.has(batch.key),
   );
-  const excludedMaterials = [...new Set(excludedBatches.map((batch) => batch.name))];
-  const excludedMaterialKeys = [...new Set(excludedBatches.map((batch) => batch.key))];
+  const excludedMaterials = excludedBatches.map((batch) => batch.name);
+  const excludedMaterialKeys = excludedBatches.map((batch) => batch.key);
   return {
     result: converted,
     warnings: [...reductionWarnings, ...converted.report.warnings],
