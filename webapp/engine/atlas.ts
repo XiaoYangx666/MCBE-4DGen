@@ -567,6 +567,8 @@ export interface AtlasUsage {
   uvUtilization: number;
   sampledPixels: number;
   uvPixels: number;
+  /** 1 when a triangle covers the atlas pixel, including transparent texels. */
+  uvMask: Uint8Array;
   /** Pixel count per material name; shared pixels count for every material. */
   materials: AtlasMaterialUsage[];
 }
@@ -587,7 +589,7 @@ export async function measureAtlasUsage(
   options: AtlasUsageOptions = {},
 ): Promise<AtlasUsage> {
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return { sampledUtilization: 0, uvUtilization: 0, sampledPixels: 0, uvPixels: 0, materials: [] };
+  if (!context) return { sampledUtilization: 0, uvUtilization: 0, sampledPixels: 0, uvPixels: 0, uvMask: new Uint8Array(size * size), materials: [] };
   const alpha = context.getImageData(0, 0, size, size).data;
   const used = new Uint8Array(size * size);
   const uvUsed = new Uint8Array(size * size);
@@ -670,6 +672,7 @@ export async function measureAtlasUsage(
     uvUtilization: uvCovered / (size * size),
     sampledPixels: covered,
     uvPixels: uvCovered,
+    uvMask: uvUsed,
     materials: [...masks].map(([name, mask]) => ({
       name,
       pixels: mask.reduce((sum, value) => sum + value, 0),

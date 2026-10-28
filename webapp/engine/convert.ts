@@ -43,6 +43,8 @@ export interface AtlasRegion {
   sourceHeight?: number;
   /** Continuous source UV bounds, when available. */
   bounds?: [number, number, number, number];
+  /** True for untextured materials that only need a solid color sample. */
+  flat: boolean;
 }
 
 export interface TextureReport {
@@ -79,6 +81,8 @@ export interface ConvertResult {
   textureReport: TextureReport;
   textureCoverage: number;
   textureUrl: string;
+  /** Atlas with unused rectangle pixels tinted, for the inspector. */
+  coverageUrl?: string;
   triangles: number;
   binding: BindingMode;
   parts?: Partial<Record<HumanoidPart, number>>;
@@ -190,6 +194,7 @@ export async function convertBatches(
         ? { sourceWidth: input.texture.width, sourceHeight: input.texture.height }
         : {}),
       ...(chart.bounds ? { bounds: chart.bounds } : {}),
+      flat: !chart.bounds,
     };
   });
   const textureReport: TextureReport = {
@@ -215,6 +220,25 @@ export async function convertBatches(
   report('编码 128×128 PNG…');
   await nextFrame();
   const png = await canvasPng(atlas.canvas);
+  const coverageUrl = (() => {
+    const overlay = document.createElement('canvas');
+    overlay.width = layout.size;
+    overlay.height = layout.size;
+    const context = overlay.getContext('2d');
+    if (!context) return undefined;
+    context.drawImage(atlas.canvas, 0, 0);
+    const image = context.getImageData(0, 0, layout.size, layout.size);
+    for (let index = 0; index < usage.uvMask.length; index++) {
+      if (usage.uvMask[index]) continue;
+      const offset = index * 4;
+      image.data[offset] = 255;
+      image.data[offset + 1] = 90;
+      image.data[offset + 2] = 90;
+      image.data[offset + 3] = 150;
+    }
+    context.putImageData(image, 0, 0);
+    return overlay.toDataURL('image/png');
+  })();
   report('导出 4D 骨骼几何…', `${batches.reduce((sum, batch) => sum + batch.triangles, 0).toLocaleString('zh-CN')} 面`);
   await nextFrame();
   const binding: BindingMode = options.rig ? 'humanoid' : 'static';
@@ -242,6 +266,7 @@ export async function convertBatches(
     textureReport,
     textureCoverage: atlas.coverage,
     textureUrl: atlas.canvas.toDataURL('image/png'),
+    ...(coverageUrl ? { coverageUrl } : {}),
     triangles: geometryReport.triangles,
     binding,
     ...(geometryReport.parts ? { parts: geometryReport.parts } : {}),
