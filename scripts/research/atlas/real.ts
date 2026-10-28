@@ -61,6 +61,7 @@ interface Accumulator {
   uvs: number[];
   areas: number[];
   positions: number[];
+  vertexIds: number[];
   image: RgbaImage | null;
   color: [number, number, number];
   opacity: number;
@@ -142,6 +143,7 @@ export async function loadRealModel(path: string): Promise<RealModel> {
   const textures = new Set<string>();
 
   const materialList = root.listMaterials();
+  let nextVertexBase = 0;
   const createAccumulator = async (material: Material | null): Promise<Accumulator> => {
     const texture = material?.getBaseColorTexture();
     const image = texture?.getImage();
@@ -163,6 +165,7 @@ export async function loadRealModel(path: string): Promise<RealModel> {
       uvs: [],
       areas: [],
       positions: [],
+      vertexIds: [],
       image: decoded,
       color: [
         linearToSrgb(factor[0]!),
@@ -191,6 +194,8 @@ export async function loadRealModel(path: string): Promise<RealModel> {
       const uv = primitive.getAttribute(`TEXCOORD_${coordinate}`) ?? primitive.getAttribute('TEXCOORD_0');
       const position = primitive.getAttribute('POSITION');
       if (!position) continue;
+      const vertexBase = nextVertexBase;
+      nextVertexBase += position.getCount();
       const indices =
         primitive.getIndices()?.getArray() ??
         Uint32Array.from({ length: position.getCount() }, (_, index) => index);
@@ -210,6 +215,7 @@ export async function loadRealModel(path: string): Promise<RealModel> {
           const u = offset[0]! + Math.cos(angle) * x - Math.sin(angle) * y;
           const v = offset[1]! + Math.sin(angle) * x + Math.cos(angle) * y;
           accumulator.uvs.push(Number.isFinite(u) ? u : 0.5, Number.isFinite(v) ? v : 0.5);
+          accumulator.vertexIds.push(vertexBase + vertex);
         }
         accumulator.areas.push(areas[t] ?? 0);
         for (let i = 0; i < 9; i++)
@@ -247,6 +253,7 @@ export async function loadRealModel(path: string): Promise<RealModel> {
       bounds,
       uvs: textured ? Float32Array.from(accumulator.uvs) : null,
       positions: Float32Array.from(accumulator.positions),
+      vertexIds: textured ? Int32Array.from(accumulator.vertexIds) : null,
       triangleAreas: textured ? Float32Array.from(accumulator.areas) : null,
       area: accumulator.areas.reduce((sum, value) => sum + value, 0),
     });

@@ -31,6 +31,8 @@ export interface ChartInput extends Omit<CoreChartInput, 'texture'> {
   texture: RgbaImage | null;
   /** World-space xyz per triangle corner (9 floats), used by view rendering. */
   positions?: Float32Array | null;
+  /** Unique vertex id per triangle corner (3 per triangle), when available. */
+  vertexIds?: Int32Array | null;
 }
 
 export const wrapCode = (mode: WrapMode): number =>
