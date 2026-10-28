@@ -302,6 +302,7 @@ export class Studio {
     const parts: PartSummary[] = assignParts(model.document).map((part) => ({
       id: part.id,
       name: part.name,
+      nodeIndex: part.nodeIndex,
       node: part.node,
       mesh: part.mesh,
       primitive: part.primitive,

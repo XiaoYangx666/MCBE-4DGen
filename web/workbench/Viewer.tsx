@@ -7,6 +7,8 @@ import { buildPolyMeshPreview } from "../shared/poly-mesh-preview";
 import { createPosePreview } from "./pose-preview";
 import type { HumanoidProfile } from "../../src/humanoid";
 import type { Result, Session } from "./types";
+import type { PartSummary } from "../../src/api-types";
+import { applyPartMeshState, collectPartMeshes } from "./part-visibility";
 import { api } from "../lib/api";
 import { preparePreviewMaterial } from "./preview-material";
 import {
@@ -32,6 +34,10 @@ export function Viewer({
   binding,
   onSelect,
   previewUrl,
+  parts,
+  includedParts,
+  selectedPart,
+  showKeptParts,
 }: {
   previewUrl?: string;
   session: Session | null;
@@ -46,18 +52,22 @@ export function Viewer({
   height: number;
   binding: string;
   onSelect: (name: string) => void;
+  parts?: readonly PartSummary[];
+  includedParts: ReadonlySet<string>;
+  selectedPart: string | null;
+  showKeptParts: boolean;
 }) {
   const viewKind = mode === "result" && result ? "result" : "source";
   const [compareOriginal, setCompareOriginal] = useState(false);
   const host = useRef<HTMLDivElement>(null);
   const poseSettings = useRef({ profile, height, binding });
   poseSettings.current = { profile, height, binding };
-  const settings = useRef({ excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect });
-  settings.current = { excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect };
+  const settings = useRef({ excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect, parts, includedParts, selectedPart, showKeptParts });
+  settings.current = { excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect, parts, includedParts, selectedPart, showKeptParts };
   const frameRef = useRef<((part?: string) => void) | null>(null);
   const frontRef = useRef<(() => void) | null>(null);
   const invalidate = useRef<(() => void) | null>(null);
-  useEffect(()=>{invalidate.current?.();},[excluded,wire,unlit,focus,solo,mode,compareOriginal,profile,height,binding]);
+  useEffect(()=>{invalidate.current?.();},[excluded,wire,unlit,focus,solo,mode,compareOriginal,profile,height,binding,parts,includedParts,selectedPart,showKeptParts]);
   const cameraState = useRef<CameraState | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -76,6 +86,7 @@ export function Viewer({
     let poseSignature = "";
     let modelDirty = true;
     let beforeRender = () => {};
+    let partStates: ReturnType<typeof collectPartMeshes> = [];
 
     let view: PreviewViewport;
     try {
@@ -178,6 +189,7 @@ export function Viewer({
           if (textureFailed) setTextureWarning('部分纹理未能加载，请检查模型的贴图文件。');
           group.add(gltf.scene);
           poseController = createPosePreview(group);
+          partStates = collectPartMeshes(group, settings.current.parts ?? []);
         } else {
           const [file, texture] = await Promise.all([
             api("/api/job/" + result.id + "/geometry"),
@@ -264,13 +276,27 @@ export function Viewer({
       modelDirty = false;
       applyPose();
       const current = settings.current;
+      const partStateByMesh = new Map(partStates.map((state) => [state.mesh, state]));
+      const selectedPartMapped = current.selectedPart &&
+        partStates.some((state) =>
+          [...state.partByGroup.values()].some((part) => part.id === current.selectedPart),
+        )
+        ? current.selectedPart
+        : null;
+      const keepPart = (id: string) =>
+        selectedPartMapped
+          ? id === selectedPartMapped
+          : !current.showKeptParts || current.includedParts.has(id);
       group.traverse((object) => {
         if (!(object instanceof THREE.Mesh)) return;
-        object.visible = current.mode !== "result"
+        const state = partStateByMesh.get(object);
+        const partShown = state ? applyPartMeshState(state, keepPart) : true;
+        const materialShown = current.mode !== "result"
           ? current.solo !== null
             ? object.userData.materialNames?.includes(current.solo)
             : !object.userData.materialNames?.some((name: string) => current.excluded.includes(name))
           : current.focus === "all" || object.name === current.focus;
+        object.visible = !!materialShown && partShown;
         const materials = current.unlit ? object.userData.flat : object.userData.original;
         if (materials) {
           object.material = materials.length === 1 ? materials[0] : materials;

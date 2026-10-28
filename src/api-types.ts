@@ -19,6 +19,8 @@ export interface MaterialSummary {
 export interface PartSummary {
   id: string;
   name: string;
+  /** Index among mesh-instance nodes in the default scene. */
+  nodeIndex: number;
   node: string;
   mesh: string;
   /** Primitive index, or -1 for a whole instanced node. */
