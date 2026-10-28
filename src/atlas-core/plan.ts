@@ -31,6 +31,8 @@ export interface AtlasBudgetOptions {
   sharing?: 'none' | 'safe';
   merge?: MergePolicy;
   minEdge?: number;
+  /** Recursively split charts whose triangles cover little of their bbox. */
+  splitSparse?: SparseSplitOptions;
 }
 
 interface Analysis {
@@ -86,6 +88,83 @@ function islandsFor(input: ChartInput, merge: MergePolicy) {
   return charts;
 }
 
+export interface SparseSplitOptions {
+  /** Split a chart while its triangles cover less than this share of its bbox. */
+  minCoverage: number;
+  /** Maximum number of pieces (rounded down to a power of two by depth). */
+  maxPieces: number;
+  /** Never split charts with fewer triangles than this. */
+  minTriangles: number;
+}
+
+const uvPoint = (uvs: Float32Array, triangle: number, corner: number): [number, number] => [
+  uvs[triangle * 6 + corner * 2] ?? 0,
+  uvs[triangle * 6 + corner * 2 + 1] ?? 0,
+];
+
+function boundsOf(uvs: Float32Array, triangles: readonly number[]) {
+  let minU = Infinity;
+  let minV = Infinity;
+  let maxU = -Infinity;
+  let maxV = -Infinity;
+  for (const triangle of triangles)
+    for (let corner = 0; corner < 3; corner++) {
+      const [u, v] = uvPoint(uvs, triangle, corner);
+      if (u < minU) minU = u;
+      if (v < minV) minV = v;
+      if (u > maxU) maxU = u;
+      if (v > maxV) maxV = v;
+    }
+  return { minU, minV, maxU, maxV };
+}
+
+/**
+ * Recursively cut a sparse chart at the median of its triangle centroids along
+ * the longer UV axis. This is shape-adaptive: a diagonal ribbon is cut into
+ * shorter segments, so each piece's bounding box wastes far less area than a
+ * uniform grid would.
+ */
+export function splitSparseTriangles(
+  uvs: Float32Array,
+  triangles: readonly number[],
+  options: SparseSplitOptions,
+): number[][] {
+  const maxDepth = Math.max(0, Math.ceil(Math.log2(Math.max(1, options.maxPieces))));
+  const leaves: number[][] = [];
+  const recurse = (tris: readonly number[], depth: number) => {
+    if (leaves.length + 1 >= options.maxPieces || depth >= maxDepth) {
+      leaves.push([...tris]);
+      return;
+    }
+    const bounds = boundsOf(uvs, tris);
+    const width = Math.max(0, bounds.maxU - bounds.minU);
+    const height = Math.max(0, bounds.maxV - bounds.minV);
+    let area = 0;
+    for (const triangle of tris) area += uvTriangleArea(uvs, triangle);
+    const coverage = width * height > 0 ? area / (width * height) : 0;
+    if (coverage >= options.minCoverage || tris.length < options.minTriangles) {
+      leaves.push([...tris]);
+      return;
+    }
+    const axis = width >= height ? 0 : 1;
+    const centroid = (triangle: number) => {
+      let sum = 0;
+      for (let corner = 0; corner < 3; corner++) sum += uvPoint(uvs, triangle, corner)[axis];
+      return sum / 3;
+    };
+    const sorted = [...tris].sort((a, b) => centroid(a) - centroid(b) || a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if (mid <= 0 || mid >= sorted.length) {
+      leaves.push([...tris]);
+      return;
+    }
+    recurse(sorted.slice(0, mid), depth + 1);
+    recurse(sorted.slice(mid), depth + 1);
+  };
+  recurse(triangles, 0);
+  return leaves.filter((leaf) => leaf.length > 0);
+}
+
 function analyse(input: ChartInput, options: AtlasBudgetOptions): Analysis[] {
   const merge = options.merge ?? 'production';
   const minEdge = options.minEdge ?? 3;
@@ -119,54 +198,64 @@ function analyse(input: ChartInput, options: AtlasBudgetOptions): Analysis[] {
   }
   const charts = islandsFor(input, merge) ?? [];
   if (!charts.length) return [];
-  return charts.map((chart, index) => {
-    const unwrapped = unwrapChartBounds(chart.minU, chart.minV, chart.maxU, chart.maxV);
-    const bounds: [number, number, number, number] = [
-      chart.minU,
-      chart.minV,
-      chart.maxU,
-      chart.maxV,
-    ];
-    let worldArea = 0;
-    for (const triangle of chart.triangles)
-      worldArea += input.triangleAreas?.[triangle] ?? 0;
-    let uvArea = 0;
-    for (const triangle of chart.triangles) uvArea += uvTriangleArea(input.uvs!, triangle);
-    const spanU = Math.max(0, bounds[2] - bounds[0]);
-    const spanV = Math.max(0, bounds[3] - bounds[1]);
-    const sourceTexels = uvArea * texture.width * texture.height;
-    const bboxSourceTexels = spanU * spanV * texture.width * texture.height;
-    const chartUvs = new Float32Array(chart.triangles.length * 6);
-    let cursor = 0;
-    for (const triangle of chart.triangles)
-      for (let corner = 0; corner < 3; corner++) {
-        chartUvs[cursor++] = input.uvs![triangle * 6 + corner * 2]!;
-        chartUvs[cursor++] = input.uvs![triangle * 6 + corner * 2 + 1]!;
-      }
-    return {
-      chartId: `${input.id}#${index}`,
-      inputId: input.id,
-      material: input.material,
-      materialKey: input.materialKey,
-      textureKey: texture.key,
-      bounds,
-      tiles: unwrapped.tiles,
-      triangles: chart.triangles,
-      worldArea,
-      uvArea,
-      sourceTexels,
-      bboxSourceTexels,
-      aspect: clampAspect(
-        spanU * texture.width / Math.max(1e-9, spanV * texture.height),
-      ),
-      coverage: spanU * spanV > 0 ? Math.min(1, uvArea / (spanU * spanV)) : 0,
-      weight,
-      minEdge,
-      flat: false,
-      uvs: chartUvs,
-      boundsKey: bounds.map((value) => value.toString()).join(','),
-    };
+  const results: Analysis[] = [];
+  charts.forEach((chart, chartIndex) => {
+    const pieces = options.splitSparse
+      ? splitSparseTriangles(input.uvs!, chart.triangles, options.splitSparse)
+      : [[...chart.triangles]];
+    pieces.forEach((triangles, pieceIndex) => {
+      const bounds = boundsOf(input.uvs!, triangles);
+      const unwrapped = unwrapChartBounds(bounds.minU, bounds.minV, bounds.maxU, bounds.maxV);
+      const boundsTuple: [number, number, number, number] = [
+        bounds.minU,
+        bounds.minV,
+        bounds.maxU,
+        bounds.maxV,
+      ];
+      let worldArea = 0;
+      for (const triangle of triangles) worldArea += input.triangleAreas?.[triangle] ?? 0;
+      let uvArea = 0;
+      for (const triangle of triangles) uvArea += uvTriangleArea(input.uvs!, triangle);
+      const spanU = Math.max(0, boundsTuple[2] - boundsTuple[0]);
+      const spanV = Math.max(0, boundsTuple[3] - boundsTuple[1]);
+      const sourceTexels = uvArea * texture.width * texture.height;
+      const bboxSourceTexels = spanU * spanV * texture.width * texture.height;
+      const chartUvs = new Float32Array(triangles.length * 6);
+      let cursor = 0;
+      for (const triangle of triangles)
+        for (let corner = 0; corner < 3; corner++) {
+          chartUvs[cursor++] = input.uvs![triangle * 6 + corner * 2]!;
+          chartUvs[cursor++] = input.uvs![triangle * 6 + corner * 2 + 1]!;
+        }
+      results.push({
+        chartId:
+          pieces.length > 1
+            ? `${input.id}#${chartIndex}.${pieceIndex}`
+            : `${input.id}#${chartIndex}`,
+        inputId: input.id,
+        material: input.material,
+        materialKey: input.materialKey,
+        textureKey: texture.key,
+        bounds: boundsTuple,
+        tiles: [unwrapped.tiles[0], unwrapped.tiles[1]],
+        triangles: [...triangles],
+        worldArea,
+        uvArea,
+        sourceTexels,
+        bboxSourceTexels,
+        aspect: clampAspect(
+          spanU * texture.width / Math.max(1e-9, spanV * texture.height),
+        ),
+        coverage: spanU * spanV > 0 ? Math.min(1, uvArea / (spanU * spanV)) : 0,
+        weight,
+        minEdge,
+        flat: false,
+        uvs: chartUvs,
+        boundsKey: boundsTuple.map((value) => value.toString()).join(','),
+      });
+    });
   });
+  return results;
 }
 
 interface Slot {
