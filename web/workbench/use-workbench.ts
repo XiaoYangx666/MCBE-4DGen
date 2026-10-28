@@ -4,6 +4,10 @@ import { api, post } from "../lib/api";
 import { estimateTriangles } from "./estimate";
 import type { Result, Session } from "./types";
 import type { TextureMode, TextureTarget } from "../shared/TextureStudio";
+import {
+  fromServerTextureTarget,
+  toServerTextureTarget,
+} from "../shared/texture-target";
 
 export type Workbench = ReturnType<typeof useWorkbench>;
 
@@ -83,7 +87,7 @@ export function useWorkbench() {
       new Set(savedParts.length ? savedParts : availableParts),
     );
     setTextureMode(saved?.textureMode ?? "legacy");
-    setTextureTarget(saved?.textureTarget ?? "retention");
+    setTextureTarget(fromServerTextureTarget(saved?.textureTarget));
     setSelectedPart(null);
     setShowKeptParts(true);
     setMaterialDeltas(new Map());
@@ -129,7 +133,7 @@ export function useWorkbench() {
         includedParts: [...includedParts],
         materialWeights,
         textureMode,
-        textureTarget,
+        textureTarget: toServerTextureTarget(textureTarget),
         atlasSharing: textureMode === "budget",
         binding,
         ratio,
@@ -192,7 +196,7 @@ export function useWorkbench() {
     profile,
     includedParts: [...includedParts],
     textureMode,
-    textureTarget,
+    textureTarget: toServerTextureTarget(textureTarget),
     atlasSharing: textureMode === "budget",
   };
   const dirty = !!session && revision !== savedRevision;
