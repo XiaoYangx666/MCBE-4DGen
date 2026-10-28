@@ -184,7 +184,7 @@ kati：`optimizeModel`（高度 32、减面 20%、预算细节保留）→ `bind
 | 预算规划（三模型） | 0.6–1.1 s |
 | 安全共享（未命中） | 0.5–1.0 s |
 | kati 完整导出 | 约 5.2–6.6 s |
-| 全量测试 | 372 tests / 74 files（见最终提交） |
+| 全量测试 | 374 tests / 75 files（见最终提交） |
 
 网页端在一个转换未完成时再次点击“重新转换”会以 run token 忽略旧结果；
 拖动清晰度滑块只标记结果过期，不会自动触发转换。
@@ -231,3 +231,29 @@ npm run test:texture-studio
 node scripts/checks/capture-studio-cdp.mjs
 node scripts/checks/capture-desktop-cdp.mjs
 ```
+
+## 11. 阶段五：架构与产品体验收敛
+
+本轮没有为了“减少代码量”合并不同职责，而是确认了以下边界：
+
+- **数据语义**：`src/selection.ts` 是材质/部件长期身份与旧配置迁移的唯一入口；
+  `materialKeyMap`（桌面）与 `stableMaterialKeyMap`（网页）只负责把当前文档/
+  场景映射为同一 key 形状。UI 不保存名称或运行时 UUID。
+- **职责划分**：`atlas-core` 只做规划/装箱/重映射/统计；`atlas-desktop.ts` 与
+  `webapp/engine/atlas.ts` 只做平台适配（像素、画布、glTF）；UI 只读报告。
+  预算模式统计不再由适配器各自计算。
+- **共享 UI**：`web/shared/TextureStudio.tsx`、`MaterialList.tsx`、
+  `AtlasInspector.tsx` 同时服务桌面和网页；两端的差异只在 host 适配数据，
+  不再复制滑块、勾选和图集交互。
+- **状态稳定性**：转换完成/失败/被新任务取代分别处理；拖动滑块只标记过期，
+  不自动触发转换；部件/材质未知配置被丢弃或重置，不静默套用。
+- **保留实验状态**：稀疏岛自动拆分没有接入 UI；安全共享继续 opt-in；
+  legacy 默认不变。预算模式只在用户主动切换后出现。
+
+后续可收敛但仍保留的部分：
+
+- 桌面 `MaterialPanel` 与网页 `ModelStudio` 的 host 适配器仍有少量重复的
+  “parts/materials → StudioPart/StudioMaterial”映射，数据源不同，暂不强行合并；
+- `webapp/engine/part-visibility.ts` 是预览专用，不参与导出几何；
+- 桌面部件预览尚未接入 Viewer 的 group 级隐藏，这是下一轮产品化前置条件。
+
