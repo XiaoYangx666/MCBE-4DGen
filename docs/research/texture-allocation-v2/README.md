@@ -32,7 +32,11 @@
 | `sample.ts` / `render.ts` / `remap.ts` | 确定性 CPU 采样、图集绘制、UV 重映射 |
 | `metrics.ts` | 覆盖率、纹理密度、原生采样比、采样误差 |
 | `run-stage1.ts` | 基准运行器（输出 JSON/CSV/PNG 到 `.cache/research/`） |
-| `summarize.ts` | 把运行结果转成 `data/` 下的 markdown 与摘要 JSON |
+| `run-stage3.ts` | A/B 实验运行器（方案、权重扫描、部件删除、正确性、性能） |
+| `run-views.ts` | 固定视角参考/候选/差异三栏图 |
+| `check-integration.ts` | 桌面端预算路径的有限集成校验 |
+| `check-deletion.ts` | 删除某材质后逐材质误差核对 |
+| `summarize.ts` / `summarize-stage3.ts` | 把运行结果转成 `data/` 下的 markdown 与摘要 JSON |
 
 ## 复现
 
@@ -49,6 +53,13 @@ ATLAS_SAMPLES="video/remotion/public/models/shino-source.glb;outputs/demo-model/
 
 # 生成提交用的表格
 node scripts/research/atlas/summarize.ts
+
+# 第三阶段 A/B 实验与固定视角对照
+node scripts/research/atlas/run-stage3.ts --fixtures
+node scripts/research/atlas/run-views.ts
+
+# 桌面端预算路径的有限集成校验
+node scripts/research/atlas/check-integration.ts video/remotion/public/models/shino-source.glb
 
 # 校验移植版本与生产规划器一致
 npx vitest run tests/webapp-atlas-port.test.ts

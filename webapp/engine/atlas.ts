@@ -11,6 +11,11 @@ import {
   unwrapChartBounds,
   type WrapMode,
 } from '../../src/texture-chart-math.ts';
+import {
+  planAtlasBudget,
+  type AtlasBudgetOptions,
+} from '../../src/atlas-core/plan.ts';
+import type { ChartInput as CoreChartInput } from '../../src/atlas-core/types.ts';
 import { yieldToBrowser } from './progress.ts';
 import type { AtlasBuild, AtlasRect, TextureSource, Vec3 } from './types.ts';
 
@@ -268,11 +273,113 @@ function aspectOf(input: AtlasInput, bounds: [number, number, number, number] | 
 }
 
 /**
+ * Opt-in planner selection for the browser.
+ *
+ * The default path is the historical browser planner. `budget` switches to the
+ * shared `src/atlas-core` planner that the desktop adapter uses, so both
+ * platforms produce the same rectangles for the same input.
+ */
+export interface AtlasPlanOptions {
+  budget?: 'texel-density' | 'texel-retention';
+  /** Priority by `AtlasInput.key`, default 1. */
+  weights?: Record<string, number>;
+  /** Overlay charts that read exactly the same source pixels. */
+  sharing?: 'safe';
+}
+
+function planWithBudget(
+  inputs: readonly AtlasInput[],
+  size: number,
+  pad: number,
+  options: AtlasPlanOptions,
+): AtlasLayout {
+  const unique: AtlasInput[] = [];
+  const usedKeys = new Set<string>();
+  for (const input of inputs) {
+    let key = input.key;
+    let suffix = 1;
+    while (usedKeys.has(key)) key = `${input.key}~${suffix++}`;
+    usedKeys.add(key);
+    unique.push(key === input.key ? input : { ...input, key });
+  }
+  const coreInputs: CoreChartInput[] = unique.map((input) => ({
+    id: input.key,
+    material: input.key,
+    materialKey: input.key,
+    texture: input.texture
+      ? { width: input.texture.width, height: input.texture.height, key: input.texture.key }
+      : null,
+    color: input.color,
+    opacity: input.opacity,
+    alphaMode: input.alphaMode ?? 'BLEND',
+    alphaCutoff: input.alphaCutoff ?? 0.5,
+    wrap: [
+      normalizeWrapMode(input.texture?.wrapS ?? 1000),
+      normalizeWrapMode(input.texture?.wrapT ?? 1000),
+    ],
+    bounds: input.uvBounds,
+    uvs: input.uvs ?? null,
+    triangleAreas: input.triangleAreas ?? null,
+    area: input.area,
+  }));
+  const budgetOptions: AtlasBudgetOptions = {
+    size,
+    pad,
+    target: options.budget === 'texel-density' ? 'density' : 'retention',
+    coverageAware: false,
+    sharing: options.sharing ?? 'none',
+    merge: 'production',
+    ...(options.weights ? { weights: options.weights } : {}),
+  };
+  const planned = planAtlasBudget(coreInputs, budgetOptions);
+  const byKey = new Map(unique.map((input) => [input.key, input]));
+  const charts: AtlasChart[] = planned.plan.charts.map((chart) => {
+    const input = byKey.get(chart.inputId)!;
+    const group = chart.triangles?.find((entry) => entry.inputId === chart.inputId);
+    const triangles = group?.triangles ?? [];
+    let area = 0;
+    if (input.triangleAreas?.length) {
+      for (const triangle of triangles) area += input.triangleAreas[triangle] ?? 0;
+    } else if (triangles.length && input.uvs?.length) {
+      area = (input.area * triangles.length) / Math.max(1, input.uvs.length / 6);
+    } else area = input.area;
+    return {
+      key: chart.chartId,
+      inputKey: chart.inputId,
+      rect: chart.rect,
+      bounds: chart.bounds,
+      tiles: chart.tiles,
+      wrap: chart.wrap,
+      triangles,
+      area,
+    };
+  });
+  const rects = new Map<string, AtlasRect>();
+  const perInput = new Map<string, AtlasChart[]>();
+  for (const chart of charts) {
+    const group = perInput.get(chart.inputKey) ?? [];
+    group.push(chart);
+    perInput.set(chart.inputKey, group);
+  }
+  for (const [inputKey, group] of perInput) {
+    if (group.length === 1) rects.set(inputKey, group[0]!.rect);
+    else for (const chart of group) rects.set(chart.key, chart.rect);
+  }
+  return { size, rects, charts, scale: planned.plan.scale };
+}
+
+/**
  * Plan the 128 px atlas per UV island. Islands use the desktop's sublinear
  * surface-area demand, 3×3 minimum and unwrapped aspect; flat materials keep a
  * single sampleable texel. Packing stays deterministic and unit-testable.
  */
-export function planAtlas(inputs: readonly AtlasInput[], size = 128, pad = 1): AtlasLayout {
+export function planAtlas(
+  inputs: readonly AtlasInput[],
+  size = 128,
+  pad = 1,
+  options: AtlasPlanOptions = {},
+): AtlasLayout {
+  if (options.budget) return planWithBudget(inputs, size, pad, options);
   const charts = inputs.flatMap(chartsFor);
   if (!charts.length) return { size, rects: new Map(), charts: [], scale: 1 };
   // Duplicate material keys must not collide inside the rect map.
