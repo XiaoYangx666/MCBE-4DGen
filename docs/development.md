@@ -31,9 +31,17 @@ npm run desktop:package
 npm run desktop:installer
 ```
 
-`desktop:installer` 需要 Inno Setup 6：把 `ISCC.exe` 加入 PATH，或设置 `ISCC` 环境变量指向它。输出为 `release/4DGen-0.1.0-setup.exe`。
+`desktop:installer` 需要 Inno Setup 6：把 `ISCC.exe` 加入 PATH，或设置 `ISCC` 环境变量指向它。输出为 `release/4DGen-0.2.0-setup.exe`。
 
 安装包按当前用户安装到 `%LOCALAPPDATA%\Programs\4DGen`，不需要管理员权限，并包含卸载程序。
+
+## 发版流程
+
+1. 更新版本号：根目录 `package.json` 与 `package-lock.json`、`installer/4DGen.iss`（`MyAppVersion`、`VersionInfoVersion`）、`web/shared/build-log.ts` 的最新条目。
+2. 运行 `npm run check`、`npm run test`、`npm run webapp:build`。
+3. 运行 `npm run desktop:package` 生成便携版，再运行 `npm run desktop:installer` 生成安装包。
+4. 生成 SHA256 校验文件，在 GitHub Releases 上传安装包、便携版 ZIP 与校验文件，标签格式为 `v<版本号>`。
+5. 推送 `main` 后确认 Cloudflare Workers 自动部署网页版成功。
 
 ## 仓库约定
 

@@ -67,6 +67,36 @@ describe('webapp skin pack import', () => {
     expect(imported.name).toBe('Localized Pack');
   });
 
+  it('merges pack names from every language file in a wrapped zip', async () => {
+    const collection = buildSkinPackCollection({
+      packName: 'Shared Pack',
+      headerId: '77777777-7777-4777-8777-777777777777',
+      moduleId: '88888888-8888-4888-8888-888888888888',
+      skins: [skin('Skin A', 24)],
+    });
+    const manifest = JSON.parse(new TextDecoder().decode(collection.files['manifest.json']!)) as {
+      header: { name: string };
+    };
+    manifest.header.name = 'pack.name';
+    collection.files['manifest.json'] = new TextEncoder().encode(JSON.stringify(manifest));
+    const english = new TextDecoder().decode(collection.files['texts/en_US.lang']!);
+    collection.files['texts/en_US.lang'] = new TextEncoder().encode(`pack.name=Wrapped Localized\n${english}`);
+    // The pack name only exists in the secondary language file; the primary
+    // language still supplies the skin labels.
+    const chinese = new TextDecoder()
+      .decode(collection.files['texts/zh_CN.lang']!)
+      .split(/\r?\n/)
+      .filter((line) => !line.startsWith('pack.name='))
+      .join('\n');
+    collection.files['texts/zh_CN.lang'] = new TextEncoder().encode(chinese);
+    const zip = new JSZip();
+    const root = zip.folder('MyPack')!;
+    for (const [name, bytes] of Object.entries(collection.files)) root.file(name, bytes);
+    const bytes = new Uint8Array(await zip.generateAsync({ type: 'uint8array' }));
+    const imported = await importSkinPackZip(new File([bytes], 'wrapped-localized.zip'));
+    expect(imported.name).toBe('Wrapped Localized');
+  });
+
   it('imports a flat zip and rejects archives without a manifest', async () => {
     const imported = await importSkinPackZip(new File([await zipPack()], 'flat.zip'));
     expect(imported.skins).toHaveLength(2);

@@ -1,5 +1,5 @@
 /** Read only PMX vertex layout/texture table/material metadata, leaving geometry and skin import to Assimp.
- * Layout references: Assimp MMDPmxParser and oguna/MMDFormats (documented in docs/stages/stage-6-avatars.md).
+ * Layout references: Assimp MMDPmxParser and oguna/MMDFormats.
  * Bounds-checked before every read; malformed counts are rejected before native conversion.
  */
 export function readPMXMaterials(bytes: Uint8Array) {

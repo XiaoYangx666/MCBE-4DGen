@@ -1,6 +1,6 @@
 {
   "name": "bedrock-poly-skin-converter",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "private": true,
   "description": "把 PMX/VRM/GLB/OBJ 等模型转换为 Minecraft Bedrock 4D 皮肤包，并提供本地工作台与可恢复的皮肤包管理。",
   "license": "GPL-3.0-only",

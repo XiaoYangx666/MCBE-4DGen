@@ -6,7 +6,6 @@ import type { HumanoidPart } from '../../src/humanoid-binding.ts';
 export type { AlphaMode, HumanoidPart };
 export {
   CODE_PART,
-  HUMANOID_PARTS,
   PART_CODE,
 } from '../../src/humanoid-binding.ts';
 

@@ -7,7 +7,7 @@ import {
   CHANGELOG_NOTE,
   CURRENT_BUILD,
 } from './build-log.ts';
-import { Icon } from '../../webapp/components/Icons';
+import { Icon } from './Icons';
 
 /**
  * Shared build badge and changelog dialog. Both the desktop workbench and the
@@ -134,7 +134,7 @@ function ChangelogDialog({ onClose }: { onClose: () => void }) {
             >
               <div className="changelog-entry-meta">
                 <span className="changelog-entry-build">{entry.build}</span>
-                {index === 0 && <span className="changelog-live">当前构建</span>}
+                {index === 0 && <span className="changelog-live">当前版本</span>}
                 <time dateTime={entry.date}>{entry.date}</time>
               </div>
               <h3>{entry.title}</h3>

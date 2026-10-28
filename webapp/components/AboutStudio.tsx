@@ -1,7 +1,7 @@
 import { Changelog } from '../../web/shared/Changelog';
 import { BUILD_LABEL } from '../../web/shared/build-log';
 import { REPO } from '../lib/links';
-import { Icon } from './Icons';
+import { Icon } from '../../web/shared/Icons';
 
 export function AboutStudio() {
   return (

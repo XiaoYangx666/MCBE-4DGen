@@ -1,8 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Icon } from './Icons';
+import { Icon } from '../../web/shared/Icons';
 import { useSkinPack } from '../lib/pack-context';
 import { DEFAULT_PACK_NAME, type StoredSkin } from '../lib/pack-types';
 import { formatBytes } from '../../web/shared/format';
+import { SKIN_NAME_MAX_LENGTH } from '../../src/skin-pack-files.ts';
 
 // three.js is only downloaded when someone opens a 3D preview.
 const SkinPreviewDialog = lazy(async () => {
@@ -98,7 +99,7 @@ export function PackStudio() {
               皮肤包名称
               <input
                 value={newName}
-                maxLength={128}
+                maxLength={SKIN_NAME_MAX_LENGTH}
                 onChange={(event) => setNewName(event.target.value)}
                 placeholder={DEFAULT_PACK_NAME}
               />
@@ -182,7 +183,7 @@ export function PackStudio() {
             皮肤包名称
             <input
               value={packName}
-              maxLength={128}
+              maxLength={SKIN_NAME_MAX_LENGTH}
               onChange={(event) => setPackName(event.target.value)}
               onBlur={commitPackName}
               onKeyDown={(event) => {
@@ -339,7 +340,7 @@ function SkinCard({ skin, disabled, onPreview, onRename, onRemove }: SkinCardPro
       </div>
       <input
         value={name}
-        maxLength={128}
+        maxLength={SKIN_NAME_MAX_LENGTH}
         disabled={disabled}
         aria-label="皮肤名称"
         onChange={(event) => setName(event.target.value)}

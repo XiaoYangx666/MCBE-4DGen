@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 import { validateGeometry } from '../../src/geometry-validator.ts';
 import {
+  SKIN_NAME_MAX_LENGTH,
   isPng,
   isUuid,
   pngDimensions,
@@ -86,8 +87,10 @@ export async function importSkinPackZip(file: File): Promise<ImportedPack> {
   // Pack-level names can live in a different language file than the one used
   // for the skin labels; merge every available translation for the manifest.
   const packNames = new Map<string, string>();
-  for (const path of entries.filter((name) => /^texts\/[^/]+\.lang$/i.test(name))) {
-    for (const [key, value] of await readLang(zip.file(path))) packNames.set(key, value);
+  for (const path of entries) {
+    const relative = root && path.startsWith(root) ? path.slice(root.length) : path;
+    if (!/^texts\/[^/]+\.lang$/i.test(relative)) continue;
+    for (const [name, value] of await readLang(zip.file(path))) packNames.set(name, value);
   }
   const key = typeof skinsRoot.serialize_name === 'string'
     ? skinsRoot.serialize_name
@@ -101,7 +104,7 @@ export async function importSkinPackZip(file: File): Promise<ImportedPack> {
     langNames.get(headerName) ??
     (key ? langNames.get(`skinpack.${key}`) : undefined) ??
     headerName
-  ).trim().slice(0, 128) || '导入的皮肤包';
+  ).trim().slice(0, SKIN_NAME_MAX_LENGTH) || '导入的皮肤包';
 
   const skins: StoredSkin[] = [];
   const skipped: string[] = [];
@@ -114,7 +117,7 @@ export async function importSkinPackZip(file: File): Promise<ImportedPack> {
       ? entry.localization_name : `skin${index}`;
     let name = `${localization}`;
     if (key) name = langNames.get(`skin.${key}.${localization}`) ?? name;
-    name = name.trim().slice(0, 128) || `导入皮肤 ${index + 1}`;
+    name = name.trim().slice(0, SKIN_NAME_MAX_LENGTH) || `导入皮肤 ${index + 1}`;
 
     if (!identifier.startsWith('geometry.') || !/^[A-Za-z0-9_.:'-]+$/.test(identifier)) {
       skipped.push(`${name}：几何标识无效`);

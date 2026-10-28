@@ -1,41 +1,39 @@
-# 依赖验证记录
+# 依赖、版本与许可证
 
-验证日期：2026-10-18（北京时间）。版本来自实际 npm registry 查询与安装的 package.json，package-lock.json 锁定依赖。环境：Linux x64、Node 24.19.0。尚未验证 Windows/macOS。
+依赖版本以根目录 `package.json` 为准，`package-lock.json` 锁定实际安装版本。升级依赖后请同时更新本页的许可证说明，并运行 `npm run check`、`npm run test` 与网页版构建。
 
-| 依赖 | 精确版本 | 声明许可证 | 当前验证 |
-| --- | --- | --- | --- |
-| libassimp | 0.3.0 | Apache-2.0 | Node 原生与 WASM OBJ→GLB |
-| @gltf-transform/core | 4.5.1 | MIT | GLB 读回、外部 PNG 读取 |
-| @gltf-transform/functions | 4.5.1 | MIT | 已安装；简化/焊接行为留待阶段 3 |
-| @gltf-transform/extensions | 4.5.1 | MIT | 注册扩展并读取 Assimp 材质 |
-| meshoptimizer | 1.3.0 | MIT | WASM 初始化、simplify API 存在；实际减面留待阶段 3 |
-| sharp | 0.35.5 | Apache-2.0 | PNG 生成/缩放、透明通道读取 |
-| gl-matrix | 3.4.4 | MIT | 第 3C 阶段新增：骨骼矩阵、法线逆转置和模型变换；Node 实测 |
-| jszip | 3.10.2 | MIT OR GPL-3.0-or-later | 使用 MIT 选项；ZIP 写入/读回 |
-| typescript | 7.0.2 | Apache-2.0 | strict tsc --noEmit 通过 |
+## 运行时依赖
 
-## 实际 API 与选择
+| 依赖 | 用途 | 许可证 |
+| --- | --- | --- |
+| `@gltf-transform/core` / `extensions` / `functions` | GLB / glTF / VRM 读写、节点与材质处理 | MIT |
+| `libassimp` | OBJ / FBX / DAE / STL / PLY / PMX 导入（Node 原生与浏览器 WASM） | Apache-2.0 |
+| `sharp` | 桌面端图片解码、缩放、图集与 PNG 编码 | Apache-2.0 |
+| `meshoptimizer` | 减面与网格简化 | MIT |
+| `jszip` | 皮肤包与模型 ZIP 读写 | MIT OR GPL-3.0-or-later（本项目使用 MIT） |
+| `gl-matrix` | 骨骼矩阵、法线变换与模型变换 | MIT |
 
-libassimp 的 createAssimp({backend:'native'|'wasm'}) 支持显式后端，实例 backend 可断言，使用后必须 dispose()。convert({name,bytes},{to:'glb',resolve}) 支持异步资源 resolver。两个后端已各自实际转换成功。
+## 构建与开发依赖
 
-三角形探针由本项目编写，无第三方素材权利问题。脚本读回 3 个顶点、1 个三角形。自动化测试额外提供 OBJ + MTL + RGBA PNG，验证 UV、材质贴图与透明通道未丢失，并确认空输入被拒绝。
+| 依赖 | 用途 | 许可证 |
+| --- | --- | --- |
+| `react` / `react-dom` | 工作台与网页版界面 | MIT |
+| `three` | 三维预览 | MIT |
+| `vite` | 前端构建与开发服务器 | MIT |
+| `typescript` | 类型检查 | Apache-2.0 |
+| `vitest` | 测试 | MIT |
+| `electron` | 桌面运行时 | MIT |
+| `@electron/packager` | Windows 便携版打包 | BSD-2-Clause |
+| `wrangler` | 网页版部署 | MIT OR Apache-2.0 |
 
-### 外部纹理实测发现
-
-Assimp OBJ→GLB 保留了外部 color.png 引用。直接 NodeIO.readBinary() 会报 Cannot resolve external images with binaryToJSON()。测试保留外部 PNG 后使用 NodeIO.read() 成功。不能将 GLB 扩展名视为纹理已打包的证明；实际 Importer 需维护 sidecar 映射，限制路径并报告缺失资源。不要擅自实现 OBJ 解析器。
-
-Assimp 还生成 KHR_materials_specular/volume/ior 等扩展。注册 ALL_EXTENSIONS 后这些扩展可读取；FB_ngon_encoding 未识别，当前三角形探针可读取，但不能由此推断多边形/复杂材质已完整支持。必须在导入报告中追踪未支持效果。
-
-libassimp 已同时满足原生和 WASM 基础测试，当前无理由切换 assimpjs。若后续真实模型出现不可修复差异，再按相同夹具评估备选，不自行开发通用格式解析器。
+生产便携版只安装运行时依赖；`react`、`three`、`vite` 等仅用于构建，不进入安装包。
 
 ## 许可证范围
 
-根包许可证不是全部依赖的许可证。libassimp 自带 NOTICE 明确列出 Assimp BSD-3-Clause、tinyusdz MIT、web-ifc MPL-2.0、CDT MPL-2.0，以及其它原生内嵌组件。发布二进制或 WASM 前必须携带适用许可证/NOTICE，并核对 MPL 源码提供等义务；本阶段只锁定上游包，不重新分发其二进制。Sharp 原生分发也需保留其随附第三方许可。完整发布许可清单留作交付门槛，不能声称已完成全部传递依赖合规审计。
+根包使用 GPL-3.0-only，但这不等于全部依赖的许可证。发布二进制或 WASM 时需要随附适用的许可证与 NOTICE：
 
-参考 MBSM 的 GPL-3.0 代码仅研究格式行为，不复制实现。第 4A 阶段已只读研究其转换与渲染脚本，并检查两份第三方 4D 皮肤包样本；具体修订、格式差异和独立实现约定见 [stage-4-geometry.md](stages/stage-4-geometry.md)。
+- `libassimp` 的 NOTICE 包含 Assimp（BSD-3-Clause）、tinyusdz（MIT）、web-ifc（MPL-2.0）、CDT（MPL-2.0）等内嵌组件；MPL-2.0 组件还需满足源码提供义务。
+- `sharp` 原生分发需保留其随附的第三方许可。
+- Electron 与 Chromium 的许可证随打包产物中的 `LICENSE` / `LICENSES.chromium.html` 一并分发。
 
-## 后续样本计划
-
-第 2 阶段已选择并实际验证 Khronos glTF-Sample-Assets 的 CC0 Avocado 与 ToyCar；逐个读取模型自己的许可说明，并记录 URL、修订号、哈希与贡献者。详见 [stage-2.md](stages/stage-2.md)。尚未实现最终端到端转换，不把导入检查当作 mcpack 演示。
-
-第 3C 阶段起统一使用 Node 与 npm。gl-matrix 版本由 npm install --save-exact 解析并锁定，其安装包 package.json 及许可证文件已核对；未自行实现通用矩阵运算库。
+本项目只引用第三方格式行为作为研究参考，不复制其实现。完整发布许可清单仍应在每次发版前核对。

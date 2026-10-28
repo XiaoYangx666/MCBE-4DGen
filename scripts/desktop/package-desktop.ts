@@ -39,7 +39,8 @@ try{
  await cp(join(root,'desktop'),join(stage,'desktop'),{recursive:true});
  for(const folder of ['server','src','profiles'])await cp(join(root,folder),join(payload,folder),{recursive:true});
  for(const name of ['package.json','package-lock.json'])await copyFile(join(root,name),join(payload,name));
- await writeFile(join(stage,'package.json'),JSON.stringify({name:'4dgen',productName:'4DGen',version:'0.0.1',main:'desktop/main.cjs',private:true}));
+ const appVersion=JSON.parse(await readFile(join(root,'package.json'),'utf8')).version;
+ await writeFile(join(stage,'package.json'),JSON.stringify({name:'4dgen',productName:'4DGen',version:appVersion,main:'desktop/main.cjs',private:true}));
  console.log('Building desktop UI…');
  await build({root:join(root,'web'),configFile:false,logLevel:'warn',build:{outDir:join(payload,'web-dist'),emptyOutDir:true}});
  console.log('Installing production dependencies…');

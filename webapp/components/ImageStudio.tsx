@@ -1,12 +1,13 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { DropZone } from './DropZone';
 import { DownloadButtons } from './Common';
-import { Icon } from './Icons';
+import { Icon } from '../../web/shared/Icons';
 import { createImageSkin, type ImageSkinResult } from '../engine/image-skin';
 import { nextFrame } from '../engine/frame';
 import { useSkinPack } from '../lib/pack-context';
 import { formatBytes } from '../../web/shared/format';
-import { isCompactViewport } from '../lib/download';
+import { SKIN_NAME_MAX_LENGTH } from '../../src/skin-pack-files.ts';
+import { isCompactViewport } from '../lib/viewport';
 
 const GeometryPreview = lazy(async () => {
   const module = await import('./SkinPreview');
@@ -146,7 +147,7 @@ export function ImageStudio() {
               皮肤名称
               <input
                 value={name}
-                maxLength={128}
+                maxLength={SKIN_NAME_MAX_LENGTH}
                 onChange={(event) => {
                   customName.current = true;
                   setName(event.target.value);
@@ -229,7 +230,7 @@ export function ImageStudio() {
               )}
             </div>
             {packError && <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>}
-            <DownloadButtons files={result.files} name={name.trim()} />
+            <DownloadButtons files={result.files} name={name.trim()} disabled={stale} />
           </div>
           </>
         ) : (

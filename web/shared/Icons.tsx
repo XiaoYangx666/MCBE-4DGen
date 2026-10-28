@@ -9,7 +9,7 @@ interface IconProps {
 export type IconName =
   | 'image' | 'cube' | 'upload' | 'download' | 'spark' | 'check'
   | 'alert' | 'reset' | 'arrow' | 'github' | 'close'
-  | 'sun' | 'moon' | 'palette' | 'menu' | 'archive'
+  | 'sun' | 'menu' | 'archive'
   | 'settings' | 'info' | 'expand' | 'shrink' | 'globe'
   | 'arrow-up-right';
 
@@ -63,21 +63,12 @@ const paths: Record<IconName, ReactNode> = {
     <path d="M9 19c-4.5 1.4-4.5-2.2-6-2.7m12 5.2v-3.3c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.7 4.7 0 0 0-1.3-3.2 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6 0C6.8 2.5 5.8 2.8 5.8 2.8a4.3 4.3 0 0 0-.1 3.2A4.7 4.7 0 0 0 4.4 9.2c0 4.6 2.7 5.7 5.5 6-.4.4-.6 1-.6 1.8V21" />
   ),
   close: <path d="m6 6 12 12M18 6 6 18" />,
-  palette: (
-    <>
-      <path d="M12 3a9 9 0 1 0 0 18h1.4a2 2 0 0 0 1.6-3.2 1.7 1.7 0 0 1 1.4-2.8H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3Z" />
-      <circle cx="7.5" cy="12" r="1" />
-      <circle cx="9.5" cy="7.5" r="1" />
-      <circle cx="14.5" cy="7" r="1" />
-    </>
-  ),
   sun: (
     <>
       <circle cx="12" cy="12" r="4" />
       <path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" />
     </>
   ),
-  moon: <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z" />,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   archive: (
     <>

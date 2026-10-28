@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent } from 'react';
-import { Icon, type IconName } from './Icons';
+import { Icon, type IconName } from '../../web/shared/Icons';
 
 interface DropZoneProps {
   accept: string;

@@ -1,9 +1,9 @@
 /**
  * Build history shared by the desktop workbench and the browser web app.
  *
- * There is no public release yet, so entries are build codes instead of
- * semantic versions. When a release is cut, keep the entries and merge the
- * builds covered by that release into one release section.
+ * A published release uses its version string (e.g. `v0.2.0`); builds between
+ * releases use incremental codes (e.g. `#16`). When a release is cut, merge the
+ * builds it covers into one release entry and keep the build entries below it.
  */
 
 export type ChangelogTag = '新增' | '修复' | '优化' | '重构';
@@ -14,7 +14,7 @@ export interface ChangelogChange {
 }
 
 export interface ChangelogEntry {
-  /** Incremental build number shown in the UI, e.g. #11. */
+  /** Release version or incremental build number shown in the UI. */
   build: string;
   date: string;
   title: string;
@@ -22,6 +22,19 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
+  {
+    build: 'v0.2.0',
+    date: '2026-10-28',
+    title: 'v0.2.0 发布',
+    changes: [
+      { tag: '新增', text: '纯浏览器网页版上线：图片皮肤和 GLB / glTF / VRM / OBJ / PMX 转换都在浏览器内完成，手机可用，生成后直接下载平铺 ZIP。' },
+      { tag: '新增', text: '网页版支持六部位人形绑定、浏览器内 PMX → GLB、单包管理、ZIP 导入导出和独立的模型站点目录页。' },
+      { tag: '优化', text: '网页版图集与桌面工作台共用 UV 分岛与环绕采样规则；PMX 转换跳过 Assimp 顶点焊接，11 万面样本从约 70 秒降到 1 秒以内。' },
+      { tag: '优化', text: '移动端模型工作台重做：悬浮图标与全屏收起面板，「获取模型」改为独立页面，结果栏增加输出贴图预览。' },
+      { tag: '修复', text: '修正输出与预览的 X 镜像、MMD 眼睛高光的透明裁切、多模型 ZIP 的贴图串用，以及包名与下载文件名。' },
+      { tag: '重构', text: '预览外壳、人形绑定、Assimp 导入策略、皮肤包构建与图集分岛逻辑在桌面端和网页版之间共用。' },
+    ],
+  },
   {
     build: '#15',
     date: '2026-10-28',
@@ -183,4 +196,4 @@ export const BUILD_LABEL = CURRENT_BUILD.build;
 
 /** Note shown at the top of the build log. */
 export const CHANGELOG_NOTE =
-  '当前为测试构建，版本号按构建递增。正式发版后会把覆盖的多个构建合并成一个版本记录。';
+  '当前为 v0.2.0 正式版。正式版本之间仍按构建号记录，发版时会把覆盖的多个构建合并成一个版本条目。';
