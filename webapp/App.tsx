@@ -5,7 +5,7 @@ import { AppDrawer, type Mode } from './components/AppDrawer';
 import { AboutStudio } from './components/AboutStudio';
 import { SettingsStudio } from './components/SettingsStudio';
 import { ModelSourcesPage } from './components/ModelSourcesPage';
-import { Icon } from './components/Icons';
+import { Icon } from '../web/shared/Icons';
 import { BUILD_LABEL } from '../web/shared/build-log';
 import { useSkinPack, SkinPackProvider } from './lib/pack-context';
 import { REPO } from './lib/links';

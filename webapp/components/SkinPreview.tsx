@@ -3,7 +3,7 @@ import type * as THREE from 'three';
 import { useDialogDismiss } from '../../web/shared/useDialogDismiss';
 import { buildGeometryPreview } from '../lib/output-preview';
 import type { StoredSkin } from '../lib/pack-types';
-import { Icon } from './Icons';
+import { Icon } from '../../web/shared/Icons';
 import { Viewport } from './Viewport';
 
 interface GeometryPreviewProps {

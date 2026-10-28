@@ -1,6 +1,5 @@
 import {
   DEFAULT_PALETTE,
-  PALETTE_OPTIONS,
   isPalette,
   type Palette,
 } from '../../web/shared/palettes';
@@ -9,9 +8,6 @@ import { type Theme } from '../../web/shared/appearance';
 export type { Palette } from '../../web/shared/palettes';
 export type { Theme } from '../../web/shared/appearance';
 export { applyThemeToDocument as applyAppearance } from '../../web/shared/appearance';
-
-/** Palette metadata shared with the desktop workbench. */
-export const PALETTES = PALETTE_OPTIONS;
 
 const THEME_KEY = '4dgen-web-theme';
 const PALETTE_KEY = '4dgen-web-palette';

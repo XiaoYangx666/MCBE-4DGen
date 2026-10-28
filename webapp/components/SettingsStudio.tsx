@@ -1,6 +1,6 @@
 import { PALETTE_OPTIONS } from '../../web/shared/palettes';
 import type { Palette, Theme } from '../lib/theme';
-import { Icon } from './Icons';
+import { Icon } from '../../web/shared/Icons';
 
 export function SettingsStudio({
   theme,

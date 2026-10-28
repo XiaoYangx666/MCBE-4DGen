@@ -1,6 +1,6 @@
 # 代码结构
 
-本页说明各目录的职责与依赖方向，便于在不破坏转换流水线的前提下继续扩展。阶段实现细节仍以 `docs/stages/` 为准。
+本页说明各目录的职责与依赖方向，便于在不破坏转换流水线的前提下继续扩展。历史阶段记录已移除，当前行为以本目录文档和源码为准。
 
 ## 入口
 
@@ -89,7 +89,7 @@ npm run test:node
 - `library/`：模型库的 `ModelListPane`、`ImportModelDialog`、`RenameModelDialog`、`RelinkModelDialog`、`DeleteModelDialog` 与 `model-types.ts`。
 - `packs/`：`PackSidebar`、`PackHeader`、`SkinList`、`SkinDetail`、`PackDialogs`、`GameSkinsPanel`、`PersonaRecipePanel`、`PackPreview`、`SaveSkinDialog`、`GameStatusBadge`，以及 `use-pack-page.ts`、`pack-types.ts`、`pack-state.ts`、`pack-menu.ts`、`pack-ui.ts`、`game-skins-types.ts`。`PackPage` 只负责视图，数据加载和操作由 `usePackPage` 统一管理。
 - `ui/`：`AppBar`、`WebNav`、`AboutDialog`、`ContextMenu`、`InlineName`、`Modal`、`SelectableRow` 等跨页面组件。
-- `shared/`：与纯浏览器网页版共用的展示层，只依赖 Web 标准 API 与 React：`build-log.ts`（构建号与更新日志数据）、`Changelog.tsx`（构建号按钮与更新日志弹窗）、`palettes.ts`（配色元数据）、`appearance.ts`（主题/配色写入文档并广播 `appearancechange`）、`SourceDirectory.tsx`（模型站点目录）、`PoseControls.tsx`（Y 轴旋转与手臂外展/下放控件）、`MaterialList.tsx`（材质行、缩略图、勾选、像素权重、只看）、`MaterialCoverage.tsx`（逐材质像素覆盖）、`ConversionSummary.tsx`（转换报告摘要）、`RatioField.tsx`（保留面数比例与面数区间）、`poly-mesh-preview.ts`（导出的 poly_mesh → three.js 网格、纹理与统一取景 preset）、`preview-viewport.ts`（renderer / scene / camera / OrbitControls / 渲染循环 / 光照与正面指示的共享外壳）、`preview-lighting.ts`（预览环境光、三点光与软阴影）、`preview-orientation.ts`（前向箭头与标签）、`demand-render.ts`（按需渲染合并）、`viewport-appearance.ts`（主题背景与网格着色）、`format.ts`（字节与文件名工具）、`file-save.ts`（浏览器下载与 ZIP 文件名）、`clipboard.ts`（复制回退）、`useDialogDismiss.ts`（Esc/背景点击）。这里不放 API、IndexedDB 或服务端数据模型。
+- `shared/`：与纯浏览器网页版共用的展示层，只依赖 Web 标准 API 与 React：`build-log.ts`（构建号与更新日志数据）、`Changelog.tsx`（构建号按钮与更新日志弹窗）、`Icons.tsx`（两端共用的矢量图标）、`Dialog.tsx` / `useDialogDismiss.ts`（弹窗外壳与 Esc/背景点击）、`palettes.ts`（配色元数据）、`appearance.ts`（主题/配色写入文档并广播 `appearancechange`）、`SourceDirectory.tsx`（模型站点目录）、`PoseControls.tsx`（Y 轴旋转与手臂外展/下放控件）、`MaterialList.tsx`（材质行、缩略图、勾选、像素权重、只看）、`MaterialCoverage.tsx`（逐材质像素覆盖）、`ConversionSummary.tsx`（转换报告摘要）、`RatioField.tsx` / `triangle-budget.ts`（保留面数比例与面数区间）、`ModelCandidateList.tsx`（多模型 ZIP 选择）、`poly-mesh-preview.ts`（导出的 poly_mesh → three.js 网格、纹理与统一取景 preset）、`preview-viewport.ts`（renderer / scene / camera / OrbitControls / 渲染循环 / 光照与正面指示的共享外壳）、`preview-lighting.ts`（预览环境光、三点光与软阴影）、`preview-orientation.ts`（前向箭头与标签）、`preview-material.ts`（预览材质裁切与深度规则）、`demand-render.ts`（按需渲染合并）、`viewport-appearance.ts`（主题背景与网格着色）、`format.ts`（字节与文件名工具）、`file-save.ts`（浏览器下载与 ZIP 文件名）、`clipboard.ts`（复制回退）、`useDialogDismiss.ts`（Esc/背景点击）。这里不放 API、IndexedDB 或服务端数据模型。
 - `lib/`：`api.ts`、`appearance.ts`、`navigation.ts`、`use-hash-route.ts` 等基础设施。
 - `styles/`：`style.css`、`workflow.css`、`theme.css`、`shared.css`。
 
@@ -106,8 +106,8 @@ npm run test:node
 - `engine/bedrock.ts`：静态整体绑定或六部位玩家骨架、镜像与 `poly_mesh` 导出。
 - `engine/convert.ts`：图集 → 几何 → 皮肤包 → ZIP 流程。
 - `engine/image-skin.ts`：图片平面皮肤。
-- `engine/model-zip.ts`、`engine/pmx.ts`、`engine/textures.ts`、`engine/pose.ts`、`engine/reduce.ts`、`engine/model-job.ts`、`engine/types.ts`：模型 ZIP、PMX→GLB、TGA→PNG、手臂姿势、按材质/部位减面、导入/转换编排与转换数据类型。
-- `engine/frame.ts`、`engine/canvas.ts`、`engine/names.ts`、`engine/progress.ts`：帧让步、Canvas PNG 编码、皮肤名称校验与导入/转换阶段进度。
+- `engine/model-zip.ts`、`engine/pmx.ts`、`engine/textures.ts`、`engine/resources.ts`、`engine/pose.ts`、`engine/reduce.ts`、`engine/model-job.ts`、`engine/types.ts`：模型 ZIP、PMX→GLB、TGA→PNG、资源映射、手臂姿势、按材质/部位减面、导入/转换编排与转换数据类型。
+- `engine/frame.ts`、`engine/canvas.ts`、`engine/names.ts`、`engine/geometry-math.ts`、`engine/vrm-materials.ts`、`engine/preview-materials.ts`、`engine/progress.ts`：帧让步、Canvas PNG 编码、皮肤名称校验、几何辅助、VRM 材质转换、预览材质规则与导入/转换阶段进度。
 - `lib/output-preview.ts`：共享 poly_mesh 预览的薄封装，自动识别皮肤包里的几何标识。
 - `lib/pack-types.ts`、`lib/pack-store.ts`、`lib/pack-context.tsx`：单包数据结构、IndexedDB 持久化与 React 状态。
 - `lib/pack-import.ts`：读取 legacy poly_mesh 皮肤包 ZIP 并转换成单包里的皮肤。

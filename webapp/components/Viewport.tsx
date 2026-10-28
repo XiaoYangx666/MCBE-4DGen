@@ -4,7 +4,9 @@ import {
   createPreviewViewport,
   type PreviewViewport,
 } from '../../web/shared/preview-viewport';
-import { Icon } from './Icons';// Lighting starts off on every page load. The toggle is remembered for the
+import { Icon } from '../../web/shared/Icons';
+
+// Lighting starts off on every page load. The toggle is remembered for the
 // current session only, so it survives mode switches without becoming sticky.
 let lightingPreference = false;
 

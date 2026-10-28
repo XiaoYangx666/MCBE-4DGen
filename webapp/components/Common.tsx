@@ -2,19 +2,22 @@ import { useState } from 'react';
 import { zipFileName } from '../../web/shared/file-save';
 import { saveOrShare } from '../lib/download';
 import { zipSkinPackBlob } from '../../src/skin-pack-zip.ts';
-import { Icon } from './Icons';
+import { Icon } from '../../web/shared/Icons';
 
 interface DownloadButtonsProps {
   files: Record<string, Uint8Array>;
   name: string;
   compact?: boolean;
+  /** The result no longer matches the current settings, so exporting is stale. */
+  disabled?: boolean;
 }
 
-export function DownloadButtons({ files, name, compact }: DownloadButtonsProps) {
+export function DownloadButtons({ files, name, compact, disabled = false }: DownloadButtonsProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const downloadPack = async () => {
+    if (disabled) return;
     setBusy(true);
     setError(null);
     try {
@@ -29,7 +32,7 @@ export function DownloadButtons({ files, name, compact }: DownloadButtonsProps) 
 
   return (
     <div className={`download-buttons ${compact ? 'compact' : ''}`}>
-      <button type="button" className="primary" disabled={busy} onClick={() => void downloadPack()}>
+      <button type="button" className="primary" disabled={busy || disabled} onClick={() => void downloadPack()}>
         <Icon name={busy ? 'reset' : 'download'} size={15} className={busy ? 'spin' : undefined} />
         {busy ? '正在打包…' : '下载皮肤包 .zip'}
       </button>

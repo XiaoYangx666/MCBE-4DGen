@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { Icon, type IconName } from './Icons';
+import { Icon, type IconName } from '../../web/shared/Icons';
 
 export type Mode = 'image' | 'model' | 'sources' | 'pack' | 'settings' | 'about';
 

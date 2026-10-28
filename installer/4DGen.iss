@@ -1,5 +1,5 @@
-#define MyAppName "4DGen"
-#define MyAppVersion "0.1.0"
+﻿#define MyAppName "4DGen"
+#define MyAppVersion "0.2.0"
 #define MyAppPublisher "XiaoYangx666"
 #define MyAppURL "https://github.com/XiaoYangx666/MCBE-4DGen"
 #define MyAppExeName "4DGen.exe"
@@ -36,7 +36,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 LicenseFile=..\LICENSE
-VersionInfoVersion=0.1.0.0
+VersionInfoVersion=0.2.0.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} installer
 VersionInfoProductName={#MyAppName}

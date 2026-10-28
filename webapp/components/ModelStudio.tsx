@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { DropZone } from './DropZone';
 import { DownloadButtons, WarningList } from './Common';
-import { Icon } from './Icons';
+import { Icon } from '../../web/shared/Icons';
 import { Viewport } from './Viewport';
 import { MODEL_ACCEPT, type LoadedModel } from '../engine/import-model';
+import { SKIN_NAME_MAX_LENGTH } from '../../src/skin-pack-files.ts';
 import { applyArmPose, armRigFromHumanoid, type ArmRig } from '../engine/pose';
 import type { HumanoidRig } from '../engine/humanoid';
 import type { BindingMode, ConvertResult } from '../engine/convert';
@@ -478,7 +479,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
             皮肤名称
             <input
               value={name}
-              maxLength={128}
+              maxLength={SKIN_NAME_MAX_LENGTH}
               onChange={(event) => {
                 customName.current = true;
                 setName(event.target.value);
@@ -613,12 +614,12 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                     <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
                     {packBusy ? '正在加入…' : '加入皮肤包'}
                   </button>
-                  <DownloadButtons files={result.files} name={name.trim()} compact />
+                  <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
                 </div>
-                {compact && packMessage && (
+                {packMessage && (
                   <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
                 )}
-                {compact && packError && (
+                {packError && (
                   <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
                 )}
                 {result.textureUrl && (
@@ -916,7 +917,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
               )}
             </div>
             {packError && <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>}
-            <DownloadButtons files={result.files} name={name.trim()} compact />
+            <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
           </div>
         )}
       </section>

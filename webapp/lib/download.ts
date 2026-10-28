@@ -1,4 +1,5 @@
 import { downloadBlob } from '../../web/shared/file-save';
+import { isCoarsePointer } from './viewport';
 
 /**
  * Phones often ignore the anchor download attribute, especially iOS. Use the
@@ -22,12 +23,4 @@ export async function saveOrShare(blob: Blob, filename: string, title: string) {
     }
   }
   downloadBlob(blob, filename);
-}
-
-export function isCompactViewport() {
-  return typeof matchMedia === 'function' && matchMedia('(max-width: 860px)').matches;
-}
-
-export function isCoarsePointer() {
-  return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 }

@@ -22,7 +22,7 @@
 
 从 [Releases](https://github.com/XiaoYangx666/MCBE-4DGen/releases/latest) 下载最新版本：
 
-- `4DGen-0.1.0-setup.exe`：安装版，中文安装界面，按当前用户安装，不需要管理员权限
+- `4DGen-0.2.0-setup.exe`：安装版，中文安装界面，按当前用户安装，不需要管理员权限
 - 便携版 ZIP：解压后直接运行 `4DGen.exe`
 
 安装包和便携版都不需要另装 Node.js。当前构建未签名，首次运行可能触发 Windows SmartScreen 提示。
