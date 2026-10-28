@@ -222,6 +222,7 @@ export function measurePlan(
     overlapPixels: 0,
   };
   const chartDetails: ChartDiagnostic[] = [];
+  const uniqueRects = new Map<string, { content: number; allocated: number }>();
 
   // Per-input totals first, so charts can distribute their cost by area share.
   for (const input of inputs) {
@@ -329,6 +330,10 @@ export function measurePlan(
     const spanU = chart.bounds ? chart.bounds[2] - chart.bounds[0] : 0;
     const spanV = chart.bounds ? chart.bounds[3] - chart.bounds[1] : 0;
     const boundsArea = Math.max(0, spanU) * Math.max(0, spanV);
+    uniqueRects.set(
+      `${chart.rect.x},${chart.rect.y},${chart.rect.width},${chart.rect.height}`,
+      { content: contentPixels, allocated: allocatedPixels },
+    );
     chartDetails.push({
       chartId: chart.chartId,
       inputId: chart.inputId,
@@ -414,8 +419,11 @@ export function measurePlan(
     };
   });
 
-  const contentPixels = chartDetails.reduce((sum, chart) => sum + chart.contentPixels, 0);
-  const allocatedPixels = chartDetails.reduce((sum, chart) => sum + chart.allocatedPixels, 0);
+  const contentPixels = [...uniqueRects.values()].reduce((sum, rect) => sum + rect.content, 0);
+  const allocatedPixels = [...uniqueRects.values()].reduce(
+    (sum, rect) => sum + rect.allocated,
+    0,
+  );
   const uvPixels = countMask(target.uvMask);
   const opaquePixels = countMask(target.opaqueMask);
   const error = options.skipError
