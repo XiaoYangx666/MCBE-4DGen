@@ -150,6 +150,10 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
               profile={profile}
               height={height}
               binding={binding}
+              parts={session?.parts ?? []}
+              includedParts={includedParts}
+              selectedPart={selectedPart}
+              showKeptParts={showKeptParts}
               onSelect={(name) => {
                 const key = keyForName(name);
                 if (key) setSelected(key);

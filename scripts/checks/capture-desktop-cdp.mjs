@@ -159,6 +159,19 @@ try {
   );
   await wait(400);
   await shot(cdp, '07-desktop-budget.png');
+
+  if (process.env.DESKTOP_PARTS_OFF === '1') {
+    await evaluate(
+      cdp,
+      `(() => {
+        const boxes = [...document.querySelectorAll('.texture-part-row input[type=checkbox]:checked')];
+        for (const box of boxes) box.click();
+        return boxes.length;
+      })()`,
+    );
+    await wait(500);
+    await shot(cdp, '08-desktop-parts-off.png');
+  }
   await cdp.send('Browser.close').catch(() => {});
   socket.close();
 } finally {
