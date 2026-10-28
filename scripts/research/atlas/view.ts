@@ -20,6 +20,10 @@ export interface ViewOptions {
   /** Rotation around X in degrees. */
   pitch?: number;
   background?: [number, number, number];
+  /** Magnification relative to the fit-to-frame scale. */
+  zoom?: number;
+  /** World Y to center, 0 = model bottom, 1 = model top. */
+  focusY?: number;
 }
 
 export interface ViewComparison {
@@ -95,12 +99,17 @@ export function renderComparison(
       p95Error: 0,
     };
 
-  const scale = Math.min(
-    (width * 0.92) / Math.max(1e-6, maxX - minX),
-    (height * 0.92) / Math.max(1e-6, maxY - minY),
-  );
+  const scale =
+    Math.min(
+      (width * 0.92) / Math.max(1e-6, maxX - minX),
+      (height * 0.92) / Math.max(1e-6, maxY - minY),
+    ) * (options.zoom ?? 1);
   const cx = width / 2 - ((minX + maxX) / 2) * scale;
-  const cy = height / 2 + ((minY + maxY) / 2) * scale;
+  const focusWorldY =
+    options.focusY !== undefined
+      ? minY + (maxY - minY) * options.focusY
+      : (minY + maxY) / 2;
+  const cy = height / 2 + focusWorldY * scale;
   const depthRange = Math.max(1e-6, maxZ - minZ);
 
   const referenceData = new Uint8Array(width * height * 4);
