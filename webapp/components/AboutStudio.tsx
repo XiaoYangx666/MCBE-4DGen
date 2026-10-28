@@ -45,7 +45,7 @@ export function AboutStudio() {
             <a className="button-link" href={REPO} target="_blank" rel="noreferrer">
               <Icon name="github" size={15} />
               项目主页
-              <span aria-hidden="true">↗</span>
+              <Icon name="arrow-up-right" size={13} className="external-arrow" />
             </a>
           </div>
         </div>

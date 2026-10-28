@@ -631,15 +631,16 @@
   letter-spacing: 0.7px;
 }
 .changelog-close {
+  display: grid;
+  place-items: center;
   flex: none;
   width: 32px;
   height: 32px;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: transparent;
   color: var(--muted);
-  font-size: 20px;
-  line-height: 1;
   cursor: pointer;
 }
 .changelog-close:hover { color: var(--ink); border-color: var(--accent); background: var(--hover); }
