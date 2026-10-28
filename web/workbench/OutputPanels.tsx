@@ -41,14 +41,15 @@ export function OutputPanels({
   const atlasRegions = (texture?.regions ?? []).map((region) => ({
     id: String(region.id),
     material: region.material,
-    materialKey: region.materialKey ?? undefined,
-    materialKeys: region.materialKeys,
-    materials: region.materials,
+    ...(region.materialKey ? { materialKey: region.materialKey } : {}),
+    ...(region.materialKeys ? { materialKeys: region.materialKeys } : {}),
+    ...(region.materials ? { materials: region.materials } : {}),
     x: region.x,
     y: region.y,
     width: region.width,
     height: region.height,
     contentPixels: region.width * region.height,
+    shared: (region.materialKeys?.length ?? 0) > 1,
     source: `${region.resized.width}×${region.resized.height}`,
   }));
   const atlasMaterials = (texture?.materials ?? []).map((measurement) => {
@@ -57,7 +58,12 @@ export function OutputPanels({
       id: key,
       name: measurement.name,
       allocated: atlasRegions
-        .filter((region) => region.materialKeys?.includes(key))
+        .filter((region) =>
+          region.materialKeys?.length
+            ? region.materialKeys.includes(key)
+            : region.materials?.includes(measurement.name) ||
+              region.material === measurement.name,
+        )
         .reduce((sum, region) => sum + region.contentPixels, 0),
       used: measurement.pixels,
       uv: measurement.uvPixels ?? null,
@@ -209,6 +215,9 @@ export function OutputPanels({
             size={texture?.atlas?.width ?? 128}
             regions={atlasRegions}
             materials={atlasMaterials}
+            {...(texture?.atlas ? { summary: texture.atlas } : {})}
+            selected={selected}
+            onSelect={(id) => onSelect(id ?? '')}
           />
         </Dialog>
       ) : null}

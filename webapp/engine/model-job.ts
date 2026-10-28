@@ -361,6 +361,9 @@ export interface ModelResultKeyInput {
   includedParts?: Iterable<string>;
   weights: Readonly<Record<string, number>>;
   modelTriangles: number;
+  textureMode?: 'legacy' | 'budget';
+  textureTarget?: 'density' | 'retention';
+  atlasSharing?: boolean;
 }
 
 /** Signature used to mark a conversion result stale. */
@@ -375,6 +378,9 @@ export function modelResultKey(input: ModelResultKeyInput) {
     input.maxError.toFixed(3),
     [...input.included].sort().join(','),
     input.includedParts ? [...input.includedParts].sort().join(',') : '*',
+    input.textureMode ?? 'legacy',
+    input.textureTarget ?? 'retention',
+    input.atlasSharing ? 'share' : 'no-share',
     Object.entries(input.weights)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => `${key}:${value}`)

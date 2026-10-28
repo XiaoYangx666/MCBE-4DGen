@@ -8,6 +8,7 @@ import { validateModel } from "./validate-model.ts";
 import { textureCharts } from "./texture-charts.ts";
 import { bakeBaseColorPixels } from "./texture-pixels.ts";
 import { optimizeTexturesWithBudget } from "./atlas-desktop.ts";
+import { materialKeyMap } from "./parts.ts";
 import {
   normalizeWrapMode,
   tileEdge,
@@ -59,6 +60,8 @@ interface Region {
   wrap: [number, number];
   crop?: Rect;
   areas: Record<string, number>;
+  /** World area per stable material key; duplicate names stay distinct. */
+  areaKeys: Record<string, number>;
   weightedArea: number;
 }
 
@@ -247,6 +250,7 @@ export async function optimizeTextures(
   };
   const doc = model.document,
     root = doc.getRoot();
+  const keysByMaterial = materialKeyMap(doc);
   const grouped = new Map<Material | null, Primitive[]>();
   for (const mesh of root.listMeshes())
     for (const p of mesh.listPrimitives()) {
@@ -364,8 +368,13 @@ export async function optimizeTextures(
       }
     }
     const areas: Record<string, number> = Object.create(null);
+    const areaKeys: Record<string, number> = Object.create(null);
     for (const p of primitives) {
-      const name = p.getMaterial()?.getName() ?? "(default)";
+      const sourceMaterial = p.getMaterial();
+      const name = sourceMaterial?.getName() ?? "(default)";
+      const materialKey = sourceMaterial
+        ? (keysByMaterial.get(sourceMaterial) ?? "m:(default)#0")
+        : "m:(default)#0";
       const pos = p.getAttribute("POSITION")!;
       const ids =
         p.getIndices()?.getArray() ??
@@ -398,18 +407,22 @@ export async function optimizeTextures(
               u[0]! * v[1]! - u[1]! * v[0]!,
             ) / 2;
           areas[name] = (areas[name] ?? 0) + area;
+          areaKeys[materialKey] = (areaKeys[materialKey] ?? 0) + area;
         }
       }
     }
     const weightedArea = source
-      ? Object.entries(areas).reduce(
-          (sum, [name, area]) =>
+      ? Object.entries(areaKeys).reduce(
+          (sum, [key, area]) =>
             sum +
             area *
               (options.materialWeights &&
-              Object.hasOwn(options.materialWeights, name)
-                ? options.materialWeights[name]!
-                : 1),
+              Object.hasOwn(options.materialWeights, key)
+                ? options.materialWeights[key]!
+                : options.materialWeights &&
+                    Object.hasOwn(options.materialWeights, material?.getName() ?? "")
+                  ? options.materialWeights[material!.getName()!]!
+                  : 1),
           0,
         )
       : 0; // A flat base-color material has no texture detail to preserve.
@@ -425,6 +438,7 @@ export async function optimizeTextures(
       ...(crop ? { crop } : {}),
       wrap,
       areas,
+      areaKeys,
       weightedArea,
     });
   }
@@ -501,7 +515,7 @@ export async function optimizeTextures(
       `Texture atlas capacity exceeded (${size}×${size}). Increase atlasSize or reduce maxTextureSize; padded regions: ${regions.map((r) => `${r.width + padding * 2}×${r.height + padding * 2}`).join(", ")}. No textures were discarded.`,
     );
   const atlas = Buffer.alloc(size * size * 4);
-  const reportRegions: {id:number; material:string; materials:string[]; surfaceAreas:Record<string,number>; weightedArea:number; x:number; y:number; width:number; height:number; source:Region["source"]; resized:{width:number;height:number}; tiles:Region["tiles"]; crop:Region["crop"]}[] = [];
+  const reportRegions: {id:number; material:string; materialKeys:string[]; materials:string[]; surfaceAreas:Record<string,number>; weightedArea:number; x:number; y:number; width:number; height:number; source:Region["source"]; resized:{width:number;height:number}; tiles:Region["tiles"]; crop:Region["crop"]}[] = [];
   // Reuse decoded source images across islands. The eviction budget must cover
   // every distinct source texture used by the atlas: a smaller bound thrashed
   // between textures and re-decoded multi-megapixel PNGs for each island.
@@ -647,7 +661,11 @@ export async function optimizeTextures(
     reportRegions.push({
       id,
       material: Object.keys(region.areas).join(" / ") || "(default)",
-      materials: Object.keys(region.areas),
+      materials: [...new Set(region.primitives.map((p) => p.getMaterial()?.getName() ?? "(default)"))],
+      materialKeys: [...new Set(region.primitives.map((p) => {
+        const material = p.getMaterial();
+        return material ? (keysByMaterial.get(material) ?? "m:(default)#0") : "m:(default)#0";
+      }))],
       surfaceAreas: region.areas,
       weightedArea: region.weightedArea,
       x: rect.x + padding,
@@ -671,18 +689,22 @@ export async function optimizeTextures(
   let uvPixels: number | undefined;
   const materialPixels = new Map<string, Uint8Array>();
   const materialUvPixels = new Map<string, Uint8Array>();
+  const materialNames = new Map<string, string>();
   if (options.compactSize) {
     const used = new Uint8Array(size * size);
     const uvUsed = new Uint8Array(size * size);
     for (const region of regions)
       for (const p of region.primitives) {
-        const name = p.getMaterial()?.getName() ?? "(default)";
-        if (!materialPixels.has(name)) {
-          materialPixels.set(name, new Uint8Array(size * size));
-          materialUvPixels.set(name, new Uint8Array(size * size));
+        const material = p.getMaterial();
+        const key = material ? (keysByMaterial.get(material) ?? "m:(default)#0") : "m:(default)#0";
+        const name = material?.getName() ?? "(default)";
+        if (!materialPixels.has(key)) {
+          materialPixels.set(key, new Uint8Array(size * size));
+          materialUvPixels.set(key, new Uint8Array(size * size));
+          materialNames.set(key, name);
         }
-        const pixels = materialPixels.get(name)!;
-        const uvPixelsForMaterial = materialUvPixels.get(name)!;
+        const pixels = materialPixels.get(key)!;
+        const uvPixelsForMaterial = materialUvPixels.get(key)!;
         const uv = p.getAttribute("TEXCOORD_0")!,
           indices =
             p.getIndices()?.getArray() ??
@@ -837,14 +859,15 @@ export async function optimizeTextures(
         ? (options.allocation ?? "surface-area")
         : "source-area",
       materialWeights: options.materialWeights ?? {},
-      materials: [...materialPixels].map(([name, pixels]) => ({
-        name,
+      materials: [...materialPixels].map(([key, pixels]) => ({
+        name: materialNames.get(key) ?? key,
+        key,
         pixels: pixels.reduce((sum, v) => sum + v, 0),
         uvPixels: materialUvPixels
-          .get(name)!
+          .get(key)!
           .reduce((sum, v) => sum + v, 0),
         regions: reportRegions
-          .filter((r) => r.materials.includes(name))
+          .filter((r) => r.materialKeys.includes(key))
           .map((r) => r.id),
       })),
       regions: reportRegions,
