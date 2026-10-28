@@ -29,10 +29,6 @@ export function MaterialCoverage({
   return (
     <div className="material-allocation">
       <h3>材质像素覆盖</h3>
-      <p>
-        与材质筛选逐项对应，点击选中材质。占比以整张贴图为基准；共享像素会分别计入相关材质，各项不一定合计为
-        100%。
-      </p>
       {materials.map((material) => {
         const id = material.id ?? material.name;
         const percent = total > 0 && material.pixels != null

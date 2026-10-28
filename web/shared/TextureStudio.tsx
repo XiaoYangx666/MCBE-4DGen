@@ -149,18 +149,9 @@ export function TextureStudio({
               细节保留
             </button>
           </div>
-          <p className="field-help">
-            固定 128×128 总预算。密度按表面积分配；细节保留按原始贴图细节分配。
-            提高一个材质，其他材质就会减少。
-            {note ? ` ${note}` : ''}
-          </p>
         </>
-      ) : (
-        <p className="field-help">
-          旧版算法保持默认。像素权重只影响旧版图集分配，不是纹理密度百分比。
-          {note ? ` ${note}` : ''}
-        </p>
-      )}
+      ) : null}
+      {note ? <div className="texture-studio-note">{note}</div> : null}
 
       {parts.length > 0 && (
         <div className="texture-studio-parts">
@@ -178,10 +169,6 @@ export function TextureStudio({
           </button>
           {partsOpen && (
             <>
-              <p className="field-help">
-                部件来自模型自身的 Mesh / Primitive 结构，不是推测的身体部位。
-                删除部件只移除它的几何；共享材质的其他部件会保留。
-              </p>
               <div className="texture-studio-actions">
                 <button
                   type="button"
@@ -291,11 +278,6 @@ export function TextureStudio({
           <span>材质与清晰度</span>
           <small>{materials.length} 项</small>
         </div>
-        <p className="field-help">
-          {mode === 'budget'
-            ? '选中材质后调整相对清晰度。默认 1.00×；0.10× 是技术下限，实际可能先触底。'
-            : '选中材质后调整旧版像素权重。旧版权重是抽象比例，不代表最终像素占比。'}
-        </p>
         <MaterialList
           items={materials.map((material) => ({
             id: material.id,
