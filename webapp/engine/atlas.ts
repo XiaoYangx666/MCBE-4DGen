@@ -4,33 +4,82 @@ import {
   srgbToLinear,
   type AlphaMode,
 } from '../../src/texture-pixels.ts';
+import {
+  buildUvCharts,
+  normalizeWrapMode,
+  sampleWrappedRgba,
+  unwrapChartBounds,
+  type WrapMode,
+} from '../../src/texture-chart-math.ts';
+import { yieldToBrowser } from './progress.ts';
 import type { AtlasBuild, AtlasRect, TextureSource, Vec3 } from './types.ts';
 
 export interface AtlasInput {
   key: string;
   texture: TextureSource | null;
+  /** Continuous, unwrapped UV rectangle of the material (may leave 0..1). */
   uvBounds: [number, number, number, number] | null;
+  /** Flat per-triangle UVs: u0,v0,u1,v1,u2,v2 for each triangle. */
+  uvs?: Float32Array | null;
+  /** World-space area per triangle; island demand falls back to `area`. */
+  triangleAreas?: Float32Array | null;
   /** sRGB tint, 0..1. */
   color: Vec3;
   opacity: number;
   /** glTF alpha semantics; defaults to BLEND when omitted. */
   alphaMode?: AlphaMode;
   alphaCutoff?: number;
-  /** Used to apportion atlas space. */
+  /** Used to apportion atlas space when per-triangle areas are absent. */
+  area: number;
+}
+
+/** One packed UV island. Flat materials get one chart with `bounds: null`. */
+export interface AtlasChart {
+  /** Unique within the layout. */
+  key: string;
+  /** `AtlasInput.key` this island belongs to. */
+  inputKey: string;
+  rect: AtlasRect;
+  /** Continuous unwrapped bounds, null for a flat / untextured chart. */
+  bounds: [number, number, number, number] | null;
+  /** Whole-tile span, capped at 16 (diagnostic / allocation safety). */
+  tiles: [number, number];
+  wrap: [WrapMode, WrapMode];
+  /** Triangle indices inside the input's UV list. */
+  triangles: number[];
+  /** Surface area used for this island's demand. */
   area: number;
 }
 
 export interface AtlasLayout {
   size: number;
   rects: Map<string, AtlasRect>;
-  /** Applied scale after shrinking to fit, 1 when everything fit immediately. */
+  charts: AtlasChart[];
+  /** Applied demand scale after shrinking to fit, 1 when everything fit immediately. */
   scale: number;
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-/** Sublinear demand keeps one dominant material from crowding out small details. */
+/** Sublinear demand keeps one dominant island from crowding out small details. */
 const ALLOCATION_POWER = 0.85;
+/** Minimum content edge for textured charts; small eye highlights stay sampleable. */
+const MIN_CHART = 3;
+/** Flat materials only need one sampleable texel. */
+const MIN_FLAT = 1;
+const MAX_ASPECT = 32;
+
+interface PendingChart {
+  key: string;
+  inputKey: string;
+  bounds: [number, number, number, number] | null;
+  tiles: [number, number];
+  wrap: [WrapMode, WrapMode];
+  triangles: number[];
+  area: number;
+  aspect: number;
+  textured: boolean;
+}
 
 interface AtlasBox {
   key: string;
@@ -52,10 +101,11 @@ const boxOrder = (order: string, box: AtlasBox) => {
   }
 };
 
-/** Rectangle-only MaxRects-style packer. Boxes already include their own pad. */
+/** Rectangle-only MaxRects-style packer. Boxes are content size; `pad` is added here. */
 function packBoxes(
   boxes: readonly AtlasBox[],
   size: number,
+  pad: number,
   orders: readonly string[],
 ): { rects: Map<string, AtlasRect>; score: number } | null {
   let best: { rects: Map<string, AtlasRect>; score: number } | null = null;
@@ -68,14 +118,20 @@ function packBoxes(
     for (const box of [...boxes].sort(
       (a, b) => boxOrder(order, b) - boxOrder(order, a) || a.key.localeCompare(b.key),
     )) {
+      const width = box.width + pad * 2;
+      const height = box.height + pad * 2;
+      if (width > size || height > size) {
+        failed = true;
+        break;
+      }
       const choices = free
-        .filter((rect) => box.width <= rect.width && box.height <= rect.height)
+        .filter((rect) => width <= rect.width && height <= rect.height)
         .sort(
           (a, b) =>
-            Math.min(a.width - box.width, a.height - box.height) -
-              Math.min(b.width - box.width, b.height - box.height) ||
-            Math.max(a.width - box.width, a.height - box.height) -
-              Math.max(b.width - box.width, b.height - box.height) ||
+            Math.min(a.width - width, a.height - height) -
+              Math.min(b.width - width, b.height - height) ||
+            Math.max(a.width - width, a.height - height) -
+              Math.max(b.width - width, b.height - height) ||
             a.y - b.y ||
             a.x - b.x,
         );
@@ -84,8 +140,8 @@ function packBoxes(
         failed = true;
         break;
       }
-      const used = { x: fit.x, y: fit.y, width: box.width, height: box.height };
-      rects.set(box.key, { ...used, pad: 0 });
+      const used = { x: fit.x, y: fit.y, width, height };
+      rects.set(box.key, { ...used, pad });
       usedRight = Math.max(usedRight, used.x + used.width);
       usedBottom = Math.max(usedBottom, used.y + used.height);
       const next: AtlasRect[] = [];
@@ -139,79 +195,158 @@ function packBoxes(
 }
 
 /**
- * Plan the 128 px atlas. Rectangles are budgeted by world-space surface area
- * (sublinear, so one dominant material cannot starve small parts), then packed
- * with a deterministic MaxRects search. Flat/untextured materials only need a
- * single sampleable texel. The result is unit-testable without a canvas.
+ * Build the UV islands for one input. Materials with triangle UVs use the
+ * shared desktop chart splitter; legacy flat inputs keep their single rect.
+ */
+function chartsFor(input: AtlasInput): PendingChart[] {
+  const wrap: [WrapMode, WrapMode] = [
+    normalizeWrapMode(input.texture?.wrapS ?? 1000),
+    normalizeWrapMode(input.texture?.wrapT ?? 1000),
+  ];
+  const single = (
+    bounds: [number, number, number, number] | null,
+    triangles: number[],
+  ): PendingChart => {
+    const unwrapped = bounds
+      ? unwrapChartBounds(bounds[0], bounds[1], bounds[2], bounds[3])
+      : null;
+    return {
+      key: `${input.key}#0`,
+      inputKey: input.key,
+      bounds: unwrapped?.bounds ?? null,
+      tiles: unwrapped?.tiles ?? [1, 1],
+      wrap,
+      triangles,
+      area: input.area,
+      aspect: aspectOf(input, bounds),
+      textured: !!input.texture && !!bounds,
+    };
+  };
+
+  const uvs = input.uvs;
+  const allTriangles = uvs
+    ? Array.from({ length: Math.floor(uvs.length / 6) }, (_, index) => index)
+    : [];
+  if (!input.texture || !input.uvBounds) return [single(null, allTriangles)];
+  if (!uvs || uvs.length < 6) return [single(input.uvBounds, allTriangles)];
+  const charts = buildUvCharts(uvs);
+  if (!charts.length) return [single(input.uvBounds, allTriangles)];
+  const triangleAreas = input.triangleAreas;
+  const perTriangle = input.area / Math.max(1, Math.floor(uvs.length / 6));
+  return charts.map((chart, index) => {
+    const unwrapped = unwrapChartBounds(
+      chart.minU,
+      chart.minV,
+      chart.maxU,
+      chart.maxV,
+    );
+    let area = 0;
+    if (triangleAreas && triangleAreas.length >= chart.triangles.length) {
+      for (const triangle of chart.triangles) area += triangleAreas[triangle] ?? 0;
+    } else area = perTriangle * chart.triangles.length;
+    const bounds = unwrapped.bounds;
+    return {
+      key: `${input.key}#${index}`,
+      inputKey: input.key,
+      bounds,
+      tiles: unwrapped.tiles,
+      wrap,
+      triangles: chart.triangles,
+      area,
+      aspect: aspectOf(input, bounds),
+      textured: true,
+    };
+  });
+}
+
+function aspectOf(input: AtlasInput, bounds: [number, number, number, number] | null) {
+  if (!input.texture || !bounds) return 1;
+  const width = Math.max(0, bounds[2] - bounds[0]) * input.texture.width;
+  const height = Math.max(0, bounds[3] - bounds[1]) * input.texture.height;
+  if (!(width > 1e-6) || !(height > 1e-6)) return 1;
+  return clamp(width / height, 1 / MAX_ASPECT, MAX_ASPECT);
+}
+
+/**
+ * Plan the 128 px atlas per UV island. Islands use the desktop's sublinear
+ * surface-area demand, 3×3 minimum and unwrapped aspect; flat materials keep a
+ * single sampleable texel. Packing stays deterministic and unit-testable.
  */
 export function planAtlas(inputs: readonly AtlasInput[], size = 128, pad = 1): AtlasLayout {
-  const unique = new Map<string, AtlasInput>();
-  for (const input of inputs) if (!unique.has(input.key)) unique.set(input.key, input);
-  const values = [...unique.values()];
-  if (!values.length) return { size, rects: new Map(), scale: 1 };
-  const innerSize = Math.max(1, size - pad * 2);
-  const minFlat = pad * 2 + 1;
-  const minTextured = pad * 2 + 3;
-  const hasTexture = (input: AtlasInput) => !!(input.texture && input.uvBounds);
-
-  if (values.length === 1) {
-    const input = values[0]!;
-    const minOuter = hasTexture(input) ? minTextured : minFlat;
-    const aspect = aspectOf(input);
-    let width = hasTexture(input) ? innerSize : minOuter;
-    let height = hasTexture(input) ? Math.max(minOuter, Math.round(width / aspect)) : minOuter;
-    if (height > innerSize) {
-      height = innerSize;
-      width = Math.max(minOuter, Math.round(height * aspect));
-    }
-    width = clamp(width, minOuter, innerSize);
-    height = clamp(height, minOuter, innerSize);
-    return {
-      size,
-      rects: new Map([[input.key, {
-        x: Math.floor((size - width) / 2),
-        y: Math.floor((size - height) / 2),
-        width,
-        height,
-        pad,
-      }]]),
-      scale: 1,
-    };
+  const charts = inputs.flatMap(chartsFor);
+  if (!charts.length) return { size, rects: new Map(), charts: [], scale: 1 };
+  // Duplicate material keys must not collide inside the rect map.
+  const usedKeys = new Set<string>();
+  for (const chart of charts) {
+    let key = chart.key;
+    let suffix = 1;
+    while (usedKeys.has(key)) key = `${chart.key}~${suffix++}`;
+    chart.key = key;
+    usedKeys.add(key);
   }
 
-  const demand = values.map((input) =>
-    hasTexture(input) ? Math.pow(Math.max(0, input.area), ALLOCATION_POWER) : 0,
+  const contentLimit = Math.max(1, size - pad * 2);
+  const usable = contentLimit * contentLimit;
+  const demand = charts.map((chart) =>
+    chart.textured ? Math.pow(Math.max(1e-8, chart.area), ALLOCATION_POWER) : 0,
   );
   const totalDemand = demand.reduce((sum, value) => sum + value, 0);
-  const usable = innerSize * innerSize * 0.92;
-  const boxesAt = (scale: number): AtlasBox[] =>
-    values.map((input, index) => {
-      const textured = hasTexture(input);
-      const minOuter = textured ? minTextured : minFlat;
+  const dimensionsAt = (scale: number): AtlasBox[] =>
+    charts.map((chart, index) => {
+      if (!chart.textured)
+        return { key: chart.key, width: MIN_FLAT, height: MIN_FLAT };
       const share = totalDemand > 0 ? demand[index]! / totalDemand : 0;
-      const target = Math.max(minOuter * minOuter, usable * share * scale);
-      const aspect = aspectOf(input);
-      const width = clamp(Math.sqrt(target * aspect), minOuter, innerSize);
-      const height = clamp(Math.sqrt(target / aspect), minOuter, innerSize);
-      return { key: input.key, width: Math.ceil(width), height: Math.ceil(height) };
+      const target = Math.max(MIN_CHART * MIN_CHART, usable * share * scale);
+      const width = clamp(
+        Math.round(Math.sqrt(target * chart.aspect)),
+        MIN_CHART,
+        contentLimit,
+      );
+      const height = clamp(
+        Math.round(Math.sqrt(target / chart.aspect)),
+        MIN_CHART,
+        contentLimit,
+      );
+      return { key: chart.key, width, height };
     });
 
   const orders = ['area', 'max', 'height', 'width'] as const;
-  const attempt = (scale: number) => {
-    const packed = packBoxes(boxesAt(scale), size, orders);
+  const attempt = (scale: number): AtlasLayout | null => {
+    const packed = packBoxes(dimensionsAt(scale), size, pad, orders);
     if (!packed) return null;
+    const placed: AtlasChart[] = charts.map((chart) => ({
+      key: chart.key,
+      inputKey: chart.inputKey,
+      rect: packed.rects.get(chart.key)!,
+      bounds: chart.bounds,
+      tiles: chart.tiles,
+      wrap: chart.wrap,
+      triangles: chart.triangles,
+      area: chart.area,
+    }));
     const rects = new Map<string, AtlasRect>();
-    for (const [key, rect] of packed.rects)
-      rects.set(key, { ...rect, pad });
-    return { size, rects, scale };
+    const perInput = new Map<string, AtlasChart[]>();
+    for (const chart of placed) {
+      const group = perInput.get(chart.inputKey) ?? [];
+      group.push(chart);
+      perInput.set(chart.inputKey, group);
+    }
+    // Keep the historical one-key-per-material map for single-island inputs;
+    // multi-island materials are keyed per chart (and `charts` carries them).
+    for (const [inputKey, group] of perInput)
+      if (group.length === 1) rects.set(inputKey, group[0]!.rect);
+      else for (const chart of group) rects.set(chart.key, chart.rect);
+    return { size, rects, charts: placed, scale };
   };
 
   const full = attempt(1);
   if (full) return full;
-  let low = 0.18,
-    high = 1,
-    best: AtlasLayout | null = null;
-  for (let i = 0; i < 14; i++) {
+  let best = attempt(0);
+  if (!best)
+    throw new Error('材质与 UV 岛数量超过 128×128 图集可安全容纳的数量');
+  let low = 0,
+    high = 1;
+  for (let i = 0; i < 24; i++) {
     const mid = (low + high) / 2;
     const layout = attempt(mid);
     if (layout) {
@@ -219,49 +354,18 @@ export function planAtlas(inputs: readonly AtlasInput[], size = 128, pad = 1): A
       low = mid;
     } else high = mid;
   }
-  if (best) return best;
-
-  // Many tiny materials: fall back to an even grid.
-  let columns = Math.min(
-    Math.ceil(Math.sqrt(values.length)),
-    Math.max(1, Math.floor(size / minFlat)),
-  );
-  let cell = Math.floor(size / columns);
-  let rows = Math.ceil(values.length / columns);
-  if (rows * cell > size) {
-    // Extremely material-heavy models need a 2 px cell (1 px content). This is
-    // still safe from overlap, though linear filtering gets tighter margins.
-    columns = Math.min(
-      Math.ceil(Math.sqrt(values.length)),
-      Math.max(1, Math.floor(size / 2)),
-    );
-    cell = 2;
-    rows = Math.ceil(values.length / columns);
-    if (rows * cell > size)
-      throw new Error('材质数量超过 128×128 图集可安全容纳的数量');
-  }
-  const rects = new Map<string, AtlasRect>();
-  values.forEach((input, index) => {
-    const x = (index % columns) * cell;
-    const y = Math.floor(index / columns) * cell;
-    rects.set(input.key, {
-      x,
-      y,
-      width: Math.max(cell, 2),
-      height: Math.max(cell, 2),
-      pad,
-    });
-  });
-  return { size, rects, scale: 0.18 };
+  return best;
 }
 
-function aspectOf(input: AtlasInput) {
-  if (!input.texture || !input.uvBounds) return 1;
-  const [u0, v0, u1, v1] = input.uvBounds;
-  const width = Math.max(0.001, (u1 - u0) * input.texture.width);
-  const height = Math.max(0.001, (v1 - v0) * input.texture.height);
-  return clamp(width / height, 0.2, 5);
+/** Decoded source pixels, reused by wrap-aware charts of the same texture. */
+interface TexturePixels {
+  width: number;
+  height: number;
+  data: Uint8ClampedArray;
 }
+
+const MAX_CACHED_TEXTURE_PIXELS = 24 * 1024 * 1024;
+const MAX_CACHED_TEXTURES = 4;
 
 /** Painter for the planned atlas. Tints and opacity are baked into pixels. */
 export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout): AtlasBuild {
@@ -274,12 +378,53 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
 
-  const unique = new Map<string, AtlasInput>();
-  for (const input of inputs) if (!unique.has(input.key)) unique.set(input.key, input);
+  const byKey = new Map<string, AtlasInput>();
+  for (const input of inputs) if (!byKey.has(input.key)) byKey.set(input.key, input);
 
-  for (const [key, input] of unique) {
-    const rect = rects.get(key);
-    if (!rect) continue;
+  // A full texture read is only needed when a chart leaves 0..1. Cache the
+  // decoded pixels per texture, not per material, and evict old entries so a
+  // texture-heavy model does not keep every 4K image in memory at once.
+  const pixelCache = new Map<string, TexturePixels>();
+  let cachedPixels = 0;
+  const texturePixels = (texture: TextureSource): TexturePixels | null => {
+    const hit = pixelCache.get(texture.key);
+    if (hit) {
+      pixelCache.delete(texture.key);
+      pixelCache.set(texture.key, hit);
+      return hit;
+    }
+    const scratch = document.createElement('canvas');
+    scratch.width = Math.max(1, texture.width);
+    scratch.height = Math.max(1, texture.height);
+    const scratchContext = scratch.getContext('2d', { willReadFrequently: true });
+    if (!scratchContext) return null;
+    scratchContext.drawImage(texture.image, 0, 0, scratch.width, scratch.height);
+    const image = scratchContext.getImageData(0, 0, scratch.width, scratch.height);
+    const pixels: TexturePixels = {
+      width: image.width,
+      height: image.height,
+      data: image.data,
+    };
+    while (
+      (cachedPixels + pixels.width * pixels.height > MAX_CACHED_TEXTURE_PIXELS ||
+        pixelCache.size >= MAX_CACHED_TEXTURES) &&
+      pixelCache.size
+    ) {
+      const oldest = pixelCache.keys().next().value;
+      if (oldest === undefined) break;
+      const evicted = pixelCache.get(oldest)!;
+      cachedPixels -= evicted.width * evicted.height;
+      pixelCache.delete(oldest);
+    }
+    pixelCache.set(texture.key, pixels);
+    cachedPixels += pixels.width * pixels.height;
+    return pixels;
+  };
+
+  for (const chart of layout.charts) {
+    const input = byKey.get(chart.inputKey);
+    if (!input) continue;
+    const rect = chart.rect;
     const innerX = rect.x + rect.pad;
     const innerY = rect.y + rect.pad;
     const innerWidth = Math.max(1, rect.width - rect.pad * 2);
@@ -287,27 +432,95 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
     const alphaMode = input.alphaMode ?? 'BLEND';
     const alphaCutoff = input.alphaCutoff ?? 0.5;
     const texture = input.texture;
-    const bounds = input.uvBounds;
-    let drawn = false;
+    const bounds = chart.bounds;
+    let image: ImageData | null = null;
+
     if (texture && bounds) {
-      const sx = clamp(bounds[0] * texture.width, 0, texture.width);
-      const sy = clamp(bounds[1] * texture.height, 0, texture.height);
-      const sw = clamp((bounds[2] - bounds[0]) * texture.width, 0, texture.width - sx);
-      const sh = clamp((bounds[3] - bounds[1]) * texture.height, 0, texture.height - sy);
-      if (sw >= 0.5 && sh >= 0.5) {
+      const spanU = bounds[2] - bounds[0];
+      const spanV = bounds[3] - bounds[1];
+      const inRange =
+        bounds[0] >= 0 &&
+        bounds[1] >= 0 &&
+        bounds[2] <= 1 &&
+        bounds[3] <= 1;
+      if (inRange && spanU * texture.width >= 0.5 && spanV * texture.height >= 0.5) {
+        // Fast and high quality: let the browser resample the source rect.
+        const sx = clamp(bounds[0] * texture.width, 0, texture.width);
+        const sy = clamp(bounds[1] * texture.height, 0, texture.height);
+        const sw = Math.max(0, (bounds[2] - bounds[0]) * texture.width);
+        const sh = Math.max(0, (bounds[3] - bounds[1]) * texture.height);
         context.clearRect(innerX, innerY, innerWidth, innerHeight);
-        context.drawImage(texture.image, sx, sy, sw, sh, innerX, innerY, innerWidth, innerHeight);
-        drawn = true;
+        context.drawImage(
+          texture.image,
+          sx,
+          sy,
+          sw,
+          sh,
+          innerX,
+          innerY,
+          innerWidth,
+          innerHeight,
+        );
+        image = context.getImageData(innerX, innerY, innerWidth, innerHeight);
+      } else {
+        // Negative / seam-crossing UVs: sample the source sampler virtually.
+        const pixels = texturePixels(texture);
+        if (pixels) {
+          const sampled = context.createImageData(innerWidth, innerHeight);
+          const out = [0, 0, 0, 0];
+          for (let y = 0; y < innerHeight; y++) {
+            const v =
+              spanV > 1e-9
+                ? bounds[1] + ((y + 0.5) / innerHeight) * spanV
+                : (bounds[1] + bounds[3]) / 2;
+            for (let x = 0; x < innerWidth; x++) {
+              const u =
+                spanU > 1e-9
+                  ? bounds[0] + ((x + 0.5) / innerWidth) * spanU
+                  : (bounds[0] + bounds[2]) / 2;
+              sampleWrappedRgba(
+                pixels.data,
+                pixels.width,
+                pixels.height,
+                u,
+                v,
+                chart.wrap[0],
+                chart.wrap[1],
+                out,
+              );
+              const target = (y * innerWidth + x) * 4;
+              sampled.data[target] = out[0]!;
+              sampled.data[target + 1] = out[1]!;
+              sampled.data[target + 2] = out[2]!;
+              sampled.data[target + 3] = out[3]!;
+            }
+          }
+          image = sampled;
+        }
       }
     }
-    if (!drawn) {
-      context.clearRect(innerX - rect.pad, innerY - rect.pad, innerWidth + rect.pad * 2, innerHeight + rect.pad * 2);
-      context.fillStyle = rgba(input.color, resolveAlpha(input.opacity, alphaMode, alphaCutoff));
-      context.fillRect(innerX - rect.pad, innerY - rect.pad, innerWidth + rect.pad * 2, innerHeight + rect.pad * 2);
+
+    if (!image) {
+      context.clearRect(
+        innerX - rect.pad,
+        innerY - rect.pad,
+        innerWidth + rect.pad * 2,
+        innerHeight + rect.pad * 2,
+      );
+      context.fillStyle = rgba(
+        input.color,
+        resolveAlpha(input.opacity, alphaMode, alphaCutoff),
+      );
+      context.fillRect(
+        innerX - rect.pad,
+        innerY - rect.pad,
+        innerWidth + rect.pad * 2,
+        innerHeight + rect.pad * 2,
+      );
       continue;
     }
+
     // Bake the base-color factor and alpha mode exactly like the Node atlas.
-    const image = context.getImageData(innerX, innerY, innerWidth, innerHeight);
     bakeBaseColorPixels(image.data, {
       factor: [
         srgbToLinear(input.color[0]),
@@ -358,15 +571,21 @@ export interface AtlasUsage {
   materials: AtlasMaterialUsage[];
 }
 
+export interface AtlasUsageOptions {
+  /** Called before each material is rasterized, so the UI can show `3/12`. */
+  onProgress?: (done: number, total: number, name: string) => void;
+}
+
 /**
  * Rasterize the final atlas UVs to measure how many pixels each material
  * actually covers. Mirrors the desktop workbench's texture report.
  */
-export function measureAtlasUsage(
+export async function measureAtlasUsage(
   canvas: HTMLCanvasElement,
   batches: readonly { name: string; positions: Float32Array; uvs: Float32Array | null }[],
   size: number,
-): AtlasUsage {
+  options: AtlasUsageOptions = {},
+): Promise<AtlasUsage> {
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) return { sampledUtilization: 0, uvUtilization: 0, sampledPixels: 0, uvPixels: 0, materials: [] };
   const alpha = context.getImageData(0, 0, size, size).data;
@@ -384,7 +603,10 @@ export function measureAtlasUsage(
     return mask;
   };
 
-  for (const batch of batches) {
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex]!;
+    options.onProgress?.(batchIndex, batches.length, batch.name);
+    await yieldToBrowser();
     const mask = maskFor(batch.name, false);
     const uvMask = maskFor(batch.name, true);
     const uvs = batch.uvs;
@@ -415,13 +637,18 @@ export function measureAtlasUsage(
       const x1 = Math.min(size - 1, Math.ceil(Math.max(ax, bx, cx)));
       const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy)));
       const y1 = Math.min(size - 1, Math.ceil(Math.max(ay, by, cy)));
+      // Edge functions are linear, so step them along each scanline instead of
+      // recomputing three cross products per pixel.
+      const e0dx = ay - by;
+      const e1dx = by - cy;
+      const e2dx = cy - ay;
+      const startX = x0 + 0.5;
       for (let y = y0; y <= y1; y++) {
         const py = y + 0.5;
-        for (let x = x0; x <= x1; x++) {
-          const px = x + 0.5;
-          const e0 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
-          const e1 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
-          const e2 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
+        let e0 = (bx - ax) * (py - ay) - (by - ay) * (startX - ax);
+        let e1 = (cx - bx) * (py - by) - (cy - by) * (startX - bx);
+        let e2 = (ax - cx) * (py - cy) - (ay - cy) * (startX - cx);
+        for (let x = x0; x <= x1; x++, e0 += e0dx, e1 += e1dx, e2 += e2dx) {
           if (!((e0 >= 0 && e1 >= 0 && e2 >= 0) || (e0 <= 0 && e1 <= 0 && e2 <= 0))) continue;
           const index = y * size + x;
           uvMask[index] = 1;
@@ -461,31 +688,34 @@ function coverageOf(context: CanvasRenderingContext2D, size: number) {
   return used / (size * size);
 }
 
-/** Rewrite image-space UVs into atlas space. Mutates the supplied array. */
+/**
+ * Rewrite image-space UVs into atlas space. Mutates the supplied array.
+ * `triangles` limits the work to one island; no 0..1 clamp is applied because
+ * the island bounds are already continuous and unwrapped.
+ */
 export function remapUvs(
   uvs: Float32Array,
   bounds: [number, number, number, number] | null,
   rect: AtlasRect,
   size: number,
+  triangles?: readonly number[],
 ) {
   const innerX = rect.x + rect.pad;
   const innerY = rect.y + rect.pad;
   const innerWidth = Math.max(1, rect.width - rect.pad * 2);
   const innerHeight = Math.max(1, rect.height - rect.pad * 2);
-  const centerU = (innerX + innerWidth / 2) / size;
-  const centerV = (innerY + innerHeight / 2) / size;
-  if (!bounds || bounds[2] - bounds[0] < 1e-6 || bounds[3] - bounds[1] < 1e-6) {
-    for (let i = 0; i < uvs.length; i += 2) {
-      uvs[i] = centerU;
-      uvs[i + 1] = centerV;
-    }
-    return;
-  }
-  const [u0, v0, u1, v1] = bounds;
-  for (let i = 0; i < uvs.length; i += 2) {
-    const u = clamp((uvs[i]! - u0) / (u1 - u0), 0, 1);
-    const v = clamp((uvs[i + 1]! - v0) / (v1 - v0), 0, 1);
-    uvs[i] = (innerX + u * innerWidth) / size;
-    uvs[i + 1] = (innerY + v * innerHeight) / size;
+  const spanU = bounds ? bounds[2] - bounds[0] : 0;
+  const spanV = bounds ? bounds[3] - bounds[1] : 0;
+  const mapCorner = (index: number) => {
+    const u = bounds && spanU > 1e-6 ? (uvs[index]! - bounds[0]) / spanU : 0.5;
+    const v = bounds && spanV > 1e-6 ? (uvs[index + 1]! - bounds[1]) / spanV : 0.5;
+    uvs[index] = (innerX + u * innerWidth) / size;
+    uvs[index + 1] = (innerY + v * innerHeight) / size;
+  };
+  if (triangles) {
+    for (const triangle of triangles)
+      for (let corner = 0; corner < 3; corner++) mapCorner((triangle * 3 + corner) * 2);
+  } else {
+    for (let i = 0; i < uvs.length; i += 2) mapCorner(i);
   }
 }

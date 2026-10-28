@@ -11,6 +11,12 @@ function tuple(v: unknown, size: number, label: string): asserts v is number[] {
 }
 const positiveInteger = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
 const sameRef = (a: VertexRef, b: VertexRef) => a.every((v, i) => v === b[i]);
+/** True when the three points span no area, matching `Math.hypot(cross) > 0`. */
+function degeneratePositions(a: V3, b: V3, c: V3) {
+  const ux = b[0] - a[0]!, uy = b[1] - a[1]!, uz = b[2] - a[2]!;
+  const vx = c[0] - a[0]!, vy = c[1] - a[1]!, vz = c[2] - a[2]!;
+  return uy * vz - uz * vy === 0 && uz * vx - ux * vz === 0 && ux * vy - uy * vx === 0;
+}
 export const isPaddedTriangle = (p: Polygon) => p.length === 3 || (p.length === 4 && sameRef(p[2], p[3]));
 
 export interface GeometryValidationOptions {
@@ -63,22 +69,40 @@ export function validateGeometry(value: unknown, options: GeometryValidationOpti
       }
       if (typeof pm.polys === 'string') throw new Error('Unsupported Bedrock geometry: tri_list/quad_list streams are outside the indexed validation profile');
       check(Array.isArray(pm.polys) && pm.polys.length > 0, 'polys must be a non-empty indexed polygon array');
+      const positionCount = mesh.positions.length;
+      const normalCount = mesh.normals.length;
+      const uvCount = mesh.uvs.length;
+      // Hot loop: every exported polygon lands here, so keep it allocation-free.
       for (const poly of pm.polys) {
         check(Array.isArray(poly) && (poly.length === 3 || poly.length === 4), 'polygon must have three or four corners');
-        for (const corner of poly) {
+        for (const corner of poly as Polygon) {
           tuple(corner, 3, 'polygon reference');
-          check(corner.every((index, slot) => Number.isSafeInteger(index) && index >= 0 && index < [mesh.positions.length, mesh.normals.length, mesh.uvs.length][slot]!), 'polygon position/normal/UV index outside range');
+          const [positionIndex, normalIndex, uvIndex] = corner;
+          check(
+            Number.isSafeInteger(positionIndex) && positionIndex >= 0 && positionIndex < positionCount &&
+            Number.isSafeInteger(normalIndex) && normalIndex >= 0 && normalIndex < normalCount &&
+            Number.isSafeInteger(uvIndex) && uvIndex >= 0 && uvIndex < uvCount,
+            'polygon position/normal/UV index outside range',
+          );
         }
-        const p = poly as Polygon, tri = isPaddedTriangle(p);
-        const refs = tri ? p.slice(0, 3) : p;
-        check(new Set(refs.map((r) => r[0])).size === refs.length, 'polygon repeats a position except for padded triangle corner');
-        for (const corners of tri ? [[0, 1, 2]] : [[0, 1, 2], [0, 2, 3]]) {
-          const [a, b, c] = corners.map((i) => mesh.positions[refs[i]![0]]!) as [V3, V3, V3];
-          const u = b.map((v, i) => v - a[i]!), v = c.map((n, i) => n - a[i]!);
-          check(Math.hypot(u[1]! * v[2]! - u[2]! * v[1]!, u[2]! * v[0]! - u[0]! * v[2]!, u[0]! * v[1]! - u[1]! * v[0]!) > 0, 'degenerate polygon');
-        }
-        for (const r of refs) for (let axis = 0; axis < 3; axis++) {
-          const x = mesh.positions[r[0]]![axis]!; min[axis] = Math.min(min[axis]!, x); max[axis] = Math.max(max[axis]!, x);
+        const p = poly as Polygon;
+        const padded = p.length === 4 && sameRef(p[2]!, p[3]!);
+        const tri = p.length === 3 || padded;
+        const i0 = p[0]![0], i1 = p[1]![0], i2 = p[2]![0];
+        const repeats = i0 === i1 || i0 === i2 || i1 === i2 || (tri
+          ? false
+          : i0 === p[3]![0] || i1 === p[3]![0] || i2 === p[3]![0]);
+        check(!repeats, 'polygon repeats a position except for padded triangle corner');
+        const a = mesh.positions[i0]!;
+        const b = mesh.positions[i1]!;
+        const c = mesh.positions[i2]!;
+        check(!degeneratePositions(a, b, c), 'degenerate polygon');
+        if (!tri) check(!degeneratePositions(a, c, mesh.positions[p[3]![0]]!), 'degenerate polygon');
+        for (let slot = 0; slot < (tri ? 3 : 4); slot++) {
+          const point = mesh.positions[p[slot]![0]]!;
+          for (let axis = 0; axis < 3; axis++) {
+            const x = point[axis]!; min[axis] = Math.min(min[axis]!, x); max[axis] = Math.max(max[axis]!, x);
+          }
         }
         polygons++; triangles += tri ? 1 : 2; if (tri && p.length === 4) paddedTriangles++;
       }

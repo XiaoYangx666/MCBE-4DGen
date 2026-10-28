@@ -17,11 +17,15 @@ export interface TextureSource {
   height: number;
   /** Stable identity of the decoded image, used to share atlas rectangles. */
   key: string;
+  /** three.js wrap constant (1000 repeat / 1001 clamp / 1002 mirror). */
+  wrapS?: number;
+  wrapT?: number;
 }
 
 /**
- * Flat triangle soup after world transforms. UVs are normalized and already in
- * image space (v grows downwards), which is also canvas space.
+ * Flat triangle soup after world transforms. UVs are already in image space
+ * (v grows downwards), which is also canvas space; they may leave 0..1 and are
+ * expanded with the source wrap mode when the atlas is rendered.
  */
 export interface SourceBatch {
   key: string;
@@ -37,7 +41,7 @@ export interface SourceBatch {
   alphaCutoff: number;
   doubleSided: boolean;
   texture: TextureSource | null;
-  /** Tight UV rectangle of this material, clamped to 0..1. */
+  /** Continuous UV rectangle of this material, not clamped to 0..1. */
   uvBounds: [number, number, number, number] | null;
   triangles: number;
   /** World-space surface area, used to budget atlas space. */

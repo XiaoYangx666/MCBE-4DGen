@@ -21,6 +21,10 @@ import { extractModel, type ExtractedModel } from './extract.ts';
 import { reduceBatches } from './reduce.ts';
 import { convertBatches, type BindingMode, type ConvertResult } from './convert.ts';
 import { nextFrame } from './frame.ts';
+import {
+  reporter,
+  type ProgressHandler,
+} from './progress.ts';
 import type { DoubleSidedPolicy } from './bedrock.ts';
 import type { SourceBatch } from './types.ts';
 
@@ -43,7 +47,8 @@ function isPreparedInput(
 }
 
 export interface LoadModelJobOptions {
-  onPhase?: (phase: string) => void;
+  /** Overall progress for the import pipeline. */
+  onProgress?: ProgressHandler;
   /** Return false when a newer load should win; the partial model is disposed. */
   isCurrent?: () => boolean;
   /** Candidate path picked in the UI; omitted means auto-pick. */
@@ -114,10 +119,10 @@ export async function loadModelJob(
   options: LoadModelJobOptions = {},
 ): Promise<LoadedModelJob> {
   const isCurrent = options.isCurrent ?? (() => true);
-  const phase = options.onPhase ?? (() => {});
+  const report = reporter(options.onProgress);
   let loaded: LoadedModel | null = null;
   try {
-    phase('读取文件…');
+    report('读取文件…');
     await nextFrame();
     const prepared = isPreparedInput(input) ? input : await prepareModelInput(input);
     assertActive(isCurrent);
@@ -132,12 +137,11 @@ export async function loadModelJob(
     const hasPmx = files.some((file) => isPmxModel(file) || isPmdModel(file));
     const wantsPmx = options.main === undefined || modelFormatOf(options.main) === 'pmx';
     if (hasPmx && wantsPmx) {
-      phase('转换 PMX 模型…');
       await nextFrame();
-      const pmx = await convertPmxModel(
-        files,
-        options.main === undefined ? {} : { main: options.main },
-      );
+      const pmx = await convertPmxModel(files, {
+        ...(options.main === undefined ? {} : { main: options.main }),
+        ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+      });
       files = files
         .filter((file) => !isPmxModel(file) && !isPmdModel(file))
         .concat(pmx.file);
@@ -148,11 +152,12 @@ export async function loadModelJob(
       assertActive(isCurrent);
     }
 
-    phase('准备贴图…');
+    report('准备贴图…');
     await nextFrame();
     const textures = await convertTgaTextures(files, {
       onProgress: (done, total) => {
-        if (total) phase(`准备贴图 ${done}/${total}…`);
+        if (total)
+          report('准备贴图…', `${done}/${total} 张 TGA`);
       },
     });
     files = textures.files;
@@ -167,7 +172,7 @@ export async function loadModelJob(
       throw new Error('文件总大小超过 512 MB，请精简贴图或先压缩模型。');
     }
 
-    phase('解析模型…');
+    report('解析模型…', `${(totalBytes / 1024 / 1024).toFixed(1)} MB，大模型需要十几秒`);
     loaded = await loadModelFiles(files, main === undefined ? {} : { main });
     assertActive(isCurrent);
     if (pmxMaterials.length) {
@@ -175,9 +180,14 @@ export async function loadModelJob(
       if (!applied) warnings.push(PMX_MATERIAL_MISMATCH);
     }
 
+    report('识别骨骼…');
+    await nextFrame();
     const rig = detectHumanoidRig(loaded.scene, loaded.humanoidRoles);
     const armRig = detectArmRig(loaded.scene);
+    report('提取网格…', `${loaded.stats.triangles.toLocaleString('zh-CN')} 个三角面`);
+    await nextFrame();
     const extracted = extractModel(loaded.scene, { rig });
+    await nextFrame();
     if (rig) {
       const classified = extracted.batches.some((batch) =>
         batch.parts?.some((part) => part !== 0));
@@ -211,7 +221,7 @@ export interface ConvertExtractedOptions {
   maxError: number;
   included: ReadonlySet<string>;
   weights: Readonly<Record<string, number>>;
-  onPhase?: (phase: string) => void;
+  onProgress?: ProgressHandler;
 }
 
 export interface ConvertExtractedResult {
@@ -226,18 +236,20 @@ export async function convertExtractedModel(
   extracted: ExtractedModel,
   options: ConvertExtractedOptions,
 ): Promise<ConvertExtractedResult> {
-  const phase = options.onPhase ?? (() => {});
+  const report = reporter(options.onProgress);
   let batches = extracted.batches.filter((batch) => options.included.has(batch.key));
   if (!batches.length) throw new Error('请至少保留一个材质');
   const sourceTriangles = batches.reduce((sum, batch) => sum + batch.triangles, 0);
 
   let reductionWarnings: string[] = [];
   if (options.ratio < 0.999) {
-    phase('减面…');
+    report('减面…', `${batches.length} 个材质`);
     await nextFrame();
     const reduced = await reduceBatches(batches, {
       ratio: options.ratio,
       maxError: options.maxError,
+      onProgress: (done, total, name) =>
+        report(`减面 ${done + 1}/${total}`, name),
     });
     batches = reduced.batches;
     reductionWarnings = reduced.warnings;
@@ -259,7 +271,7 @@ export async function convertExtractedModel(
     doubleSided: options.doubleSided,
     ...(humanoid ? { rig: humanoid } : {}),
     sourceTriangles,
-    onPhase: phase,
+    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });
   const excludedMaterials = [...new Set(
     extracted.batches
