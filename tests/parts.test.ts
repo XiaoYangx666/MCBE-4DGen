@@ -231,6 +231,17 @@ test('filterParts rejects a keep set that matches no current part', () => {
   assert.equal(doc.getRoot().listMeshes()[0]!.listPrimitives().length, 4);
 });
 
+test('parts only include mesh instances in the exported scene', () => {
+  const doc = fourPartDocument();
+  const buffer = doc.getRoot().listBuffers()[0]!;
+  const material = doc.createMaterial('Unused');
+  const mesh = doc.createMesh('unused').addPrimitive(primitive(doc, material, buffer, 0.1));
+  doc.createNode('unused-node').setMesh(mesh);
+  const parts = assignParts(doc);
+  assert.equal(parts.length, 4);
+  assert.ok(parts.every((part) => part.node === 'body'));
+});
+
 test('filterParts reports removed meshes and nodes for a fully dropped mesh', () => {
   const doc = document();
   const report = filterParts(doc, new Set(['n2']));

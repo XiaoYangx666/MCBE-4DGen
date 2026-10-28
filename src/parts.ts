@@ -125,9 +125,21 @@ const disposeUnusedAccessors = (document: Document) => {
       accessor.dispose();
 };
 
-/** Mesh-instance nodes in document order; `PartInfo.nodeIndex` indexes this. */
+/**
+ * Mesh-instance nodes in document order; `PartInfo.nodeIndex` indexes this.
+ * Only the selected/default scene is traversed: prepare, export and the
+ * workbench all operate on that scene, so listing unused nodes would offer
+ * parts that can never appear in the output.
+ */
 export function instanceNodes(document: Document): Node[] {
-  return document.getRoot().listNodes().filter((node) => !!node.getMesh());
+  const root = document.getRoot();
+  const scene = root.getDefaultScene() ?? root.listScenes()[0];
+  if (!scene) return root.listNodes().filter((node) => !!node.getMesh());
+  const nodes: Node[] = [];
+  scene.traverse((node) => {
+    if (node.getMesh()) nodes.push(node);
+  });
+  return nodes;
 }
 
 /**

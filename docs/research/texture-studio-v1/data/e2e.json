@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-28T13:35:13.466Z",
+  "generatedAt": "2026-10-28T13:43:02.963Z",
   "models": {
     "kati": {
       "parts": 151,
@@ -1226,9 +1226,9 @@
           "otherTo": 24.433878935611574
         },
         "timings": {
-          "densityMs": 733,
-          "retentionMs": 639,
-          "sharedMs": 451
+          "densityMs": 1097,
+          "retentionMs": 904,
+          "sharedMs": 784
         }
       },
       "duplicateNames": {
@@ -1829,7 +1829,7 @@
         }
       },
       "export": {
-        "elapsedMs": 2991,
+        "elapsedMs": 5590,
         "triangles": 151550,
         "files": [
           "geometry.json",
@@ -8454,7 +8454,7 @@
           }
         }
       },
-      "elapsedMs": 8191
+      "elapsedMs": 13923
     },
     "shino": {
       "parts": 17,
@@ -9564,9 +9564,9 @@
           "otherTo": 42.9698945748969
         },
         "timings": {
-          "densityMs": 583,
-          "retentionMs": 456,
-          "sharedMs": 522
+          "densityMs": 881,
+          "retentionMs": 737,
+          "sharedMs": 979
         }
       },
       "duplicateNames": {
@@ -9576,7 +9576,7 @@
         "remainingPrimitives": 16,
         "removedMeshes": 1
       },
-      "elapsedMs": 3147
+      "elapsedMs": 5205
     },
     "furina": {
       "parts": 27,
@@ -11246,9 +11246,9 @@
           "otherTo": 32.84992747666547
         },
         "timings": {
-          "densityMs": 512,
-          "retentionMs": 559,
-          "sharedMs": 527
+          "densityMs": 795,
+          "retentionMs": 721,
+          "sharedMs": 725
         }
       },
       "duplicateNames": {
@@ -11258,7 +11258,7 @@
         "remainingPrimitives": 26,
         "removedMeshes": 1
       },
-      "elapsedMs": 2891
+      "elapsedMs": 3965
     }
   },
   "failures": []
