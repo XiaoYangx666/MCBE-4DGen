@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { MaterialList, type MaterialListItem } from './MaterialList';
+import type { TextureTarget } from './texture-target';
 
+export type { TextureTarget } from './texture-target';
 export type TextureMode = 'legacy' | 'budget';
-export type TextureTarget = 'density' | 'retention';
 
 export interface StudioPart {
   id: string;
