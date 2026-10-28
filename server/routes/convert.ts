@@ -233,14 +233,14 @@ export const convertRoutes = [
         job.result = {
           report: exported.report,
           details,
-          excluded: body.excluded,
+          excluded,
           conversionMs: Math.round(performance.now() - started),
           textureOnly: !!preparedModel,
           settings: {
             ratio: body.ratio,
             maxError: body.maxError,
             binding: body.binding,
-            excluded: body.excluded,
+            excluded,
           },
         };
         job.status = 'done';

@@ -10,6 +10,10 @@ export interface MaterialListItem {
   weight: number;
   soloed?: boolean;
   selected?: boolean;
+  /** Compact result badge, e.g. "1,240 px · +80". */
+  status?: string;
+  /** Warn when the allocator hit a technical floor. */
+  limited?: boolean;
 }
 
 export interface MaterialListProps {
@@ -19,6 +23,10 @@ export interface MaterialListProps {
   onSelect?: (id: string) => void;
   onSolo?: (id: string) => void;
   onWeight: (id: string, value: number) => void;
+  /** Hide the inline numeric weight input (the host has a dedicated tuner). */
+  showWeight?: boolean;
+  weightLabel?: string;
+  weightTitle?: string;
 }
 
 function WeightInput({
@@ -26,11 +34,13 @@ function WeightInput({
   label,
   disabled,
   onCommit,
+  title,
 }: {
   value: number;
   label: string;
   disabled?: boolean;
   onCommit: (value: number) => void;
+  title?: string;
 }) {
   const [draft, setDraft] = useState(String(value));
   const cancel = useRef(false);
@@ -58,7 +68,7 @@ function WeightInput({
       step={0.05}
       inputMode="decimal"
       aria-label={`${label} 像素权重`}
-      title="相对像素权重，默认 1；0 表示最低像素预算，材质仍会保留"
+      title={title ?? "相对像素权重，默认 1；0 表示最低像素预算，材质仍会保留"}
       disabled={disabled}
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
@@ -86,6 +96,9 @@ export function MaterialList({
   onSelect,
   onSolo,
   onWeight,
+  showWeight = true,
+  weightLabel,
+  weightTitle,
 }: MaterialListProps) {
   return (
     <div className={`shared-material-list ${onSolo ? 'with-solo' : ''}`}>
@@ -123,12 +136,20 @@ export function MaterialList({
             {item.name}
           </button>
           <span className="shared-material-meta">{item.meta}</span>
-          <WeightInput
-            value={item.weight}
-            label={item.name}
-            disabled={disabled || !item.included}
-            onCommit={(value) => onWeight(item.id, value)}
-          />
+          {item.status && (
+            <span className={`shared-material-status${item.limited ? ' limited' : ''}`}>
+              {item.status}
+            </span>
+          )}
+          {showWeight && (
+            <WeightInput
+              value={item.weight}
+              label={weightLabel ? `${item.name} ${weightLabel}` : item.name}
+              disabled={disabled || !item.included}
+              onCommit={(value) => onWeight(item.id, value)}
+              {...(weightTitle ? { title: weightTitle } : {})}
+            />
+          )}
           {onSolo && (
             <button
               type="button"

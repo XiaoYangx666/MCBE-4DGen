@@ -44,7 +44,15 @@ import { ConversionReport } from './ConversionReport';
 import { formatBytes } from '../../web/shared/format';
 import { useCompactViewport } from '../lib/use-compact-viewport';
 import { PoseControls } from '../../web/shared/PoseControls';
-import { MaterialList, type MaterialListItem } from '../../web/shared/MaterialList';
+import {
+  TextureStudio,
+  type StudioMaterial,
+  type StudioPart,
+  type TextureMode,
+  type TextureTarget,
+} from '../../web/shared/TextureStudio';
+import { createPartPreview } from '../lib/part-visibility';
+import { extractedParts } from '../engine/parts';
 
 const DEFAULT_NAME = '我的 4D 皮肤';
 /** Formats the browser build cannot open; the picker lists them as unavailable. */
@@ -97,12 +105,21 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const compact = useCompactViewport();
   const [previewRoot, setPreviewRoot] = useState<THREE.Group | null>(null);
   const [weights, setWeights] = useState<Record<string, number>>({});
+  const [textureMode, setTextureMode] = useState<TextureMode>('legacy');
+  const [textureTarget, setTextureTarget] = useState<TextureTarget>('retention');
+  const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
+  const [selectedPart, setSelectedPart] = useState<string | null>(null);
+  const [showKeptParts, setShowKeptParts] = useState(true);
+  /** Pixel difference versus the previous conversion of the same model. */
+  const [materialDeltas, setMaterialDeltas] = useState<Map<string, number>>(new Map());
   const [atlasOpen, setAtlasOpen] = useState(false);
   const [soloKey, setSoloKey] = useState<string | null>(null);
   const sourcePose = useRef('0|0');
   const armRig = useRef<ArmRig | null>(null);
   const humanoidRig = useRef<HumanoidRig | null>(null);
   const previewRootRef = useRef<THREE.Group | null>(null);
+  const partPreview = useRef<ReturnType<typeof createPartPreview> | null>(null);
+  const convertRun = useRef(0);
   const originalVisibility = useRef(new Map<THREE.Material, boolean>());
   const [result, setResult] = useState<ConvertResult | null>(null);
   const [resultKey, setResultKey] = useState('');
@@ -176,6 +193,17 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     applyMaterialVisibility(previewRoot, soloKey, included, originalVisibility.current);
   }, [previewRoot, soloKey, included]);
 
+  useEffect(() => {
+    const preview = partPreview.current;
+    if (!preview) return;
+    preview.apply(showKeptParts ? includedParts : null, selectedPart);
+  }, [previewRoot, includedParts, selectedPart, showKeptParts]);
+
+  useEffect(() => () => {
+    partPreview.current?.restore();
+    partPreview.current = null;
+  }, []);
+
   const materialThumbs = useMemo(() => {
     const map = new Map<string, string | null>();
     for (const batch of source?.batches ?? []) {
@@ -198,6 +226,14 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     setRigAvailable(false);
     setBinding('static');
     setWeights({});
+    setTextureMode('legacy');
+    setTextureTarget('retention');
+    setIncludedParts(new Set());
+    setSelectedPart(null);
+    setShowKeptParts(true);
+    setMaterialDeltas(new Map());
+    partPreview.current?.restore();
+    partPreview.current = null;
     setSoloKey(null);
     originalVisibility.current = new Map();
     armRig.current = null;
@@ -249,6 +285,8 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       setSourceBytes(job.totalBytes);
       setSource(job.extracted);
       setIncluded(new Set(job.extracted.batches.map((batch) => batch.key)));
+      setIncludedParts(new Set(extractedParts(job.extracted).map((part) => part.id)));
+      partPreview.current = createPartPreview(job.model.scene);
       setWarnings(job.warnings);
       if (!customName.current) setName(job.model.name.slice(0, 60) || DEFAULT_NAME);
       // MMD 来源默认转 180°，与桌面工作台一致；用户手动改过就保留。
@@ -311,13 +349,18 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       ratio,
       maxError,
       included,
+      includedParts,
       weights,
+      textureMode,
+      textureTarget,
       modelTriangles: model?.stats.triangles ?? 0,
     }),
-  ].join('|'), [binding, name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, weights, model?.stats.triangles]);
+  ].join('|'), [binding, name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, includedParts, weights, textureMode, textureTarget, model?.stats.triangles]);
 
   const convert = async () => {
     if (!model || busy) return;
+    const run = ++convertRun.current;
+    const before = result;
     setBusy(true);
     setError(null);
     setProgress({ label: '提取网格…' });
@@ -334,6 +377,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
         await nextFrame();
         const root = previewRootRef.current;
         const saved = root?.rotation.y ?? 0;
+        partPreview.current?.restore();
         if (root) {
           root.rotation.y = 0;
           restoreMaterialVisibility(root, originalVisibility.current);
@@ -353,9 +397,18 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
             applyMaterialVisibility(root, soloKey, included, originalVisibility.current);
             root.updateMatrixWorld(true);
           }
+          partPreview.current?.apply(showKeptParts ? includedParts : null, selectedPart);
         }
         sourcePose.current = poseKey;
         setSource(extracted);
+        // New extraction keeps the same stable part ids; never let a stale
+        // selection from another model survive.
+        const ids = new Set(extractedParts(extracted).map((part) => part.id));
+        setIncludedParts((current) => {
+          if (!current.size) return ids;
+          const kept = new Set([...current].filter((id) => ids.has(id)));
+          return kept.size ? kept : ids;
+        });
       }
       const merged = [...new Set([...model.warnings, ...extracted.warnings])];
       if (armSpread !== 0) merged.push(`已按 ${armSpread}° 调整手臂，并烘焙到静态网格。`);
@@ -369,9 +422,25 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
         ratio,
         maxError,
         included,
+        includedParts,
         weights,
+        textureMode,
+        textureTarget,
+        atlasSharing: textureMode === 'budget',
         onProgress: setProgress,
       });
+      if (run !== convertRun.current) return;
+      const previous = new Map(
+        (before?.textureReport.materials ?? []).map((material) => [
+          material.key,
+          material.pixels,
+        ]),
+      );
+      const nextDeltas = new Map<string, number>();
+      for (const material of converted.result.textureReport.materials)
+        if (previous.has(material.key))
+          nextDeltas.set(material.key, material.pixels - previous.get(material.key)!);
+      setMaterialDeltas(nextDeltas);
       setResult({
         ...converted.result,
         elapsedMs: performance.now() - startedAt,
@@ -383,10 +452,13 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       setViewMode('output');
       if (compact) setMobileTab('result');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (run === convertRun.current)
+        setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setBusy(false);
-      setProgress(null);
+      if (run === convertRun.current) {
+        setBusy(false);
+        setProgress(null);
+      }
     }
   };
 
@@ -429,6 +501,73 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     () => source ? buildMaterialLabels(source.batches) : new Map<string, string>(),
     [source],
   );
+  const studioParts = useMemo<StudioPart[]>(() => {
+    if (!source) return [];
+    const parts = extractedParts(source);
+    const byMaterial = new Map<string, { id: string; name: string }[]>();
+    for (const part of parts) {
+      const list = byMaterial.get(part.materialKey) ?? [];
+      list.push({ id: part.id, name: part.name });
+      byMaterial.set(part.materialKey, list);
+    }
+    return parts.map((part) => {
+      const label = materialLabels.get(part.materialKey) ?? part.materialName;
+      return {
+        id: part.id,
+        name: part.name,
+        group: part.mesh?.trim() || '模型结构',
+        meta: `${part.triangles.toLocaleString('zh-CN')} 面 · ${label}`,
+        materials: [label],
+        materialKey: part.materialKey,
+        sharedWith: (byMaterial.get(part.materialKey) ?? [])
+          .filter((entry) => entry.id !== part.id)
+          .map((entry) => entry.name),
+      };
+    });
+  }, [source, materialLabels]);
+  const studioMaterials = useMemo<StudioMaterial[]>(() => {
+    if (!source) return [];
+    const measured = new Map(
+      (result?.textureReport.materials ?? []).map((material) => [material.key, material]),
+    );
+    return source.batches.map((batch, index) => {
+      const material = measured.get(batch.key);
+      const related = studioParts.filter((part) => part.materialKey === batch.key);
+      const kept = related.filter((part) => includedParts.has(part.id)).length;
+      const partText = related.length
+        ? kept === related.length
+          ? ` · ${related.length} 部件`
+          : ` · 保留 ${kept}/${related.length} 部件`
+        : '';
+      const delta = materialDeltas.get(batch.key);
+      const pixels = material?.pixels;
+      return {
+        id: batch.key,
+        name: materialLabels.get(batch.key) ?? batch.name,
+        meta: `${batch.triangles.toLocaleString('zh-CN')} 面${partText}${
+          batch.texture ? ` · ${batch.texture.width}×${batch.texture.height}` : ' · 纯色'
+        }${related.length > 0 && kept === 0 ? ' · 无保留部件' : ''}`,
+        thumbnail: materialThumbs.get(batch.key) ?? null,
+        color: `rgb(${batch.color.map((value) => Math.round(value * 255)).join(' ')})`,
+        included: included.has(batch.key),
+        weight: weights[batch.key] ?? 1,
+        quality: weights[batch.key] ?? 1,
+        selected: soloKey === batch.key,
+        lastPixels: pixels ?? null,
+        deltaPixels: delta ?? null,
+        floorCharts: material?.floorCharts ?? 0,
+        flat: !batch.texture,
+        limited: (material?.floorCharts ?? 0) > 0,
+        ...(pixels !== undefined
+          ? {
+              status: `${pixels.toLocaleString('zh-CN')} px${
+                (material?.floorCharts ?? 0) > 0 ? ' · 触底' : ''
+              }`,
+            }
+          : {}),
+      };
+    });
+  }, [source, result, weights, included, includedParts, soloKey, materialDeltas, materialLabels, studioParts, materialThumbs]);
   const atlasRegions = result?.textureReport.regions ?? [];
   const atlasMaterials = useMemo(() => {
     if (!result) return [];
@@ -705,62 +844,72 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
               )}
 
           <div className="settings-section" data-section="material">
-            <div className="settings-section-title">材质</div>
-          {source && (
-            <div className="material-settings">
-              <div className="material-settings-title">
-                材质筛选 <span>{included.size}/{source.batches.length}</span>
-              </div>
-              <p className="field-help">取消勾选会从源模型预览中隐藏；点击材质名可只看该材质；右侧数字是像素权重，默认 1。</p>
-              <MaterialList
-                items={source.batches.map((batch): MaterialListItem => ({
-                  id: batch.key,
-                  name: materialLabels.get(batch.key) ?? batch.name,
-                  meta: `${batch.triangles.toLocaleString('zh-CN')} 面${batch.texture ? ` · ${batch.texture.width}×${batch.texture.height}` : ' · 纯色'}`,
-                  thumbnail: materialThumbs.get(batch.key) ?? null,
-                  color: `rgb(${batch.color.map((value) => Math.round(value * 255)).join(' ')})`,
-                  included: included.has(batch.key),
-                  weight: weights[batch.key] ?? 1,
-                  soloed: soloKey === batch.key,
-                  selected: soloKey === batch.key,
-                }))}
-                disabled={loading || busy}
-                onToggle={(id) => {
-                  const willInclude = !included.has(id);
-                  setIncluded((previous) => {
-                    const next = new Set(previous);
-                    if (willInclude) next.add(id);
-                    else next.delete(id);
-                    return next;
-                  });
-                  if (!willInclude && soloKey === id) setSoloKey(null);
-                }}
-                onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
-                onWeight={(id, value) => {
-                  setWeights((previous) => ({ ...previous, [id]: value }));
-                }}
-              />
-              <div className="material-actions">
-                {soloKey && (
-                  <button type="button" className="text-button" onClick={() => setSoloKey(null)}>
-                    显示全部
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="text-button"
-                  onClick={() => setIncluded(new Set(source.batches.map((batch) => batch.key)))}
-                >
-                  全部保留
-                </button>
-                <button type="button" className="text-button" onClick={() => setIncluded(new Set())}>
-                  全部取消
-                </button>
-              </div>
-              {!included.size && <p className="field-help error-text">至少保留一个材质</p>}
-            </div>
+            <div className="settings-section-title">纹理与部件</div>
+          {source ? (
+            <TextureStudio
+              mode={textureMode}
+              target={textureTarget}
+              onMode={setTextureMode}
+              onTarget={setTextureTarget}
+              materials={studioMaterials}
+              selectedMaterial={soloKey}
+              onSelectMaterial={(id) => setSoloKey(id)}
+              onToggleMaterial={(id) => {
+                const willInclude = !included.has(id);
+                setIncluded((previous) => {
+                  const next = new Set(previous);
+                  if (willInclude) next.add(id);
+                  else next.delete(id);
+                  return next;
+                });
+                if (!willInclude && soloKey === id) setSoloKey(null);
+              }}
+              onWeight={(id, value) => {
+                setWeights((previous) => ({ ...previous, [id]: value }));
+              }}
+              onResetWeight={(id) => {
+                setWeights((previous) => {
+                  const next = { ...previous };
+                  delete next[id];
+                  return next;
+                });
+              }}
+              onResetAllWeights={() => setWeights({})}
+              parts={studioParts}
+              includedParts={includedParts}
+              onTogglePart={(id) => {
+                setIncludedParts((previous) => {
+                  const next = new Set(previous);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  return next;
+                });
+                if (selectedPart === id) setSelectedPart(null);
+              }}
+              onSetParts={(ids) => {
+                setIncludedParts(new Set(ids));
+                if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
+              }}
+              selectedPart={selectedPart}
+              onSelectPart={setSelectedPart}
+              showKeptOnly={showKeptParts}
+              onShowKeptOnly={setShowKeptParts}
+              disabled={loading || busy}
+              note={
+                result
+                  ? `上次转换：${
+                      result.textureReport.mode === 'budget'
+                        ? result.textureReport.target === 'density'
+                          ? '预算·密度'
+                          : '预算·细节保留'
+                        : '旧版算法'
+                    }`
+                  : undefined
+              }
+            />
+          ) : (
+            <p className="field-help">导入模型后可以在这里选择部件、调整材质清晰度。</p>
           )}
-          {!source && <p className="field-help">导入模型后可以在这里筛选材质。</p>}
           </div>
             </div>
           </aside>
@@ -771,13 +920,19 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
             <p className="stale-note" role="status"><Icon name="alert" size={14} /> 参数已修改，请重新转换。</p>
           )}
           {error && <p className="error-message" role="alert"><Icon name="alert" size={15} />{error}</p>}
+          {!included.size && source && (
+            <p className="field-help error-text">至少保留一个材质</p>
+          )}
+          {!includedParts.size && source && studioParts.length > 0 && (
+            <p className="field-help error-text">至少保留一个部件，或点「全部保留」。</p>
+          )}
           {(busy || loading) && (
             <p className="task-step" role="status">
               {progress?.label ?? (busy ? '正在转换…' : '正在读取文件…')}
               {progress?.detail ? ` · ${progress.detail}` : ''}
             </p>
           )}
-          <button type="button" className="primary" disabled={!model || busy || loading || !name.trim() || !heightValid || !included.size} onClick={() => void convert()}>
+          <button type="button" className="primary" disabled={!model || busy || loading || !name.trim() || !heightValid || !included.size || !includedParts.size} onClick={() => void convert()}>
             <Icon name={busy ? 'reset' : 'spark'} size={15} className={busy ? 'spin' : undefined} />
             {busy ? '正在转换…' : result ? '重新转换' : '转换为 4D 皮肤'}
           </button>
@@ -970,16 +1125,23 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
             regions={result.textureReport.regions.map((region) => ({
               id: region.key,
               material: region.name,
+              ...(region.materialKey ? { materialKey: region.materialKey } : {}),
+              ...(region.materialKeys ? { materialKeys: region.materialKeys } : {}),
+              ...(region.materials ? { materials: region.materials } : {}),
               x: region.x,
               y: region.y,
               width: region.width,
               height: region.height,
               contentPixels: region.contentPixels,
+              shared: (region.materialKeys?.length ?? 0) > 1,
               ...(region.sourceWidth
                 ? { source: `${region.sourceWidth}×${region.sourceHeight}` }
                 : {}),
             }))}
             materials={atlasMaterials}
+            summary={result.textureReport}
+            selected={soloKey}
+            onSelect={(id) => setSoloKey(id)}
             {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
           />
         </Dialog>

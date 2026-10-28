@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HumanoidProfile } from "../../src/humanoid";
 import { api, post } from "../lib/api";
 import { estimateTriangles } from "./estimate";
 import type { Result, Session } from "./types";
+import type { TextureMode, TextureTarget } from "../shared/TextureStudio";
 
 export type Workbench = ReturnType<typeof useWorkbench>;
 
@@ -17,6 +18,12 @@ export function useWorkbench() {
   const [result, setResult] = useState<Result | null>(null);
   const [mode, setMode] = useState("pose");
   const [excluded, setExcluded] = useState<string[]>([]);
+  const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
+  const [textureMode, setTextureMode] = useState<TextureMode>("legacy");
+  const [textureTarget, setTextureTarget] = useState<TextureTarget>("retention");
+  const [selectedPart, setSelectedPart] = useState<string | null>(null);
+  const [showKeptParts, setShowKeptParts] = useState(true);
+  const [materialDeltas, setMaterialDeltas] = useState<Map<string, number>>(new Map());
   const [materialWeights, setMaterialWeights] = useState<
     Record<string, number>
   >({});
@@ -41,6 +48,7 @@ export function useWorkbench() {
   const [profileText, setProfileText] = useState("");
   const [revision, setRevision] = useState(0);
   const [resultRevision, setResultRevision] = useState(0);
+  const run = useRef(0);
 
   useEffect(() => {
     if (!busy) return;
@@ -67,6 +75,18 @@ export function useWorkbench() {
     setSession(next);
     setResult(null);
     setExcluded(saved?.excluded ?? []);
+    const availableParts = (next.parts ?? []).map((part) => part.id);
+    const savedParts = saved?.includedParts
+      ? saved.includedParts.filter((id) => availableParts.includes(id))
+      : [];
+    setIncludedParts(
+      new Set(savedParts.length ? savedParts : availableParts),
+    );
+    setTextureMode(saved?.textureMode ?? "legacy");
+    setTextureTarget(saved?.textureTarget ?? "retention");
+    setSelectedPart(null);
+    setShowKeptParts(true);
+    setMaterialDeltas(new Map());
     setMaterialWeights(saved?.materialWeights ?? {});
     setRatio(saved?.ratio ?? 0.2);
     setMaxError(saved?.maxError ?? 0.03);
@@ -100,11 +120,17 @@ export function useWorkbench() {
   function convert() {
     void action(async () => {
       if (!session) return;
+      const token = ++run.current;
+      const before = result;
       setMessage("提交转换任务…");
       const job = await post("/api/convert", {
         session: session.id,
         excluded,
+        includedParts: [...includedParts],
         materialWeights,
+        textureMode,
+        textureTarget,
+        atlasSharing: textureMode === "budget",
         binding,
         ratio,
         maxError,
@@ -113,9 +139,23 @@ export function useWorkbench() {
       });
       for (;;) {
         const state = await api("/api/job/" + job.id);
+        if (token !== run.current) return;
         setMessage(state.message);
         if (state.status === "error") throw Error(state.message);
         if (state.status === "done") {
+          const previous = new Map(
+            (before?.details?.texture?.materials ?? []).map((material) => [
+              material.key ?? material.name,
+              material.pixels,
+            ]),
+          );
+          const nextDeltas = new Map<string, number>();
+          for (const material of state.result.details?.texture?.materials ?? []) {
+            const key = material.key ?? material.name;
+            if (previous.has(key))
+              nextDeltas.set(key, material.pixels - previous.get(key)!);
+          }
+          setMaterialDeltas(nextDeltas);
           setResult({ id: job.id, ...state.result, cached: !!job.cached });
           setResultRevision(revision);
           setSavedRevision(revision);
@@ -139,6 +179,8 @@ export function useWorkbench() {
     excluded,
     ratio,
     binding,
+    session?.parts ?? [],
+    includedParts,
   );
   const settings = {
     binding,
@@ -148,6 +190,10 @@ export function useWorkbench() {
     excluded,
     materialWeights,
     profile,
+    includedParts: [...includedParts],
+    textureMode,
+    textureTarget,
+    atlasSharing: textureMode === "budget",
   };
   const dirty = !!session && revision !== savedRevision;
   const stale = !!result && revision !== resultRevision;
@@ -178,6 +224,17 @@ export function useWorkbench() {
     setMode,
     excluded,
     setExcluded,
+    includedParts,
+    setIncludedParts,
+    textureMode,
+    setTextureMode,
+    textureTarget,
+    setTextureTarget,
+    selectedPart,
+    setSelectedPart,
+    showKeptParts,
+    setShowKeptParts,
+    materialDeltas,
     materialWeights,
     setMaterialWeights,
     selected,

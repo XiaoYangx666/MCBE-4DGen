@@ -2,6 +2,7 @@ import type {
   ConversionResult,
   EditSettings,
   MaterialSummary,
+  PartSummary,
 } from "../../src/api-types";
 import type { HumanoidProfile } from "../../src/humanoid";
 
@@ -14,6 +15,8 @@ export type Session = {
   name: string;
   profile: HumanoidProfile | null;
   materials: MaterialRow[];
+  parts?: PartSummary[];
+  fingerprint?: string;
   warnings: string[];
 };
 

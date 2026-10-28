@@ -5,7 +5,9 @@ import { prepareStaticModel } from '../src/prepare-model.ts';
 import {
   PART_EXTRA,
   assignParts,
+  filterMaterialKeys,
   filterParts,
+  materialKeyMap,
   partDemands,
   partsByMaterial,
 } from '../src/parts.ts';
@@ -239,6 +241,34 @@ test('filterParts reports removed meshes and nodes for a fully dropped mesh', ()
   assert.deepEqual(
     doc.getRoot().listNodes().filter((node) => node.getMesh()).map((node) => node.getName()),
     ['propCopy'],
+  );
+});
+
+test('filterMaterialKeys removes only the selected duplicate name', () => {
+  const doc = fourPartDocument();
+  const before = assignParts(doc);
+  // Name two different materials "Same" so a name-based filter would remove both.
+  const root = doc.getRoot();
+  root.listMaterials()[0]!.setName('Same');
+  root.listMaterials()[1]!.setName('Same');
+  const keys = materialKeyMap(doc);
+  const firstKey = keys.get(root.listMaterials()[0]!)!;
+  const secondKey = keys.get(root.listMaterials()[1]!)!;
+  assert.notEqual(firstKey, secondKey);
+  const report = filterMaterialKeys(doc, new Set([secondKey]));
+  assert.equal(report.removedPrimitives, 1);
+  const mesh = root.listMeshes()[0]!;
+  assert.deepEqual(
+    mesh.listPrimitives().map((primitive) => primitive.getMaterial()!.getName()),
+    ['Same', 'C', 'D'],
+  );
+  assert.equal(mesh.listPrimitives().length, before.length - 1);
+  // The surviving duplicate-name material is the one we did not exclude.
+  assert.ok(
+    mesh.listPrimitives().some((primitive) => keys.get(primitive.getMaterial()!) === firstKey),
+  );
+  assert.ok(
+    mesh.listPrimitives().every((primitive) => keys.get(primitive.getMaterial()!) !== secondKey),
   );
 });
 

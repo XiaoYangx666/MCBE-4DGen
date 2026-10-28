@@ -14,6 +14,17 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     setMode,
     excluded,
     setExcluded,
+    includedParts,
+    setIncludedParts,
+    textureMode,
+    setTextureMode,
+    textureTarget,
+    setTextureTarget,
+    selectedPart,
+    setSelectedPart,
+    showKeptParts,
+    setShowKeptParts,
+    materialDeltas,
     materialWeights,
     setMaterialWeights,
     selected,
@@ -87,6 +98,17 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
             materialWeights={materialWeights}
             setMaterialWeights={setMaterialWeights}
             changed={changed}
+            includedParts={includedParts}
+            setIncludedParts={setIncludedParts}
+            textureMode={textureMode}
+            setTextureMode={setTextureMode}
+            textureTarget={textureTarget}
+            setTextureTarget={setTextureTarget}
+            selectedPart={selectedPart}
+            setSelectedPart={setSelectedPart}
+            showKeptParts={showKeptParts}
+            setShowKeptParts={setShowKeptParts}
+            materialDeltas={materialDeltas}
           />
         </aside>
         <main>
