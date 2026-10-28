@@ -752,27 +752,30 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
   min-height: 0;
   border-bottom: 0;
 }
-/* Floating stage row: menu + change-model icons on the left, fullscreen on
-   the right — all overlay the scene without reserving height. */
-.stage-topbar {
+/* Floating stage controls: menu + change-model stacked vertically under the
+   top-left corner; fullscreen sits alone at the top-right. All overlay the
+   scene without reserving height. */
+.stage-side-buttons {
   position: absolute;
   top: 10px;
   left: 10px;
-  right: 10px;
   z-index: 7;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 8px;
   pointer-events: none;
 }
-.stage-topbar > * { pointer-events: auto; }
-.stage-topbar-right {
+.stage-side-buttons > * { pointer-events: auto; }
+.stage-topbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 7;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+  justify-content: flex-end;
+  pointer-events: none;
 }
+.stage-topbar > * { pointer-events: auto; }
 .stage-menu-button,
 .stage-icon-button {
   display: grid;
