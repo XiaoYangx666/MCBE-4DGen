@@ -2,6 +2,10 @@ import { useState } from "react";
 import type { MaterialRow, Session, Result } from "./types";
 import { MaterialList, type MaterialListItem } from "../shared/MaterialList";
 
+/**
+ * Material controls address stable keys, never display names: two materials
+ * named "Body" stay independent for exclusion, solo and quality settings.
+ */
 export function MaterialPanel({
   session,
   busy,
@@ -28,7 +32,7 @@ export function MaterialPanel({
   excluded: string[];
   setExcluded: (update: (items: string[]) => string[]) => void;
   selected: string;
-  setSelected: (name: string) => void;
+  setSelected: (key: string) => void;
   solo: string | null;
   setSolo: (update: (value: string | null) => string | null) => void;
   mode: string;
@@ -42,20 +46,22 @@ export function MaterialPanel({
   const [hideUnchecked, setHideUnchecked] = useState(false);
   const [step, setStep] = useState(0.05);
   const materials: MaterialRow[] = session?.materials ?? [];
-  const activeMaterials = materials.filter((m) => !excluded.includes(m.name));
-  const weight = (name: string) => materialWeights[name] ?? 1;
-  const selectedMaterial = materials.find((m) => m.name === selected);
-  function adjust(name: string, value: number) {
+  const activeMaterials = materials.filter((m) => !excluded.includes(m.key));
+  const weight = (key: string) => materialWeights[key] ?? 1;
+  const selectedMaterial = materials.find((m) => m.key === selected);
+  function adjust(key: string, value: number) {
     setMaterialWeights((weights) => ({
       ...weights,
-      [name]: Math.max(0, Math.min(20, Math.round(value * 10000) / 10000)),
+      [key]: Math.max(0, Math.min(20, Math.round(value * 10000) / 10000)),
     }));
     changed();
   }
   const coverage = result?.details?.texture?.materials?.find(
-    (measurement) => measurement.name === selected,
+    (measurement) => measurement.key === selected ||
+      (measurement.name === selectedMaterial?.name &&
+        !result?.details?.texture?.materials?.some((entry) => entry.key === selected)),
   );
-  const weightSum = activeMaterials.reduce((sum, m) => sum + weight(m.name), 0);
+  const weightSum = activeMaterials.reduce((sum, m) => sum + weight(m.key), 0);
 
   return (
     <>
@@ -88,29 +94,24 @@ export function MaterialPanel({
       {selectedMaterial && (
         <div className="weight-tuner">
           <div>
-            <b>{selectedMaterial.name}</b>
-            <span>相对权重 {weight(selectedMaterial.name).toFixed(2)}</span>
+            <b>{selectedMaterial.name || "未命名"}</b>
+            <span>相对权重 {weight(selectedMaterial.key).toFixed(2)}</span>
           </div>
           <input
-            aria-label={selectedMaterial.name + " 权重滑块"}
+            aria-label={(selectedMaterial.name || "未命名") + " 权重滑块"}
             type="range"
             min="0"
             max="20"
             step="0.01"
-            value={weight(selectedMaterial.name)}
-            disabled={busy || excluded.includes(selectedMaterial.name)}
-            onChange={(e) =>
-              adjust(selectedMaterial.name, Number(e.target.value))
-            }
+            value={weight(selectedMaterial.key)}
+            disabled={busy || excluded.includes(selectedMaterial.key)}
+            onChange={(e) => adjust(selectedMaterial.key, Number(e.target.value))}
           />
           <div className="weight-step">
             <button
-              disabled={busy || excluded.includes(selectedMaterial.name)}
+              disabled={busy || excluded.includes(selectedMaterial.key)}
               onClick={() =>
-                adjust(
-                  selectedMaterial.name,
-                  weight(selectedMaterial.name) - step,
-                )
+                adjust(selectedMaterial.key, weight(selectedMaterial.key) - step)
               }
             >
               −
@@ -127,19 +128,16 @@ export function MaterialPanel({
               ))}
             </select>
             <button
-              disabled={busy || excluded.includes(selectedMaterial.name)}
+              disabled={busy || excluded.includes(selectedMaterial.key)}
               onClick={() =>
-                adjust(
-                  selectedMaterial.name,
-                  weight(selectedMaterial.name) + step,
-                )
+                adjust(selectedMaterial.key, weight(selectedMaterial.key) + step)
               }
             >
               ＋
             </button>
             <button
-              disabled={busy || excluded.includes(selectedMaterial.name)}
-              onClick={() => adjust(selectedMaterial.name, 1)}
+              disabled={busy || excluded.includes(selectedMaterial.key)}
+              onClick={() => adjust(selectedMaterial.key, 1)}
             >
               默认
             </button>
@@ -166,7 +164,7 @@ export function MaterialPanel({
           <small>
             权重占比{" "}
             {weightSum
-              ? ((weight(selectedMaterial.name) / weightSum) * 100).toFixed(1)
+              ? ((weight(selectedMaterial.key) / weightSum) * 100).toFixed(1)
               : "0.0"}
             % · 不等于最终像素占比，实际分配还受表面积和共享 UV 影响。
           </small>
@@ -176,39 +174,43 @@ export function MaterialPanel({
         {session ? (
           <MaterialList
             items={materials
-              .filter((m) => !hideUnchecked || !excluded.includes(m.name))
+              .filter((m) => !hideUnchecked || !excluded.includes(m.key))
               .map((material, index): MaterialListItem => ({
-                id: material.name,
+                id: material.key,
                 name: material.name || "未命名",
-                meta: `${material.triangles.toLocaleString()} 面${material.alpha < 1 ? ` · α ${material.alpha}` : ""}`,
+                meta: `${material.triangles.toLocaleString()} 面${
+                  material.partIds.length > 1
+                    ? ` · ${material.partIds.length} 个部件`
+                    : ""
+                }${material.alpha < 1 ? ` · α ${material.alpha}` : ""}`,
                 color: `hsl(${index * 31},25%,60%)`,
-                included: !excluded.includes(material.name),
-                weight: Object.hasOwn(materialWeights, material.name)
-                  ? materialWeights[material.name]!
+                included: !excluded.includes(material.key),
+                weight: Object.hasOwn(materialWeights, material.key)
+                  ? materialWeights[material.key]!
                   : 1,
-                soloed: solo === material.name,
-                selected: selected === material.name,
+                soloed: solo === material.key,
+                selected: selected === material.key,
               }))}
             disabled={busy}
-            onToggle={(name) => {
+            onToggle={(key) => {
               setExcluded((items) =>
-                items.includes(name)
-                  ? items.filter((item) => item !== name)
-                  : [...items, name],
+                items.includes(key)
+                  ? items.filter((item) => item !== key)
+                  : [...items, key],
               );
               changed();
             }}
-            onSelect={(name) => {
-              setSelected(name);
+            onSelect={(key) => {
+              setSelected(key);
               setMode(() => "pose");
             }}
-            onSolo={(name) => {
-              setSolo((current) => (current === name ? null : name));
-              setSelected(name);
+            onSolo={(key) => {
+              setSolo((current) => (current === key ? null : key));
+              setSelected(key);
               setMode(() => "pose");
             }}
-            onWeight={(name, value) => {
-              setMaterialWeights((weights) => ({ ...weights, [name]: value }));
+            onWeight={(key, value) => {
+              setMaterialWeights((weights) => ({ ...weights, [key]: value }));
               changed();
             }}
           />
@@ -221,7 +223,10 @@ export function MaterialPanel({
           className="text-button"
           disabled={busy}
           onClick={() => {
-            setExcluded((items) => Array.from(new Set([...items, "表情"])));
+            const keys = session.materials
+              .filter((material) => material.name === "表情")
+              .map((material) => material.key);
+            setExcluded((items) => Array.from(new Set([...items, ...keys])));
             changed();
           }}
         >

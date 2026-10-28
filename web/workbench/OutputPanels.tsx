@@ -24,15 +24,16 @@ export function OutputPanels({
     (texture?.atlas?.width ?? 128) * (texture?.atlas?.height ?? 128);
   const measurements = new Map<string, TextureMaterialUsage>(
     (texture?.materials ?? []).map((measurement) => [
-      measurement.name,
+      measurement.key ?? measurement.name,
       measurement,
     ]),
   );
+  const excludedKeys = new Set(result?.excluded ?? []);
   const materials = (session?.materials ?? [])
     .map((m) => ({
       ...m,
-      measurement: measurements.get(m.name),
-      excluded: result?.excluded.includes(m.name),
+      measurement: measurements.get(m.key),
+      excluded: excludedKeys.has(m.key),
     }))
     .sort(
       (a, b) => (b.measurement?.pixels ?? 0) - (a.measurement?.pixels ?? 0),
@@ -40,6 +41,8 @@ export function OutputPanels({
   const atlasRegions = (texture?.regions ?? []).map((region) => ({
     id: String(region.id),
     material: region.material,
+    materialKey: region.materialKey ?? undefined,
+    materialKeys: region.materialKeys,
     materials: region.materials,
     x: region.x,
     y: region.y,
@@ -48,15 +51,26 @@ export function OutputPanels({
     contentPixels: region.width * region.height,
     source: `${region.resized.width}×${region.resized.height}`,
   }));
-  const atlasMaterials = (texture?.materials ?? []).map((measurement) => ({
-    name: measurement.name,
-    allocated: atlasRegions
-      .filter((region) => region.materials.includes(measurement.name))
-      .reduce((sum, region) => sum + region.contentPixels, 0),
-    used: measurement.pixels,
-    uv: measurement.uvPixels ?? null,
-    weight: texture?.materialWeights?.[measurement.name],
-  }));
+  const atlasMaterials = (texture?.materials ?? []).map((measurement) => {
+    const key = measurement.key ?? measurement.name;
+    return {
+      id: key,
+      name: measurement.name,
+      allocated: atlasRegions
+        .filter((region) => region.materialKeys?.includes(key))
+        .reduce((sum, region) => sum + region.contentPixels, 0),
+      used: measurement.pixels,
+      uv: measurement.uvPixels ?? null,
+      shared: measurement.sharedPixels ?? null,
+      weight: texture?.materialWeights?.[key],
+      floorCharts: measurement.floorCharts,
+      rectPixels: measurement.rectPixels,
+      wastePixels: measurement.wastePixels,
+      mode: texture?.allocation === 'texel-density' || texture?.allocation === 'texel-retention'
+        ? texture.allocation
+        : 'legacy',
+    };
+  });
   return (
     <div className="bottom-panels">
       <section className="atlas-panel">
@@ -122,7 +136,8 @@ export function OutputPanels({
               </>
             }
             materials={materials.map((m) => ({
-              name: m.name,
+              id: m.key,
+              name: m.name || '未命名',
               pixels: m.measurement?.pixels ?? null,
               excluded: m.excluded,
             }))}

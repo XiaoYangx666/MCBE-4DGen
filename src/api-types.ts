@@ -2,11 +2,30 @@ import type { HumanoidProfile } from './humanoid.ts';
 
 /** Per-material summary returned when a model session is created. */
 export interface MaterialSummary {
+  /** Stable identity `m:{name}#{occurrence}`; display names can repeat. */
+  key: string;
   name: string;
   triangles: number;
   alpha: number;
   doubleSided: boolean;
   transparent: boolean;
+  /** Parts that own triangles of this material. */
+  partIds: string[];
+}
+
+/** One primitive or instanced-node part of the source model. */
+export interface PartSummary {
+  id: string;
+  name: string;
+  node: string;
+  mesh: string;
+  /** Primitive index, or -1 for a whole instanced node. */
+  primitive: number;
+  materialKey: string;
+  materialName: string;
+  triangles: number;
+  vertices: number;
+  instancePart: boolean;
 }
 
 /** Editing settings persisted on a model library entry. */
@@ -15,9 +34,19 @@ export interface EditSettings {
   ratio: number;
   maxError: number;
   height: number;
+  /** Material keys to exclude. Legacy saves may contain unique names. */
   excluded: string[];
+  /** Relative quality per stable material key. */
   materialWeights: Record<string, number>;
   profile: HumanoidProfile | null;
+  /** Stable part ids to keep. Missing means all current parts. */
+  includedParts?: string[];
+  /** Legacy compact planner is the default; budget is opt-in. */
+  textureMode?: 'legacy' | 'budget';
+  textureTarget?: 'texel-density' | 'texel-retention';
+  atlasSharing?: boolean;
+  /** Structure fingerprint the selection was made against. */
+  fingerprint?: string;
 }
 
 /** Persisted model-library entry shared by the server and the web client. */
@@ -43,6 +72,12 @@ export interface LoadedSession {
   settings: EditSettings | null;
   profile: HumanoidProfile | null;
   materials: MaterialSummary[];
+  /** Every keepable part of the current document. */
+  parts: PartSummary[];
+  /** Current structure fingerprint for saved selections. */
+  fingerprint: string;
+  /** Selection entries dropped because they did not match this model. */
+  selectionWarnings: string[];
   warnings: string[];
 }
 
@@ -66,6 +101,14 @@ export interface TextureAtlasReport {
   emptyUtilization?: number;
   /** Share of chart bounding-box pixels that a triangle actually covers. */
   chartCoverage?: number;
+  /** Unique content pixels no triangle samples. */
+  unusedContentPixels?: number;
+  /** Pixels sampled by two or more materials. */
+  overlapPixels?: number;
+  /** Unique content pixels inside shared rectangles. */
+  sharedContentPixels?: number;
+  /** Content pixels not attributed to any material (normally 0). */
+  unattributedPixels?: number;
 }
 
 export interface TextureMaterialUsage {
@@ -75,6 +118,10 @@ export interface TextureMaterialUsage {
   pixels: number;
   /** Triangle-covered pixels, including transparent texels. */
   uvPixels?: number;
+  /** Triangle-covered pixels also covered by another material. */
+  sharedPixels?: number;
+  /** Triangle-covered pixels no other material covers. */
+  uniquePixels?: number;
   regions: number[];
   /** Exact atlas texels the material's triangles map to. */
   atlasTexels?: number;
@@ -97,6 +144,8 @@ export interface TextureRegionReport {
   material: string;
   materialKey?: string | null;
   materials: string[];
+  /** Stable keys matching `materials`; shared rectangles list every owner. */
+  materialKeys?: string[];
   surfaceAreas: Record<string, number>;
   weightedArea: number;
   x: number;

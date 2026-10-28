@@ -4,6 +4,8 @@ import { exportBedrockGeometry } from '../../src/bedrock-exporter.ts';
 import { exportHumanoid } from '../../src/humanoid.ts';
 import type { HumanoidProfile } from '../../src/humanoid.ts';
 import { optimizeModel } from '../../src/optimizer.ts';
+import { filterMaterialKeys, filterParts } from '../../src/parts.ts';
+import { normalizeSelection } from '../../src/selection.ts';
 import { buildSkinPack } from '../../src/skin-pack-files.ts';
 import { zipSkinPack } from '../../src/skin-pack.ts';
 import { HttpError, json, stableJson } from '../http.ts';
@@ -18,11 +20,16 @@ export const convertRoutes = [
       session: string;
       excluded: string[];
       materialWeights?: Record<string, number>;
+      /** Stable part ids to keep; omitted means every part. */
+      includedParts?: string[];
       binding: string;
       ratio: number;
       maxError: number;
       height: number;
       profile: HumanoidProfile | null;
+      textureMode?: 'legacy' | 'budget';
+      textureTarget?: 'texel-density' | 'texel-retention';
+      atlasSharing?: boolean;
     };
     const session = studio.sessions.get(body.session);
     if (!session) throw new HttpError('模型会话不存在', 404);
@@ -38,23 +45,51 @@ export const convertRoutes = [
       body.height < 1 ||
       body.height > 128 ||
       !Array.isArray(body.excluded) ||
-      body.excluded.some((name) => typeof name !== 'string')
+      body.excluded.some((name) => typeof name !== 'string') ||
+      (body.includedParts !== undefined &&
+        (!Array.isArray(body.includedParts) ||
+          body.includedParts.some((id) => typeof id !== 'string'))) ||
+      (body.textureMode !== undefined &&
+        !['legacy', 'budget'].includes(body.textureMode)) ||
+      (body.textureTarget !== undefined &&
+        !['texel-density', 'texel-retention'].includes(body.textureTarget))
     )
       throw Error('转换参数无效');
 
+    // Keys are authoritative; unique legacy names are migrated on read and
+    // duplicate/unknown entries are dropped instead of touching a wrong part.
+    const selection = normalizeSelection(session.materials, session.parts, {
+      excluded: body.excluded,
+      materialWeights: body.materialWeights ?? {},
+      ...(body.includedParts ? { includedParts: body.includedParts } : {}),
+    });
+    const excluded = selection.excluded;
+    const materialWeights = selection.materialWeights;
+    const keepParts = body.includedParts
+      ? selection.includedParts ?? []
+      : session.parts.map((part) => part.id);
+    if (!keepParts.length) throw Error('请至少保留一个模型部件');
+    const textureMode = body.textureMode ?? 'legacy';
+    const textureTarget = body.textureTarget ?? 'texel-retention';
+
     const key = stableJson({
       session: body.session,
-      excluded: [...body.excluded].sort(),
+      excluded: [...excluded].sort(),
+      includedParts: [...keepParts].sort(),
       binding: body.binding,
       ratio: body.ratio,
       maxError: body.maxError,
       height: body.height,
       profile: body.profile,
-      materialWeights: body.materialWeights ?? {},
+      materialWeights,
+      textureMode,
+      textureTarget,
+      atlasSharing: !!body.atlasSharing,
     });
     const geometryKey = stableJson({
       session: body.session,
-      excluded: [...body.excluded].sort(),
+      excluded: [...excluded].sort(),
+      includedParts: [...keepParts].sort(),
       binding: body.binding,
       ratio: body.ratio,
       maxError: body.maxError,
@@ -71,9 +106,14 @@ export const convertRoutes = [
         ratio: body.ratio,
         maxError: body.maxError,
         height: body.height,
-        excluded: body.excluded,
-        materialWeights: body.materialWeights ?? {},
+        excluded,
+        materialWeights,
         profile: body.profile,
+        includedParts: keepParts,
+        textureMode,
+        textureTarget,
+        atlasSharing: !!body.atlasSharing,
+        fingerprint: session.fingerprint,
       },
     });
     if (cached) return json({ id: cached[0], cached: true });
@@ -88,12 +128,12 @@ export const convertRoutes = [
       meta: {
         source: session.name,
         modelId: session.modelId,
-        materialWeights: body.materialWeights ?? {},
+        materialWeights,
         binding: body.binding,
         ratio: body.ratio,
         maxError: body.maxError,
         height: body.height,
-        excluded: body.excluded,
+        excluded,
         profile: body.profile,
       },
     };
@@ -108,20 +148,9 @@ export const convertRoutes = [
               document: cloneDocument(session.model.document),
             };
         if (!preparedModel) {
-          for (const mesh of model.document.getRoot().listMeshes())
-            for (const primitive of [...mesh.listPrimitives()])
-              if (
-                body.excluded.includes(primitive.getMaterial()?.getName() ?? '')
-              ) {
-                mesh.removePrimitive(primitive);
-                primitive.dispose();
-              }
-          for (const mesh of [...model.document.getRoot().listMeshes()])
-            if (!mesh.listPrimitives().length) {
-              for (const node of model.document.getRoot().listNodes())
-                if (node.getMesh() === mesh) node.setMesh(null);
-              mesh.dispose();
-            }
+          if (keepParts.length !== session.parts.length)
+            filterParts(model.document, new Set(keepParts));
+          filterMaterialKeys(model.document, new Set(excluded));
         }
         const started = performance.now();
         let exported;
@@ -146,8 +175,14 @@ export const convertRoutes = [
                 )[phase] ?? phase;
             },
             textureSize: 256,
-            ...(body.materialWeights
-              ? { materialWeights: body.materialWeights }
+            ...(Object.keys(materialWeights).length
+              ? { materialWeights }
+              : {}),
+            ...(textureMode === 'budget'
+              ? {
+                  atlasBudget: textureTarget,
+                  atlasSharing: !!body.atlasSharing,
+                }
               : {}),
             ...(body.profile ? { profile: body.profile } : {}),
             reduction: { ratio: body.ratio, maxError: body.maxError },
@@ -168,8 +203,14 @@ export const convertRoutes = [
             texture: {
               compactSize: 128,
               padding: 1,
-              ...(body.materialWeights
-                ? { materialWeights: body.materialWeights }
+              ...(Object.keys(materialWeights).length
+                ? { materialWeights }
+                : {}),
+              ...(textureMode === 'budget'
+                ? {
+                    atlasBudget: textureTarget,
+                    atlasSharing: !!body.atlasSharing,
+                  }
                 : {}),
             },
           });

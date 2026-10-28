@@ -14,13 +14,20 @@ import {
 import {
   planAtlasBudget,
   type AtlasBudgetOptions,
+  type AtlasBudgetResult,
 } from '../../src/atlas-core/plan.ts';
-import type { ChartInput as CoreChartInput } from '../../src/atlas-core/types.ts';
+import type { AtlasPlan, ChartInput as CoreChartInput } from '../../src/atlas-core/types.ts';
+import type { PlanReport } from '../../src/atlas-core/report.ts';
+import { summarizePlan } from '../../src/atlas-core/report.ts';
 import { yieldToBrowser } from './progress.ts';
-import type { AtlasBuild, AtlasRect, TextureSource, Vec3 } from './types.ts';
+import type { AtlasBuild, AtlasRect, SourcePart, TextureSource, Vec3 } from './types.ts';
 
 export interface AtlasInput {
   key: string;
+  /** Display name; duplicate names are allowed. */
+  materialName?: string;
+  /** Stable material identity; defaults to `key`. */
+  materialKey?: string;
   texture: TextureSource | null;
   /** Continuous, unwrapped UV rectangle of the material (may leave 0..1). */
   uvBounds: [number, number, number, number] | null;
@@ -36,6 +43,10 @@ export interface AtlasInput {
   alphaCutoff?: number;
   /** Used to apportion atlas space when per-triangle areas are absent. */
   area: number;
+  /** Per-triangle part index, optional; indexes `parts`. */
+  partIndex?: Uint16Array | null;
+  /** Part table for `partIndex`. */
+  parts?: SourcePart[];
 }
 
 /** One packed UV island. Flat materials get one chart with `bounds: null`. */
@@ -62,6 +73,15 @@ export interface AtlasLayout {
   charts: AtlasChart[];
   /** Applied demand scale after shrinking to fit, 1 when everything fit immediately. */
   scale: number;
+  /** Present when the shared texel-budget planner produced this layout. */
+  budget?: {
+    plan: AtlasPlan;
+    charts: AtlasBudgetResult['charts'];
+    floorBound: Set<string>;
+    targetArea: Map<string, number>;
+    sharedSavedPixels: number;
+    report: PlanReport | null;
+  };
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -304,8 +324,8 @@ function planWithBudget(
   }
   const coreInputs: CoreChartInput[] = unique.map((input) => ({
     id: input.key,
-    material: input.key,
-    materialKey: input.key,
+    material: input.materialName ?? input.materialKey ?? input.key,
+    materialKey: input.materialKey ?? input.key,
     texture: input.texture
       ? { width: input.texture.width, height: input.texture.height, key: input.texture.key }
       : null,
@@ -321,6 +341,8 @@ function planWithBudget(
     uvs: input.uvs ?? null,
     triangleAreas: input.triangleAreas ?? null,
     area: input.area,
+    ...(input.partIndex ? { partIndex: input.partIndex } : {}),
+    ...(input.parts ? { parts: input.parts.map((part) => ({ id: part.id, name: part.name })) } : {}),
   }));
   const budgetOptions: AtlasBudgetOptions = {
     size,
@@ -365,7 +387,30 @@ function planWithBudget(
     if (group.length === 1) rects.set(inputKey, group[0]!.rect);
     else for (const chart of group) rects.set(chart.key, chart.rect);
   }
-  return { size, rects, charts, scale: planned.plan.scale };
+  const floorBound = new Set(
+    planned.charts.filter((chart) => chart.floorBound).map((chart) => chart.chartId),
+  );
+  const targetArea = new Map(
+    planned.charts.map((chart) => [chart.chartId, chart.targetArea]),
+  );
+  return {
+    size,
+    rects,
+    charts,
+    scale: planned.plan.scale,
+    budget: {
+      plan: planned.plan,
+      charts: planned.charts,
+      floorBound,
+      targetArea,
+      sharedSavedPixels: planned.budget.sharedSavedPixels,
+      report: summarizePlan(coreInputs, planned.plan, {
+        floorBound,
+        targetArea,
+        sharedSavedPixels: planned.budget.sharedSavedPixels,
+      }),
+    },
+  };
 }
 
 /**
@@ -660,6 +705,8 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
 }
 
 export interface AtlasMaterialUsage {
+  /** Stable material key. */
+  key: string;
   name: string;
   /** Non-transparent pixels covered by this material's triangles. */
   pixels: number;
@@ -691,7 +738,7 @@ export interface AtlasUsageOptions {
  */
 export async function measureAtlasUsage(
   canvas: HTMLCanvasElement,
-  batches: readonly { name: string; positions: Float32Array; uvs: Float32Array | null }[],
+  batches: readonly { key?: string; name: string; positions: Float32Array; uvs: Float32Array | null }[],
   size: number,
   options: AtlasUsageOptions = {},
 ): Promise<AtlasUsage> {
@@ -702,12 +749,13 @@ export async function measureAtlasUsage(
   const uvUsed = new Uint8Array(size * size);
   const masks = new Map<string, Uint8Array>();
   const uvMasks = new Map<string, Uint8Array>();
-  const maskFor = (name: string, uv: boolean) => {
+  const names = new Map<string, string>();
+  const maskFor = (key: string, uv: boolean) => {
     const map = uv ? uvMasks : masks;
-    let mask = map.get(name);
+    let mask = map.get(key);
     if (!mask) {
       mask = new Uint8Array(size * size);
-      map.set(name, mask);
+      map.set(key, mask);
     }
     return mask;
   };
@@ -716,8 +764,10 @@ export async function measureAtlasUsage(
     const batch = batches[batchIndex]!;
     options.onProgress?.(batchIndex, batches.length, batch.name);
     await yieldToBrowser();
-    const mask = maskFor(batch.name, false);
-    const uvMask = maskFor(batch.name, true);
+    const key = batch.key ?? batch.name;
+    names.set(key, batch.name);
+    const mask = maskFor(key, false);
+    const uvMask = maskFor(key, true);
     const uvs = batch.uvs;
     if (!uvs) continue;
     const triangles = Math.min(batch.positions.length / 9, uvs.length / 6);
@@ -780,10 +830,11 @@ export async function measureAtlasUsage(
     sampledPixels: covered,
     uvPixels: uvCovered,
     uvMask: uvUsed,
-    materials: [...masks].map(([name, mask]) => ({
-      name,
+    materials: [...masks].map(([key, mask]) => ({
+      key,
+      name: names.get(key) ?? key,
       pixels: mask.reduce((sum, value) => sum + value, 0),
-      uvPixels: uvMasks.get(name)!.reduce((sum, value) => sum + value, 0),
+      uvPixels: uvMasks.get(key)!.reduce((sum, value) => sum + value, 0),
     })),
   };
 }

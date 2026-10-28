@@ -7,6 +7,7 @@ import {
   type AlphaMode,
   type HumanoidPart,
   type SourceBatch,
+  type SourcePart,
   type TextureSource,
   type Vec3,
 } from './types.ts';
@@ -26,6 +27,8 @@ export interface ExtractedModel {
 
 interface Accumulator {
   material: THREE.Material & MaterialFields;
+  /** Stable material key used by conversion settings; `uuid` stays runtime-only. */
+  materialKey: string;
   key: string;
   name: string;
   positions: number[];
@@ -41,7 +44,7 @@ interface Accumulator {
   parts: number[];
   /** Stable part id per triangle, and the table it indexes. */
   sourceParts: number[];
-  sourcePartTable: { id: string; name: string }[];
+  sourcePartTable: SourcePart[];
   sourcePartIndex: Map<string, number>;
   minU: number;
   minV: number;
@@ -103,6 +106,7 @@ export function extractModel(
   let skippedMeshes = 0;
   const rig = options.rig ?? null;
   const pivots = rig ? humanoidPivots(rig, rotation) : null;
+  const stableMaterialKeys = stableMaterialKeyMap(scene);
 
   let meshIndex = 0;
   scene.traverseVisible((object) => {
@@ -167,7 +171,9 @@ export function extractModel(
       const material = materials[group.materialIndex ?? 0] as (THREE.Material & MaterialFields) | undefined;
       if (!material || material.visible === false || material.colorWrite === false) continue;
       if ((material.opacity ?? 1) <= 0) continue;
-      const accumulator = accumulatorFor(accumulators, material, warnings);
+      const materialKey = stableMaterialKeys.get(material.uuid) ?? `m:${material.name || material.uuid}#1`;
+      const accumulator = accumulatorFor(accumulators, material, materialKey, warnings);
+      if (!accumulator.materialKey) accumulator.materialKey = materialKey;
       const partId = `w${currentMesh}.${groupIndex}`;
       const baseName = mesh.name?.trim() || `mesh${currentMesh}`;
       const partName = groups.length > 1 ? `${baseName}#${groupIndex}` : baseName;
@@ -175,7 +181,13 @@ export function extractModel(
       if (partIndex === undefined) {
         partIndex = accumulator.sourcePartTable.length;
         accumulator.sourcePartIndex.set(partId, partIndex);
-        accumulator.sourcePartTable.push({ id: partId, name: partName });
+        accumulator.sourcePartTable.push({
+          id: partId,
+          name: partName,
+          mesh: baseName,
+          group: groupIndex,
+          materialKey,
+        });
       }
       const start = Math.max(0, group.start);
       const end = Math.min(indexCount, group.start + group.count);
@@ -284,6 +296,7 @@ export function extractModel(
     batches.push({
       key: accumulator.key,
       name: accumulator.name,
+      materialKey: accumulator.materialKey,
       positions: new Float32Array(accumulator.positions),
       normals: new Float32Array(accumulator.normals),
       uvs: accumulator.uvs ? new Float32Array(accumulator.uvs) : null,
@@ -316,9 +329,34 @@ export function extractModel(
   };
 }
 
+/**
+ * Stable material identity for one imported scene. The same material name can
+ * appear several times; the occurrence suffix keeps each sampler distinct.
+ * Runtime `uuid`s are only used inside one extraction.
+ */
+function stableMaterialKeyMap(root: THREE.Object3D): Map<string, string> {
+  const keys = new Map<string, string>();
+  const seen = new Map<string, number>();
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!(mesh as unknown as { isMesh?: boolean }).isMesh) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      const value = material as THREE.Material | undefined;
+      if (!value || keys.has(value.uuid)) continue;
+      const name = value.name?.trim() || `材质 ${keys.size + 1}`;
+      const occurrence = (seen.get(name) ?? 0) + 1;
+      seen.set(name, occurrence);
+      keys.set(value.uuid, `m:${name}#${occurrence}`);
+    }
+  });
+  return keys;
+}
+
 function accumulatorFor(
   map: Map<string, Accumulator>,
   material: THREE.Material & MaterialFields,
+  materialKey: string,
   warnings: Set<string>,
 ): Accumulator {
   const existing = map.get(material.uuid);
@@ -331,7 +369,8 @@ function accumulatorFor(
   const sourceAlpha = sourceAlphaOf(material);
   const accumulator: Accumulator = {
     material,
-    key: material.uuid,
+    materialKey,
+    key: materialKey,
     name: material.name?.trim() || `材质 ${map.size + 1}`,
     positions: [],
     normals: [],

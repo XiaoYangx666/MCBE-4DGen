@@ -479,6 +479,10 @@ export async function optimizeTexturesWithBudget(
     targetArea,
     sharedSavedPixels: planned.budget.sharedSavedPixels,
   });
+  let sampledPixels = 0;
+  for (let index = 3; index < atlas.length; index += 4)
+    if (atlas[index]! > 0) sampledPixels++;
+  const totalPixels = size * size;
   const chartIndex = new Map(
     planned.plan.charts.map((chart, index) => [chart.chartId, index]),
   );
@@ -495,19 +499,23 @@ export async function optimizeTexturesWithBudget(
         width: size,
         height: size,
         bytes: png.length,
-        sampledUtilization: undefined,
+        sampledUtilization: sampledPixels / totalPixels,
         uvUtilization: summary.uvUtilization,
         contentUtilization: summary.contentUtilization,
         allocatedUtilization: summary.allocatedUtilization,
-        sampledPixels: undefined,
+        sampledPixels,
         uvPixels: summary.uvPixels,
         contentPixels: summary.contentPixels,
         allocatedPixels: summary.allocatedPixels,
         gutterPixels: summary.gutterPixels,
         emptyPixels: summary.emptyPixels,
-        gutterUtilization: summary.gutterPixels / (size * size),
-        emptyUtilization: summary.emptyPixels / (size * size),
+        gutterUtilization: summary.gutterPixels / totalPixels,
+        emptyUtilization: summary.emptyPixels / totalPixels,
         chartCoverage: summary.chartCoverage,
+        unusedContentPixels: summary.unusedContentPixels,
+        overlapPixels: summary.overlapPixels,
+        sharedContentPixels: summary.sharedContentPixels,
+        unattributedPixels: summary.unattributedPixels,
       },
       filter,
       padding,
@@ -522,6 +530,8 @@ export async function optimizeTexturesWithBudget(
         key: material.materialKey,
         pixels: material.uvPixels,
         uvPixels: material.uvPixels,
+        sharedPixels: material.sharedPixels,
+        uniquePixels: material.uniquePixels,
         regions: material.chartIds
           .map((id) => chartIndex.get(id))
           .filter((index): index is number => index !== undefined),
@@ -543,6 +553,7 @@ export async function optimizeTexturesWithBudget(
           material: chart.materials.join(' / ') || '(default)',
           materialKey: chart.materialKeys?.[0] ?? null,
           materials: chart.materials,
+          materialKeys: chart.materialKeys ?? [],
           surfaceAreas: {} as Record<string, number>,
           weightedArea: 0,
           x: inner.x,

@@ -22,15 +22,31 @@ export interface ConvertOptions {
   rig?: GeometryRig;
   /** Pre-reduction triangle count, for the report only. */
   sourceTriangles?: number;
-  /** Stage updates for the busy UI. */
+  /** Astage updates for the busy UI. */
   onProgress?: ProgressHandler;
+  /** Legacy browser planner (default) or the shared texel-budget planner. */
+  textureMode?: 'legacy' | 'budget';
+  /** Budget objective when `textureMode` is budget. */
+  textureTarget?: 'density' | 'retention';
+  /** Relative material quality multipliers, keyed by stable material key. */
+  materialWeights?: Readonly<Record<string, number>>;
+  /** Reuse rectangles only for bit-identical charts. */
+  atlasSharing?: boolean;
+  /** Charge retention demand for sampled UV area. */
+  coverageAware?: boolean;
 }
 
 export interface AtlasRegion {
-  /** Unique chart key. */
+  /** Unique rectangle key. */
   key: string;
-  /** Source material name. */
+  /** Display names joined for shared rectangles. */
   name: string;
+  /** Stable material key for a single-owner rectangle. */
+  materialKey?: string;
+  /** All stable material keys that sample this rectangle. */
+  materialKeys?: string[];
+  /** All display names that sample this rectangle. */
+  materials?: string[];
   x: number;
   y: number;
   width: number;
@@ -45,6 +61,30 @@ export interface AtlasRegion {
   bounds?: [number, number, number, number];
   /** True for untextured materials that only need a solid color sample. */
   flat: boolean;
+}
+
+export interface TextureMaterialReport {
+  key: string;
+  name: string;
+  /** Pixels covered by a non-transparent triangle (per material). */
+  pixels: number;
+  /** Triangle-covered pixels, including transparent texels. */
+  uvPixels?: number;
+  /** Pixels sampled by this material and another material. */
+  sharedPixels?: number;
+  /** Sampled pixels no other material covers. */
+  uniquePixels?: number;
+  /** Unique content pixels attributed to this material. */
+  rectPixels?: number;
+  /** Attributed content not covered by a triangle. */
+  wastePixels?: number;
+  /** Exact continuous atlas texels this material's triangles map to. */
+  atlasTexels?: number;
+  sourceTexels?: number;
+  texelDensity?: number;
+  floorCharts?: number;
+  targetArea?: number;
+  actualArea?: number;
 }
 
 export interface TextureReport {
@@ -66,9 +106,21 @@ export interface TextureReport {
   emptyUtilization?: number;
   /** Share of content-rectangle pixels covered by a triangle. */
   chartCoverage?: number | undefined;
+  /** Budget-mode-only: unique content pixels never sampled. */
+  unusedContentPixels?: number;
+  /** Budget-mode-only: pixels sampled by two or more materials. */
+  overlapPixels?: number;
+  /** Budget-mode-only: content pixels inside shared rectangles. */
+  sharedContentPixels?: number;
+  /** Planner used for this output. */
+  mode?: 'legacy' | 'budget';
+  target?: 'density' | 'retention';
+  shared?: { charts: number; savedPixels: number };
   size: number;
-  /** Pixel count per material name; shared pixels count for every material. */
-  materials: { name: string; pixels: number; uvPixels?: number }[];
+  /** Pixel count per material key; shared pixels count for every material. */
+  materials: TextureMaterialReport[];
+  /** Per-part texture demand when triangle-level part ids were available. */
+  parts?: { id: string; name: string; triangles: number; atlasTexels: number }[];
   /** Per-island atlas rectangles, for the texture inspector. */
   regions?: AtlasRegion[];
 }
@@ -90,6 +142,8 @@ export interface ConvertResult {
   elapsedMs?: number;
   /** Material names excluded before conversion, filled by the studio. */
   excludedMaterials?: string[];
+  /** Stable keys matching `excludedMaterials`. */
+  excludedMaterialKeys?: string[];
 }
 
 export async function convertBatches(
@@ -100,17 +154,10 @@ export async function convertBatches(
   if (!source.length) throw new Error('没有可导出的材质');
   // UVs are rewritten for the atlas, so keep the extracted batches reusable.
   const batches = source.map((batch) => ({ ...batch }));
-  const atlasKey = (batch: SourceBatch) => [
-    batch.key,
-    batch.texture?.key ?? 'solid',
-    batch.uvBounds?.map((value) => value.toFixed(4)).join(',') ?? 'none',
-    batch.color.map((value) => value.toFixed(3)).join(','),
-    batch.opacity.toFixed(3),
-    batch.alphaMode,
-    batch.alphaCutoff.toFixed(3),
-  ].join('|');
   const inputs: AtlasInput[] = batches.map((batch) => ({
-    key: atlasKey(batch),
+    key: batch.key,
+    materialName: batch.name,
+    materialKey: batch.materialKey ?? batch.key,
     texture: batch.texture,
     uvBounds: batch.uvBounds,
     uvs: batch.uvs,
@@ -120,6 +167,8 @@ export async function convertBatches(
     alphaMode: batch.alphaMode,
     alphaCutoff: batch.alphaCutoff,
     area: batch.area,
+    ...(batch.sourceParts ? { partIndex: batch.sourceParts } : {}),
+    ...(batch.sourcePartTable ? { parts: batch.sourcePartTable } : {}),
   }));
   const batchByInput = new Map(inputs.map((input, index) => [input.key, batches[index]!]));
   const inputByKey = new Map(inputs.map((input) => [input.key, input]));
@@ -127,7 +176,21 @@ export async function convertBatches(
   const report = reporter(options.onProgress);
   report('规划 128×128 图集…', `${inputs.length} 个材质`);
   await nextFrame();
-  const layout = planAtlas(inputs, 128, 1);
+  const budget = options.textureMode === 'budget';
+  const layout = planAtlas(
+    inputs,
+    128,
+    1,
+    budget
+      ? {
+          budget: options.textureTarget === 'density' ? 'texel-density' : 'texel-retention',
+          ...(options.materialWeights && Object.keys(options.materialWeights).length
+            ? { weights: options.materialWeights }
+            : {}),
+          ...(options.atlasSharing ? { sharing: 'safe' as const } : {}),
+        }
+      : {},
+  );
   report('绘制 128×128 贴图图集…', `${layout.charts.length} 个 UV 岛`);
   await nextFrame();
   const atlas = renderAtlas(inputs, layout);
@@ -164,26 +227,49 @@ export async function convertBatches(
       ),
   });
   report('汇总贴图报告…');
+  const summary = layout.budget?.report ?? null;
   const totalPixels = layout.size * layout.size;
   let contentPixels = 0;
-  for (const chart of layout.charts)
-    contentPixels +=
-      Math.max(1, chart.rect.width - chart.rect.pad * 2) *
-      Math.max(1, chart.rect.height - chart.rect.pad * 2);
-  const allocatedPixels = layout.charts.reduce(
-    (sum, chart) => sum + chart.rect.width * chart.rect.height,
-    0,
-  );
+  if (summary) contentPixels = summary.contentPixels;
+  else
+    for (const chart of layout.charts)
+      contentPixels +=
+        Math.max(1, chart.rect.width - chart.rect.pad * 2) *
+        Math.max(1, chart.rect.height - chart.rect.pad * 2);
+  const allocatedPixels = summary
+    ? summary.allocatedPixels
+    : layout.charts.reduce(
+        (sum, chart) => sum + chart.rect.width * chart.rect.height,
+        0,
+      );
   const gutterPixels = Math.max(0, allocatedPixels - contentPixels);
   const emptyPixels = Math.max(0, totalPixels - allocatedPixels);
-  const regions: AtlasRegion[] = layout.charts.map((chart) => {
-    const batch = batchByInput.get(chart.inputKey);
+  const usageByKey = new Map(usage.materials.map((material) => [material.key, material]));
+
+  const regions: AtlasRegion[] = [];
+  const rectRegions = new Map<string, AtlasRegion>();
+  for (const chart of layout.charts) {
     const input = inputByKey.get(chart.inputKey);
+    const batch = batchByInput.get(chart.inputKey);
     const contentWidth = Math.max(1, chart.rect.width - chart.rect.pad * 2);
     const contentHeight = Math.max(1, chart.rect.height - chart.rect.pad * 2);
-    return {
-      key: chart.key,
+    const rectKey = `${chart.rect.x},${chart.rect.y},${chart.rect.width},${chart.rect.height}`;
+    const existing = rectRegions.get(rectKey);
+    if (existing) {
+      // Shared charts point at one rectangle: list every material once.
+      if (!existing.materials?.includes(batch?.name ?? '未知材质'))
+        existing.materials = [...(existing.materials ?? []), batch?.name ?? '未知材质'];
+      if (chart.inputKey && !existing.materialKeys?.includes(chart.inputKey))
+        existing.materialKeys = [...(existing.materialKeys ?? []), chart.inputKey];
+      existing.name = existing.materials.join(' / ');
+      continue;
+    }
+    const region: AtlasRegion = {
+      key: rectKey,
       name: batch?.name ?? '未知材质',
+      materialKey: chart.inputKey,
+      materialKeys: [chart.inputKey],
+      materials: [batch?.name ?? '未知材质'],
       x: chart.rect.x,
       y: chart.rect.y,
       width: chart.rect.width,
@@ -196,24 +282,69 @@ export async function convertBatches(
       ...(chart.bounds ? { bounds: chart.bounds } : {}),
       flat: !chart.bounds,
     };
-  });
+    rectRegions.set(rectKey, region);
+    regions.push(region);
+  }
+
+  const materials = summary
+    ? summary.materials.map((material) => {
+        const measured = usageByKey.get(material.materialKey);
+        return {
+          key: material.materialKey,
+          name: material.material,
+          pixels: measured?.pixels ?? material.uvPixels,
+          uvPixels: material.uvPixels,
+          sharedPixels: material.sharedPixels,
+          uniquePixels: material.uniquePixels,
+          rectPixels: material.rectPixels,
+          wastePixels: material.wastePixels,
+          atlasTexels: material.atlasTexels,
+          sourceTexels: material.sourceTexels,
+          texelDensity: material.texelDensity,
+          floorCharts: material.floorCharts,
+          targetArea: material.targetArea,
+          actualArea: material.actualArea,
+        };
+      })
+    : usage.materials.map((material) => ({
+        key: material.key,
+        name: material.name,
+        pixels: material.pixels,
+        ...(material.uvPixels !== undefined ? { uvPixels: material.uvPixels } : {}),
+      }));
+
   const textureReport: TextureReport = {
     allocatedUtilization: allocatedPixels / totalPixels,
     sampledUtilization: usage.sampledUtilization,
-    uvUtilization: usage.uvUtilization,
+    uvUtilization: summary ? summary.uvUtilization : usage.uvUtilization,
     contentUtilization: contentPixels / totalPixels,
     sampledPixels: usage.sampledPixels,
-    uvPixels: usage.uvPixels,
+    uvPixels: summary ? summary.uvPixels : usage.uvPixels,
     contentPixels,
     allocatedPixels,
     gutterPixels,
     emptyPixels,
     gutterUtilization: gutterPixels / totalPixels,
     emptyUtilization: emptyPixels / totalPixels,
-    chartCoverage:
-      contentPixels > 0 ? usage.uvPixels / contentPixels : undefined,
+    chartCoverage: summary ? summary.chartCoverage : contentPixels > 0 ? usage.uvPixels / contentPixels : undefined,
+    ...(summary
+      ? {
+          unusedContentPixels: summary.unusedContentPixels,
+          overlapPixels: summary.overlapPixels,
+          sharedContentPixels: summary.sharedContentPixels,
+          shared: {
+            charts: summary.sharedCharts,
+            savedPixels: summary.sharedSavedPixels,
+          },
+        }
+      : {}),
+    mode: budget ? 'budget' : 'legacy',
+    ...(budget
+      ? { target: options.textureTarget === 'density' ? 'density' : 'retention' }
+      : {}),
     size: layout.size,
-    materials: usage.materials,
+    materials,
+    ...(summary?.parts.length ? { parts: summary.parts } : {}),
     regions,
   };
 

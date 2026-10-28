@@ -1,4 +1,6 @@
 export interface MaterialCoverageItem {
+  /** Stable material key; falls back to the display name for legacy callers. */
+  id?: string;
   name: string;
   /** Measured atlas pixels; null/undefined when not measured yet. */
   pixels?: number | null;
@@ -32,17 +34,18 @@ export function MaterialCoverage({
         100%。
       </p>
       {materials.map((material) => {
+        const id = material.id ?? material.name;
         const percent = total > 0 && material.pixels != null
           ? (material.pixels / total) * 100
           : 0;
         return (
           <button
             type="button"
-            key={material.name}
-            className={'allocation-row' + (selected === material.name ? ' selected' : '')}
-            aria-pressed={selected === material.name}
+            key={id}
+            className={'allocation-row' + (selected === id ? ' selected' : '')}
+            aria-pressed={selected === id}
             disabled={!onSelect}
-            onClick={() => onSelect?.(material.name)}
+            onClick={() => onSelect?.(id)}
           >
             <span className="allocation-label">{material.name}</span>
             <span className="allocation-track">
