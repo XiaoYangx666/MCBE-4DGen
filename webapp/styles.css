@@ -264,6 +264,16 @@ code {
 .app.mode-model .studio-host { max-width: none; }
 .app.mode-model footer { display: none; }
 
+/* The sources directory page manages its own internal scrolling. */
+.app.mode-sources .page-content,
+.app.mode-sources .studio-host,
+.app.mode-sources .studio-host > div {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .studio-host {
   flex: 1 1 auto;
   min-height: 0;
@@ -662,7 +672,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 }
 .material-actions .text-button { font-size: 11px; }
 
-/* ---------- compact model workbench: preview above a bottom sheet ---------- */
+/* ---------- compact model workbench: preview above a fixed settings sheet ---------- */
 .sheet-handle,
 .mobile-settings-tabs { display: none; }
 .settings-section-title {
@@ -687,32 +697,6 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 }
 .mobile-result-actions .button-link { min-height: 38px; }
 .mobile-model-input { display: none; }
-.mobile-import-actions {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 6;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.mobile-import-fab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 32px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(8px);
-  color: var(--ink);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.mobile-import-fab:hover { border-color: var(--accent); color: var(--accent); }
-.mobile-import-fab:disabled { opacity: 0.5; cursor: default; }
 .empty-actions {
   display: flex;
   flex-wrap: wrap;
@@ -737,6 +721,9 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 }
 .app.mode-model:has(.studio-layout.compact) .studio-host > div { height: 100%; }
 .app.mode-model:has(.studio-layout.compact) footer { display: none; }
+/* Model page drops both fixed top bars: the floating stage row carries the
+   menu button and the source/output switch instead. */
+.app.mode-model:has(.studio-layout.compact) .app-nav-mobile { display: none; }
 body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
 
 .studio-layout.compact {
@@ -748,104 +735,130 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
 }
 .studio-layout.compact .studio-result {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: 0;
+  /* End where the settings sheet begins: the preview never runs behind it. */
+  bottom: calc(var(--sheet-height) + env(safe-area-inset-bottom));
   height: auto;
   min-height: 0;
   border: 0;
   border-radius: 0;
-  transition: bottom 0.22s ease;
 }
-.studio-layout.compact:not(.sheet-collapsed) .studio-result {
-  bottom: calc(var(--sheet-height) + 4px + env(safe-area-inset-bottom));
-}
+.studio-layout.compact.stage-hidden .studio-result { bottom: 0; }
 .studio-layout.compact .model-stage {
   flex: 1 1 auto;
   height: auto;
   min-height: 0;
   border-bottom: 0;
 }
-.studio-layout.compact .result-header {
-  position: relative;
+/* Floating stage row: menu + change-model icons on the left, fullscreen on
+   the right — all overlay the scene without reserving height. */
+.stage-topbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 7;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+}
+.stage-topbar > * { pointer-events: auto; }
+.stage-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.stage-menu-button,
+.stage-icon-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
   flex: 0 0 auto;
-  flex-wrap: wrap;
-  z-index: 5;
-  padding: 8px 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-  backdrop-filter: blur(10px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
 }
-.studio-layout.compact .result-header h2 { margin: 0; font-size: 15px; }
-.studio-layout.compact .result-header p { display: none; }
-.studio-layout.compact .result-header .tabs button {
+.stage-menu-button:hover,
+.stage-icon-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.stage-icon-button:disabled { opacity: 0.5; }
+/* Fullscreen pressed state keeps the accent color while active. */
+.stage-icon-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent);
+}
+/* Source / 4D switch: rounded pill on the right edge, vertically centered. */
+.stage-viewswitch {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+.stage-viewswitch button {
+  min-width: 40px;
   min-height: 32px;
-  padding: 6px 10px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
   font-size: 11px;
+  white-space: nowrap;
 }
+.stage-viewswitch button.active {
+  background: var(--selected);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.studio-layout.compact .result-header { display: none; }
 .studio-layout.compact .result-body,
 .studio-layout.compact .result-footer { display: none; }
 .studio-layout.compact .viewport-hint,
 .studio-layout.compact .viewport-orientation { display: none; }
-.studio-layout.compact .viewport-toggle { top: 12px; }
-.studio-layout.compact .viewport-actions { bottom: 10px; }
-.studio-layout.compact.sheet-collapsed .viewport-actions { bottom: 62px; }
+.studio-layout.compact .viewport-toggle { top: 54px; }
+.studio-layout.compact .viewport-actions {
+  bottom: 10px;
+  z-index: 41;
+}
+.studio-layout.compact .viewport-actions .viewport-reset { min-height: 36px; }
 
+.studio-layout.compact.stage-hidden .studio-sheet { display: none; }
 .studio-layout.compact .studio-sheet {
   position: fixed;
-  left: 50%;
-  right: auto;
-  bottom: calc(4px + env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  bottom: env(safe-area-inset-bottom);
   z-index: 40;
   display: flex;
   flex-direction: column;
-  width: min(720px, calc(100vw - 8px));
+  width: 100%;
   height: var(--sheet-height);
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
   background: var(--surface);
   box-shadow: 0 -12px 40px rgb(0 0 0 / 0.22);
-  transform: translateX(-50%);
-  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
-    height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.studio-layout.compact.sheet-collapsed .studio-sheet {
-  transform: translate(-50%, calc(100% - 46px));
-}
-.studio-layout.compact .sheet-handle {
-  display: flex;
-  flex: 0 0 auto;
-  height: 46px;
-  align-items: center;
-  justify-content: center;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-  touch-action: none;
-  user-select: none;
-}
-.studio-layout.compact .sheet-handle button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 100%;
-  padding: 0 16px;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 11px;
-  cursor: grab;
-  touch-action: none;
-}
-.studio-layout.compact .sheet-handle button:active { cursor: grabbing; }
-.studio-layout.compact .sheet-grip {
-  width: 34px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--line);
-}
-.studio-layout.compact .sheet-caret { margin-left: auto; color: var(--ink); }
 .studio-layout.compact .mobile-settings-tabs {
   display: flex;
   flex: 0 0 auto;
@@ -914,6 +927,51 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
 .studio-layout.compact .material-list { max-height: none; }
 .studio-layout.compact .material-row { padding: 7px 2px; }
 .studio-layout.compact .material-weight { width: 58px; min-height: 32px; }
+
+/* Output texture preview in the compact result tab. */
+.result-png-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+.result-png-preview figcaption {
+  color: var(--muted);
+  font-size: 10px;
+}
+.result-png-preview img {
+  width: auto;
+  max-width: 100%;
+  max-height: 140px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: repeating-conic-gradient(
+    color-mix(in srgb, var(--hover) 7%, transparent) 0% 25%,
+    transparent 0% 50%
+  ) 50% / 16px 16px;
+  image-rendering: pixelated;
+  align-self: flex-start;
+}
+/* Compact per-material pixel rows: two columns, tight padding. */
+.studio-layout.compact .material-allocation h3 { margin: 12px 0 4px; font-size: 12px; }
+.studio-layout.compact .material-allocation p { display: none; }
+.studio-layout.compact .allocation-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 4px 10px;
+  padding: 5px 6px;
+}
+.studio-layout.compact .allocation-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+}
+.studio-layout.compact .allocation-track { height: 7px; grid-column: 1 / -1; }
+.studio-layout.compact .allocation-value {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 10px;
+}
 
 .text-button {
   padding: 0;
@@ -1547,8 +1605,18 @@ button.text-danger:hover:not(:disabled) { background: transparent; color: var(--
 }
 .viewport-toggle:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
 .viewport-toggle[aria-pressed="true"] {
-  color: var(--ink);
+  color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+/* Lighting is an icon-only round toggle everywhere. */
+.viewport-toggle {
+  width: 36px;
+  height: 36px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  gap: 0;
 }
 .viewport-fallback {
   position: absolute;
@@ -1568,6 +1636,31 @@ button.text-danger:hover:not(:disabled) { background: transparent; color: var(--
 }
 .viewport-fallback b { color: var(--ink); font-size: 14px; font-weight: 550; }
 .viewport-fallback span { max-width: 300px; }
+
+/* ---------- model sources page (standalone, desktop tab + mobile drawer) ---------- */
+.sources-page {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 100%);
+  height: 100%;
+  min-height: 0;
+  margin: 0 auto;
+}
+.sources-page-head {
+  flex: 0 0 auto;
+  padding: 4px 2px 12px;
+}
+.sources-page-head h2 {
+  margin: 0 0 5px;
+  font-size: 20px;
+  font-weight: 550;
+}
+.sources-page-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
 
 /* ---------- dialogs ---------- */
 .dialog-backdrop {
@@ -1643,34 +1736,6 @@ button.text-danger:hover:not(:disabled) { background: transparent; color: var(--
   color: var(--muted);
   font-size: 11px;
 }
-
-/* ---------- model sources dialog ---------- */
-.sources-dialog {
-  display: flex;
-  flex-direction: column;
-  width: min(960px, 100%);
-  max-height: min(88dvh, 920px);
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 24px 70px color-mix(in srgb, #000 45%, transparent);
-}
-.sources-header {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px 12px;
-  border-bottom: 1px solid var(--line);
-}
-.sources-header h2 { margin: 0 0 4px; font-size: 18px; font-weight: 550; }
-.sources-header p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
-/* Card, search and tab styles live in web/styles/shared.css; only the dialog
-   shell spacing is web-app specific. */
-.sources-dialog .source-directory .source-toolbar { padding: 12px 18px 10px; }
-.sources-dialog .source-directory .source-scroll { padding: 14px 18px 18px; }
 
 .busy-overlay {
   position: absolute;
@@ -1930,10 +1995,6 @@ footer a { color: var(--accent); }
   .preview-dialog { max-height: calc(100dvh - 20px); }
   .preview-stage { height: min(56dvh, 480px); }
   .preview-header, .preview-footer { padding-left: 14px; padding-right: 14px; }
-  .sources-dialog { max-height: calc(100dvh - 20px); }
-  .sources-header { padding: 14px 14px 10px; }
-  .sources-dialog .source-directory .source-toolbar { padding: 10px 14px 8px; }
-  .sources-dialog .source-directory .source-scroll { padding: 12px 14px 16px; }
   .viewport-toggle, .viewport-reset { min-height: 34px; padding: 7px 10px; font-size: 11px; }
   .skin-stage { flex: none; height: 320px; min-height: 0; }
   /* iOS zooms into focused controls below 16px. */

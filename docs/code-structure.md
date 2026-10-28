@@ -112,7 +112,7 @@ npm run test:node
 - `lib/pack-types.ts`、`lib/pack-store.ts`、`lib/pack-context.tsx`：单包数据结构、IndexedDB 持久化与 React 状态。
 - `lib/pack-import.ts`：读取 legacy poly_mesh 皮肤包 ZIP 并转换成单包里的皮肤。
 - `lib/download.ts`、`lib/theme.ts`、`lib/links.ts`、`lib/use-compact-viewport.ts`、`lib/material-visibility.ts`：保存/分享、主题、外链、紧凑视口和预览材质显隐等应用基础设施。
-- `components/`：图片模式、模型模式、`SettingsStudio`（主题、配色与本地数据）、`AboutStudio`（构建号、更新日志与许可）、`ConversionReport`（转换结果摘要）、`ModelSourcesDialog`（获取模型弹窗外壳）、单包管理、`SkinPreview`（皮肤卡片的三维预览弹窗）、视口、拖放与下载。
+- `components/`：图片模式、模型模式、`ModelSourcesPage`（获取模型独立页）、`SettingsStudio`（主题、配色与本地数据）、`AboutStudio`（构建号、更新日志与许可）、`ConversionReport`（转换结果摘要）、单包管理、`SkinPreview`（皮肤卡片的三维预览弹窗）、视口、拖放与下载。
 - 共享 `src/skin-pack-files.ts`、`src/skin-pack-zip.ts`、`src/poly-mesh-writer.ts`、`src/geometry-validator.ts`、`src/image-skin-geometry.ts`、`src/tga.ts` 与 `src/pmx-metadata.ts`；不导入 `sharp`、`node:fs` 或 `libassimp`。
 - 共享展示层 `web/shared/`：配色元数据与主题写入（`palettes`、`appearance`）、模型站点目录、`formatBytes` / `safeFilename` / ZIP 文件名与浏览器下载（`format`、`file-save`）、弹窗 Esc/背景点击行为、姿势控件（`PoseControls`）、材质列表与像素覆盖（`MaterialList`、`MaterialCoverage`）、转换报告摘要（`ConversionSummary`）、保留面数比例（`RatioField`），以及预览外壳（`preview-viewport`、`poly-mesh-preview`、`preview-lighting`、`preview-orientation`、`demand-render`、`viewport-appearance`）。`webapp/lib/theme.ts` 保留主题持久化并再导出共享写入逻辑。
 - 样式复用 `web/styles/theme.css` 的明暗主题变量与 `web/styles/shared.css` 的站点目录、姿势控件和材质行样式，页面布局遵循本地工作台的顶栏、三栏卡片与紧凑表单。

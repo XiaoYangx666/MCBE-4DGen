@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Icon, type IconName } from './Icons';
 
-export type Mode = 'image' | 'model' | 'pack' | 'settings' | 'about';
+export type Mode = 'image' | 'model' | 'sources' | 'pack' | 'settings' | 'about';
 
 interface AppDrawerProps {
   open: boolean;
@@ -21,6 +21,7 @@ interface DrawerItem {
 const WORKSPACE_MODES: DrawerItem[] = [
   { key: 'image', icon: 'image', label: '图片皮肤', hint: '立绘生成平面皮肤' },
   { key: 'model', icon: 'cube', label: '3D 模型', hint: 'GLB / VRM / PMX → 4D' },
+  { key: 'sources', icon: 'globe', label: '获取模型', hint: '常用模型站点目录' },
   { key: 'pack', icon: 'archive', label: '皮肤包', hint: '管理与导出 ZIP' },
 ];
 

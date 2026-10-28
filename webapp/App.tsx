@@ -4,6 +4,7 @@ import { PackStudio } from './components/PackStudio';
 import { AppDrawer, type Mode } from './components/AppDrawer';
 import { AboutStudio } from './components/AboutStudio';
 import { SettingsStudio } from './components/SettingsStudio';
+import { ModelSourcesPage } from './components/ModelSourcesPage';
 import { Icon } from './components/Icons';
 import { BUILD_LABEL } from '../web/shared/build-log';
 import { useSkinPack, SkinPackProvider } from './lib/pack-context';
@@ -22,7 +23,7 @@ const ModelStudio = lazy(async () => {
 
 function readMode(): Mode {
   const value = window.location.hash.replace('#', '').split('?')[0];
-  if (value === 'model' || value === 'pack' || value === 'settings' || value === 'about')
+  if (value === 'model' || value === 'sources' || value === 'pack' || value === 'settings' || value === 'about')
     return value;
   return 'image';
 }
@@ -38,6 +39,7 @@ export function App() {
 const MODE_TITLES: Record<Mode, string> = {
   image: '图片皮肤',
   model: '3D 模型',
+  sources: '获取模型',
   pack: '皮肤包',
   settings: '设置',
   about: '关于',
@@ -127,6 +129,13 @@ function AppShell() {
             </button>
             <button
               type="button"
+              className={mode === 'sources' ? 'active' : ''}
+              onClick={() => switchMode('sources')}
+            >
+              获取模型
+            </button>
+            <button
+              type="button"
               className={mode === 'pack' ? 'active' : ''}
               onClick={() => switchMode('pack')}
             >
@@ -170,10 +179,11 @@ function AppShell() {
           {modelVisited && (
             <div hidden={mode !== 'model'}>
               <Suspense fallback={<div className="panel-loading"><span className="spinner" /> 正在加载模型工作台…</div>}>
-                <ModelStudio />
+                <ModelStudio onOpenMenu={() => setDrawerOpen(true)} />
               </Suspense>
             </div>
           )}
+          <div hidden={mode !== 'sources'}><ModelSourcesPage /></div>
           <div hidden={mode !== 'pack'}><PackStudio /></div>
           <div hidden={mode !== 'settings'}>
             <SettingsStudio
