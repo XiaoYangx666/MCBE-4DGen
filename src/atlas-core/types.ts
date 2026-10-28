@@ -65,6 +65,8 @@ export interface PlannedChart {
   wrap: [WrapMode, WrapMode];
   origin: 'island' | 'material' | 'merged' | 'shared';
   materials: string[];
+  /** Stable material identities; display names can repeat. */
+  materialKeys?: string[];
   coverage: number;
 }
 

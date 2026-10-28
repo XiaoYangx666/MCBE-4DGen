@@ -51,6 +51,10 @@ interface Analysis {
   weight: number;
   minEdge: number;
   flat: boolean;
+  /** Per-triangle UVs of this chart, used for exact sharing checks. */
+  uvs: Float32Array | null;
+  /** Exact, full-precision bounds key (no rounding). */
+  boundsKey: string;
 }
 
 const clampAspect = (value: number) =>
@@ -108,6 +112,8 @@ function analyse(input: ChartInput, options: AtlasBudgetOptions): Analysis[] {
         weight,
         minEdge: 1,
         flat: true,
+        uvs: null,
+        boundsKey: 'flat',
       },
     ];
   }
@@ -130,6 +136,13 @@ function analyse(input: ChartInput, options: AtlasBudgetOptions): Analysis[] {
     const spanV = Math.max(0, bounds[3] - bounds[1]);
     const sourceTexels = uvArea * texture.width * texture.height;
     const bboxSourceTexels = spanU * spanV * texture.width * texture.height;
+    const chartUvs = new Float32Array(chart.triangles.length * 6);
+    let cursor = 0;
+    for (const triangle of chart.triangles)
+      for (let corner = 0; corner < 3; corner++) {
+        chartUvs[cursor++] = input.uvs![triangle * 6 + corner * 2]!;
+        chartUvs[cursor++] = input.uvs![triangle * 6 + corner * 2 + 1]!;
+      }
     return {
       chartId: `${input.id}#${index}`,
       inputId: input.id,
@@ -150,6 +163,8 @@ function analyse(input: ChartInput, options: AtlasBudgetOptions): Analysis[] {
       weight,
       minEdge,
       flat: false,
+      uvs: chartUvs,
+      boundsKey: bounds.map((value) => value.toString()).join(','),
     };
   });
 }
@@ -160,8 +175,15 @@ interface Slot {
   members: Analysis[];
 }
 
-const boundsKey = (bounds: [number, number, number, number] | null) =>
-  bounds ? bounds.map((value) => value.toFixed(6)).join(',') : 'flat';
+const boundsKey = (chart: Analysis) => chart.boundsKey;
+
+/** Exact per-triangle UV equality; bitwise, no epsilon. */
+function sameUv(a: Analysis, b: Analysis): boolean {
+  if (a.uvs === null || b.uvs === null) return a.uvs === b.uvs;
+  if (a.uvs.length !== b.uvs.length) return false;
+  for (let i = 0; i < a.uvs.length; i++) if (a.uvs[i] !== b.uvs[i]) return false;
+  return true;
+}
 
 const toDemand = (chart: Analysis): ChartDemand => ({
   id: chart.chartId,
@@ -197,18 +219,20 @@ function groupSlots(
       input.wrap.join(','),
     ].join('|');
 
-  // Safe sharing: identical source pixels, identical sampler and identical
-  // demand. One rectangle can serve all of them without changing any
-  // material's density.
+  // Safe sharing: identical source pixels, identical sampler, identical UV
+  // mapping and identical demand. The bounding box alone is not enough: two
+  // charts can share a box while sampling different pixels inside it.
   const groups = new Map<string, Analysis[]>();
   for (const chart of charts) {
     const input = byId.get(chart.inputId);
     if (!input) continue;
     const key = [
       chart.textureKey ?? 'none',
-      boundsKey(chart.bounds),
+      boundsKey(chart),
       chart.flat ? 'flat' : 'tex',
       samplerKey(input),
+      chart.triangles.length,
+      chart.uvs?.length ?? 0,
     ].join('|');
     const list = groups.get(key) ?? [];
     list.push(chart);
@@ -217,24 +241,35 @@ function groupSlots(
 
   const slots: Slot[] = [];
   for (const members of groups.values()) {
-    if (members.length === 1) {
-      const chart = members[0]!;
-      slots.push({ id: chart.chartId, demand: toDemand(chart), members: [chart] });
-      continue;
+    // Partition by exact per-triangle UV equality. `sameUv` is bitwise, so
+    // near-equal bounds or a shared bbox with different triangle layout never
+    // share a rectangle.
+    const classes: Analysis[][] = [];
+    for (const chart of members) {
+      const found = classes.find((cls) => sameUv(cls[0]!, chart));
+      if (found) found.push(chart);
+      else classes.push([chart]);
     }
-    const demands = members.map((chart) =>
-      demandOf(toDemand(chart), target, options.coverageAware ?? true),
-    );
-    const max = Math.max(...demands);
-    const min = Math.min(...demands);
-    if (max > 0 && min / max < 0.999) {
-      // Different priorities: sharing would pool them. Keep independent.
-      for (const chart of members)
+    for (const cls of classes) {
+      if (cls.length === 1) {
+        const chart = cls[0]!;
         slots.push({ id: chart.chartId, demand: toDemand(chart), members: [chart] });
-      continue;
+        continue;
+      }
+      const demands = cls.map((chart) =>
+        demandOf(toDemand(chart), target, options.coverageAware ?? true),
+      );
+      const max = Math.max(...demands);
+      const min = Math.min(...demands);
+      if (max > 0 && min / max < 0.999) {
+        // Different priorities: sharing would pool them. Keep independent.
+        for (const chart of cls)
+          slots.push({ id: chart.chartId, demand: toDemand(chart), members: [chart] });
+        continue;
+      }
+      const first = cls[0]!;
+      slots.push({ id: first.chartId, demand: toDemand(first), members: cls });
     }
-    const first = members[0]!;
-    slots.push({ id: first.chartId, demand: toDemand(first), members });
   }
   return slots;
 }
@@ -371,13 +406,13 @@ export function planAtlasBudget(
     const rect = packed.rects.get(slot.id)!;
     const shared = slot.members.length > 1;
     const materials = [...new Set(slot.members.map((chart) => chart.material))];
+    const materialKeys = [...new Set(slot.members.map((chart) => chart.materialKey))];
     if (shared) {
       sharedCharts += slot.members.length;
       sharedSavedPixels +=
         (slot.members.length - 1) * (allocation.width + pad * 2) * (allocation.height + pad * 2);
     }
     for (const member of slot.members) {
-      const materials = new Set(slot.members.map((chart) => chart.material));
       planned.push({
         chartId: member.chartId,
         inputId: member.inputId,
@@ -396,6 +431,7 @@ export function planAtlasBudget(
         wrap: inputs.find((input) => input.id === member.inputId)?.wrap ?? ['repeat', 'repeat'],
         origin: shared ? 'shared' : member.flat ? 'material' : 'island',
         materials: [...materials],
+        materialKeys,
         coverage: member.coverage,
       });
       chartReports.push({
