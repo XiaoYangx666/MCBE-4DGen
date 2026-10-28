@@ -7,6 +7,7 @@ import {
   CHANGELOG_NOTE,
   CURRENT_BUILD,
 } from './build-log.ts';
+import { Icon } from '../../webapp/components/Icons';
 
 /**
  * Shared build badge and changelog dialog. Both the desktop workbench and the
@@ -119,7 +120,7 @@ function ChangelogDialog({ onClose }: { onClose: () => void }) {
             aria-label="关闭更新日志"
             onClick={onClose}
           >
-            ×
+            <Icon name="close" size={16} />
           </button>
         </header>
 
