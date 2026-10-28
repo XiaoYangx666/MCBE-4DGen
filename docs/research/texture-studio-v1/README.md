@@ -173,7 +173,7 @@ content/UV 有升有降；**不能只凭某些材质更清晰就判定整体画�
 kati：`optimizeModel`（高度 32、减面 20%、预算细节保留）→ `bindStatic`
 → `exportBedrockGeometry` → `buildSkinPack`：
 
-- 5.2–6.6 秒，151,550 输出三角面，128×128 PNG 34,485 bytes。
+- 3.0–6.6 秒，151,550 输出三角面，128×128 PNG 34,485 bytes。
 - 包内 7 个文件：`manifest.json`、`geometry.json`、`skins.json`、`skin0.png`、
   `texts/en_US.lang`、`texts/languages.json`、`texts/zh_CN.lang`。
 - 所有 UV 在 [0,1]，几何校验通过（脚本内断言）。
@@ -184,7 +184,7 @@ kati：`optimizeModel`（高度 32、减面 20%、预算细节保留）→ `bind
 |---|---|
 | 预算规划（三模型） | 0.6–1.1 s |
 | 安全共享（未命中） | 0.5–1.0 s |
-| kati 完整导出 | 约 5.2–6.6 s |
+| kati 完整导出 | 约 3.0–6.6 s |
 | 全量测试 | 374 tests / 75 files（见最终提交） |
 
 网页端在一个转换未完成时再次点击“重新转换”会以 run token 忽略旧结果；
