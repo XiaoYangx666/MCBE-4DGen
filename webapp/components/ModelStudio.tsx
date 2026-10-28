@@ -376,6 +376,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
         ...converted.result,
         elapsedMs: performance.now() - startedAt,
         excludedMaterials: converted.excludedMaterials,
+        excludedMaterialKeys: converted.excludedMaterialKeys,
       });
       setResultKey(key);
       setWarnings([...new Set([...merged, ...converted.warnings])]);
@@ -431,20 +432,26 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const atlasRegions = result?.textureReport.regions ?? [];
   const atlasMaterials = useMemo(() => {
     if (!result) return [];
-    const weightsByName = new Map(
-      (source?.batches ?? []).map((batch) => [batch.name, weights[batch.key] ?? 1]),
+    const weightsByKey = new Map(
+      (source?.batches ?? []).map((batch) => [batch.key, weights[batch.key] ?? 1]),
     );
     return (result.textureReport.materials ?? []).map((material) => ({
+      id: material.key,
       name: material.name,
       allocated: atlasRegions
-        .filter((region) => region.name === material.name)
+        .filter((region) => region.materialKeys?.includes(material.key))
         .reduce((sum, region) => sum + region.contentPixels, 0),
       used: material.pixels,
       uv: material.uvPixels ?? null,
-      weight: weightsByName.get(material.name),
+      weight: weightsByKey.get(material.key),
       flat: atlasRegions
-        .filter((region) => region.name === material.name)
+        .filter((region) => region.materialKeys?.includes(material.key))
         .every((region) => region.flat),
+      shared: material.sharedPixels ?? null,
+      floorCharts: material.floorCharts,
+      rectPixels: material.rectPixels,
+      wastePixels: material.wastePixels,
+      mode: result.textureReport.mode,
     }));
   }, [result, source, weights, atlasRegions]);
 
@@ -657,8 +664,8 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                   warnings={warnings}
                   stale={stale}
                   selectedMaterial={selectedMaterial}
-                  onSelectMaterial={(material) => {
-                    const batch = source?.batches.find((item) => item.name === material);
+                  onSelectMaterial={(materialKey) => {
+                    const batch = source?.batches.find((item) => item.key === materialKey);
                     if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
                   }}
                 />
@@ -914,8 +921,8 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
               warnings={warnings}
               stale={stale}
               selectedMaterial={selectedMaterial}
-              onSelectMaterial={(material) => {
-                const batch = source?.batches.find((item) => item.name === material);
+              onSelectMaterial={(materialKey) => {
+                const batch = source?.batches.find((item) => item.key === materialKey);
                 if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
               }}
             />

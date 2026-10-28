@@ -1,5 +1,6 @@
 export function estimateTriangles(
   materials: {
+    key?: string;
     name: string;
     triangles: number;
     alpha: number;
@@ -13,7 +14,7 @@ export function estimateTriangles(
   const source = materials
     .filter(
       (m) =>
-        !excluded.includes(m.name) &&
+        !excluded.includes(m.key ?? m.name) &&
         !(binding === "humanoid" && m.transparent && m.alpha === 0),
     )
     .reduce((n, m) => n + m.triangles * (m.doubleSided ? 2 : 1), 0);

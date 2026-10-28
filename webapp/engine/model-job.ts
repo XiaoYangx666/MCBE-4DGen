@@ -225,6 +225,9 @@ export interface ConvertExtractedOptions {
   /** Part ids to keep; omitted means every part of the included materials. */
   includedParts?: ReadonlySet<string>;
   weights: Readonly<Record<string, number>>;
+  textureMode?: 'legacy' | 'budget';
+  textureTarget?: 'density' | 'retention';
+  atlasSharing?: boolean;
   onProgress?: ProgressHandler;
 }
 
@@ -233,6 +236,7 @@ export interface ConvertExtractedResult {
   /** Reduction and export warnings; caller-owned import warnings stay separate. */
   warnings: string[];
   excludedMaterials: string[];
+  excludedMaterialKeys: string[];
 }
 
 /** Filter, reduce, weight and atlas an already extracted model. */
@@ -270,12 +274,15 @@ export async function convertExtractedModel(
     reductionWarnings = reduced.warnings;
   }
 
-  batches = batches.map((batch) => {
-    const weight = options.weights[batch.key] ?? 1;
-    return weight === 1
-      ? batch
-      : { ...batch, area: batch.area * Math.max(0, weight) };
-  });
+  // Legacy allocation reads demand from `area`; the budget planner receives the
+  // relative multipliers directly and must not apply them twice.
+  if (options.textureMode !== 'budget')
+    batches = batches.map((batch) => {
+      const weight = options.weights[batch.key] ?? 1;
+      return weight === 1
+        ? batch
+        : { ...batch, area: batch.area * Math.max(0, weight) };
+    });
 
   const humanoid = options.binding === 'humanoid' ? extracted.rig : null;
   if (options.binding === 'humanoid' && !humanoid)
@@ -286,19 +293,22 @@ export async function convertExtractedModel(
     doubleSided: options.doubleSided,
     ...(humanoid ? { rig: humanoid } : {}),
     sourceTriangles,
+    ...(options.textureMode ? { textureMode: options.textureMode } : {}),
+    ...(options.textureTarget ? { textureTarget: options.textureTarget } : {}),
+    ...(options.weights ? { materialWeights: options.weights } : {}),
+    ...(options.atlasSharing ? { atlasSharing: true } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });
-  const excludedMaterials = [...new Set(
-    extracted.batches
-      .filter(
-        (batch) => !options.included.has(batch.key) || !keptMaterialKeys.has(batch.key),
-      )
-      .map((batch) => batch.name),
-  )];
+  const excludedBatches = extracted.batches.filter(
+    (batch) => !options.included.has(batch.key) || !keptMaterialKeys.has(batch.key),
+  );
+  const excludedMaterials = [...new Set(excludedBatches.map((batch) => batch.name))];
+  const excludedMaterialKeys = [...new Set(excludedBatches.map((batch) => batch.key))];
   return {
     result: converted,
     warnings: [...reductionWarnings, ...converted.report.warnings],
     excludedMaterials,
+    excludedMaterialKeys,
   };
 }
 

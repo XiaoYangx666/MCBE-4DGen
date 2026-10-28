@@ -36,6 +36,30 @@ describe('webapp part tracking', () => {
     const parts = extractedParts(extracted);
     expect(parts.map((part) => part.name)).toEqual(['body', 'prop']);
     expect(parts.every((part) => part.materialName === 'Shared')).toBe(true);
+    // The part carries its structure instead of a fabricated semantic label.
+    expect(batch.sourcePartTable?.[0]?.mesh).toBe('body');
+    expect(batch.sourcePartTable?.[0]?.materialKey).toBe(batch.key);
+  });
+
+  it('gives duplicate material names stable, distinct keys', () => {
+    const material = new THREE.MeshBasicMaterial({ color: 0xffffff, name: 'Body' });
+    const other = new THREE.MeshBasicMaterial({ color: 0x000000, name: 'Body' });
+    const scene = new THREE.Scene();
+    const first = new THREE.Mesh(triangle(0, [0, 0, 0.2, 0, 0, 0.2]), material);
+    first.name = 'first';
+    const second = new THREE.Mesh(triangle(3, [0.2, 0, 0.4, 0, 0.2, 0.4]), other);
+    second.name = 'second';
+    scene.add(first, second);
+    const extracted = extractModel(scene);
+    const again = extractModel(scene);
+    expect(extracted.batches.map((batch) => batch.key)).toEqual([
+      'm:Body#1',
+      'm:Body#2',
+    ]);
+    expect(again.batches.map((batch) => batch.key)).toEqual(
+      extracted.batches.map((batch) => batch.key),
+    );
+    expect(new Set(extracted.batches.map((batch) => batch.key)).size).toBe(2);
   });
 
   it('drops only the excluded part and recomputes area and bounds', () => {

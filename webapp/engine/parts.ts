@@ -6,13 +6,10 @@
  * Filtering drops triangles only; the material/sampler identity of the batch is
  * preserved, so other parts using the same material keep working.
  */
-import type { SourceBatch } from './types.ts';
+import type { SourceBatch, SourcePart } from './types.ts';
 import type { ExtractedModel } from './extract.ts';
 
-export interface BatchPart {
-  id: string;
-  name: string;
-}
+export type BatchPart = SourcePart;
 
 export function batchParts(batch: SourceBatch): BatchPart[] {
   return batch.sourcePartTable ?? [];

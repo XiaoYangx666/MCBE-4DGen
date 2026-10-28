@@ -50,6 +50,21 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     stale,
   } = workbench;
   const [saveOpen, setSaveOpen] = useState(false);
+  // Preview meshes are matched by source material name; stored selections use
+  // stable keys. Ambiguous duplicate names are never guessed for preview solo.
+  const nameByKey = new Map(
+    (session?.materials ?? []).map((material) => [material.key, material.name]),
+  );
+  const excludedNames = excluded
+    .map((key) => nameByKey.get(key))
+    .filter((name): name is string => !!name);
+  const soloName = solo ? nameByKey.get(solo) ?? null : null;
+  const keyForName = (name: string) => {
+    const matches = (session?.materials ?? []).filter(
+      (material) => material.name === name,
+    );
+    return matches.length === 1 ? matches[0]!.key : null;
+  };
 
   return (
     <>
@@ -105,15 +120,18 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
               session={session}
               result={result}
               mode={mode}
-              excluded={excluded}
+              excluded={excludedNames}
               wire={wire}
               unlit={unlit}
               focus={focus}
-              solo={solo}
+              solo={soloName}
               profile={profile}
               height={height}
               binding={binding}
-              onSelect={(name) => setSelected(name)}
+              onSelect={(name) => {
+                const key = keyForName(name);
+                if (key) setSelected(key);
+              }}
             />
             {!session && (
               <div className="welcome">
@@ -130,7 +148,7 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
             )}
             <div className="stage-badge">
               {mode === "pose" ? "调整预览 / 原始贴图" : "128 × 128 / BEDROCK"}
-              {selected && <span> / {selected}</span>}
+              {selected && <span> / {nameByKey.get(selected) ?? selected}</span>}
             </div>
           </div>
           <div className="toolbar">

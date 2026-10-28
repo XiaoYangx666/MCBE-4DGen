@@ -21,6 +21,18 @@ export interface TextureSource {
   wrapT?: number;
 }
 
+/** Stable identity of one user-visible model part. */
+export interface SourcePart {
+  id: string;
+  name: string;
+  /** Mesh / structure the part belongs to, for grouping in the UI. */
+  mesh?: string;
+  /** Geometry group index inside the mesh. */
+  group?: number;
+  /** Stable material key that owns this part's triangles. */
+  materialKey?: string;
+}
+
 /**
  * Flat triangle soup after world transforms. UVs are already in image space
  * (v grows downwards), which is also canvas space; they may leave 0..1 and are
@@ -29,6 +41,8 @@ export interface TextureSource {
 export interface SourceBatch {
   key: string;
   name: string;
+  /** Stable material key; `key` is kept as its compatibility alias. */
+  materialKey?: string;
   positions: Float32Array;
   normals: Float32Array;
   uvs: Float32Array | null;
@@ -53,7 +67,7 @@ export interface SourceBatch {
   /** Part index per triangle; indexes `sourcePartTable`. */
   sourceParts?: Uint16Array;
   /** Stable part ids for this material batch (mesh instance × material group). */
-  sourcePartTable?: { id: string; name: string }[];
+  sourcePartTable?: SourcePart[];
 }
 
 export interface AtlasRect {

@@ -42,8 +42,17 @@ export function ConversionReport({
         </>
       )}
       materials={[
-        ...materials.map((material) => ({ name: material.name, pixels: material.pixels })),
-        ...removed.map((name) => ({ name, pixels: null, excluded: true })),
+        ...materials.map((material) => ({
+          id: material.key,
+          name: material.name,
+          pixels: material.pixels,
+        })),
+        ...removed.map((name, index) => ({
+          id: result.excludedMaterialKeys?.[index] ?? `removed:${index}`,
+          name,
+          pixels: null,
+          excluded: true,
+        })),
       ]}
       totalPixels={area}
       selectedMaterial={selectedMaterial ?? null}

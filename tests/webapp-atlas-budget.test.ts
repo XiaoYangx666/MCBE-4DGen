@@ -104,4 +104,41 @@ describe('browser budget planner', () => {
     expect(area(boosted, 'face') / area(base, 'face')).toBeGreaterThan(1.25);
     expect(area(boosted, 'face') / area(boosted, 'body')).toBeGreaterThan(2.5);
   });
+
+  it('attaches the shared report and keeps stable material keys', () => {
+    const fixture = fixtures().find((entry) => entry.name === 'shared-texture')!;
+    const base = toAtlasInput(fixture.inputs[0]!);
+    const inputs = [
+      {
+        ...base,
+        materialName: 'Body',
+        materialKey: 'm:Body#1',
+        partIndex: new Uint16Array(Math.floor((base.uvs?.length ?? 0) / 6)).fill(0),
+        parts: [{ id: 'body:p0', name: 'Body part' }],
+      },
+      {
+        ...base,
+        key: 'copy',
+        materialName: 'Copy',
+        materialKey: 'm:Copy#1',
+        partIndex: new Uint16Array(Math.floor((base.uvs?.length ?? 0) / 6)).fill(0),
+        parts: [{ id: 'copy:p0', name: 'Copy part' }],
+      },
+    ];
+    const layout = planAtlas(inputs, 128, 1, {
+      budget: 'texel-retention',
+      sharing: 'safe',
+    });
+    expect(layout.budget).toBeDefined();
+    const report = layout.budget!.report!;
+    expect(report.materials.map((material) => material.materialKey).sort()).toEqual([
+      'm:Body#1',
+      'm:Copy#1',
+    ]);
+    const attributed = report.materials.reduce((sum, material) => sum + material.rectPixels, 0);
+    expect(attributed).toBe(report.contentPixels);
+    expect(report.parts.length).toBe(2);
+    expect(report.sharedContentPixels).toBeGreaterThan(0);
+    expect(report.overlapPixels).toBe(report.uvPixels);
+  });
 });

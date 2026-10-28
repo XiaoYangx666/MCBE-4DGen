@@ -332,8 +332,50 @@ export function filterParts(
   };
 }
 
-/** Per-part world/UV demand, used to report reclaimed texture budget. */
-export interface PartDemand {
+/**
+ * Remove every primitive whose material key is excluded. The key — not the
+ * display name — is authoritative, so two materials named "Body" cannot delete
+ * each other. Shared meshes keep the primitives that use other materials.
+ */
+export function filterMaterialKeys(
+  document: Document,
+  excluded: ReadonlySet<string>,
+): { removedPrimitives: number; removedMeshes: number; removedNodes: number } {
+  if (!excluded.size) return { removedPrimitives: 0, removedMeshes: 0, removedNodes: 0 };
+  const keys = materialKeyMap(document);
+  const targets = new Map<Mesh, Primitive[]>();
+  for (const mesh of document.getRoot().listMeshes())
+    for (const primitive of mesh.listPrimitives()) {
+      const material = primitive.getMaterial();
+      if (!material || !excluded.has(keys.get(material) ?? '')) continue;
+      const list = targets.get(mesh) ?? [];
+      list.push(primitive);
+      targets.set(mesh, list);
+    }
+
+  let removedPrimitives = 0;
+  let removedMeshes = 0;
+  let removedNodes = 0;
+  for (const [mesh, primitives] of targets) {
+    for (const primitive of primitives) {
+      mesh.removePrimitive(primitive);
+      primitive.dispose();
+      removedPrimitives++;
+    }
+    if (mesh.listPrimitives().length) continue;
+    for (const node of [...document.getRoot().listNodes()]) {
+      if (node.getMesh() !== mesh) continue;
+      removeNode(node);
+      removedNodes++;
+    }
+    mesh.dispose();
+    removedMeshes++;
+  }
+  disposeUnusedAccessors(document);
+  return { removedPrimitives, removedMeshes, removedNodes };
+}
+
+/** Per-part world/UV demand, used to report reclaimed texture budget. */export interface PartDemand {
   part: PartInfo;
   triangles: number;
   worldArea: number;

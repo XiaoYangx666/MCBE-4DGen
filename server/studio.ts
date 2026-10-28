@@ -14,13 +14,17 @@ import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptEncoder } from 'meshoptimizer';
 import type {
+  EditSettings,
   LoadedSession,
   MaterialSummary,
+  PartSummary,
 } from '../src/api-types.ts';
 import { autoProfile } from '../src/auto-profile.ts';
 import type { HumanoidProfile, PreparedHumanoid } from '../src/humanoid.ts';
 import { importModel } from '../src/importer.ts';
 import type { IntermediateModel } from '../src/model.ts';
+import { assignParts, materialKeyMap } from '../src/parts.ts';
+import { normalizeSelection, selectionFingerprint } from '../src/selection.ts';
 import { PackManager } from '../src/pack-manager.ts';
 import type { ManagerConfig } from '../src/pack-manager.ts';
 import type { PackMeta } from '../src/pack-types.ts';
@@ -63,6 +67,8 @@ export interface Session {
   profile: HumanoidProfile | null;
   name: string;
   materials: MaterialSummary[];
+  parts: PartSummary[];
+  fingerprint: string;
 }
 
 export interface Job {
@@ -292,14 +298,32 @@ export class Studio {
     )?.traverse((node) => {
       if (node.getMesh()) instances.push(node.getMesh()!);
     });
+    // Assign ids once so every later stage sees the same part identity.
+    const parts: PartSummary[] = assignParts(model.document).map((part) => ({
+      id: part.id,
+      name: part.name,
+      node: part.node,
+      mesh: part.mesh,
+      primitive: part.primitive,
+      materialKey: part.materialKey,
+      materialName: part.materialName,
+      triangles: part.triangles,
+      vertices: part.vertices,
+      instancePart: part.instancePart,
+    }));
+    const keys = materialKeyMap(model.document);
     const materials = model.document
       .getRoot()
       .listMaterials()
       .map((material) => ({
+        key: keys.get(material) ?? `m:${material.getName() || '(default)'}#1`,
         name: material.getName(),
         alpha: material.getBaseColorFactor()[3],
         doubleSided: material.getDoubleSided(),
         transparent: material.getAlphaMode() === 'BLEND',
+        partIds: parts
+          .filter((part) => part.materialKey === keys.get(material))
+          .map((part) => part.id),
         triangles: instances
           .flatMap((mesh) => mesh.listPrimitives())
           .filter((primitive) => primitive.getMaterial() === material)
@@ -312,10 +336,13 @@ export class Studio {
             0,
           ),
       }));
+    const fingerprint = selectionFingerprint(materials, parts);
+    const selectionWarnings: string[] = [];
+    let settings: EditSettings | null = null;
     const id = crypto.randomUUID();
     const defaultProfile = profile ? { ...profile, shoulderOutset: 0 } : null;
     this.setActivity('正在保存模型…');
-    const entry = await rememberModel(
+    const remember = await rememberModel(
       path,
       name,
       {
@@ -332,22 +359,56 @@ export class Studio {
       },
       existingId,
     );
+    settings = remember.settings ?? null;
+    if (settings) {
+      const normalized = normalizeSelection(materials, parts, {
+        excluded: settings.excluded,
+        materialWeights: settings.materialWeights,
+        ...(settings.includedParts ? { includedParts: settings.includedParts } : {}),
+        ...(settings.fingerprint ? { fingerprint: settings.fingerprint } : {}),
+      });
+      if (normalized.structureChanged)
+        selectionWarnings.push('模型结构已变化，已重置材质与部件选择。');
+      else if (normalized.unmatched.length)
+        selectionWarnings.push(
+          `已忽略 ${normalized.unmatched.length} 项与当前模型不匹配的材质或部件选择。`,
+        );
+      if (normalized.migrated.length)
+        selectionWarnings.push(
+          `已迁移 ${normalized.migrated.length} 项旧版按名称保存的选择。`,
+        );
+      const { includedParts: _legacyParts, ...rest } = settings;
+      settings = {
+        ...rest,
+        excluded: normalized.excluded,
+        materialWeights: normalized.materialWeights,
+        ...(normalized.includedParts !== null
+          ? { includedParts: normalized.includedParts }
+          : {}),
+        fingerprint,
+      };
+    }
     this.sessions.set(id, {
-      modelId: entry.id,
+      modelId: remember.id,
       model,
       preview,
       profile: defaultProfile,
-      name: entry.name,
+      name: remember.name,
       materials,
+      parts,
+      fingerprint,
     });
     return {
       id,
-      modelId: entry.id,
-      name: entry.name,
-      settings: entry.settings ?? null,
+      modelId: remember.id,
+      name: remember.name,
+      settings,
       profile: defaultProfile,
       materials,
-      warnings: model.warnings,
+      parts,
+      fingerprint,
+      selectionWarnings,
+      warnings: [...model.warnings, ...selectionWarnings],
     };
   }
 
