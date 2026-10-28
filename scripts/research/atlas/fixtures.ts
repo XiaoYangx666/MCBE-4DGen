@@ -283,6 +283,7 @@ function finish(soup: Soup, options: InputOptions): ChartInput {
     wrap: options.wrap ?? ['repeat', 'repeat'],
     bounds,
     uvs: options.texture ? Float32Array.from(soup.uvs) : null,
+    positions: Float32Array.from(soup.positions),
     triangleAreas: options.texture ? Float32Array.from(soup.areas) : null,
     area: soup.area(),
   };

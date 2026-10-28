@@ -60,6 +60,7 @@ interface Accumulator {
   partNames: Set<string>;
   uvs: number[];
   areas: number[];
+  positions: number[];
   image: RgbaImage | null;
   color: [number, number, number];
   opacity: number;
@@ -70,17 +71,19 @@ interface Accumulator {
 }
 
 /** Triangles in world space, summed over node instances of the mesh. */
-function primitiveAreas(
+function primitiveGeometry(
   primitive: Primitive,
   instances: readonly Node[],
-): Float32Array {
+): { areas: Float32Array; positions: Float32Array } {
   const position = primitive.getAttribute('POSITION');
-  if (!position) return new Float32Array(0);
+  if (!position) return { areas: new Float32Array(0), positions: new Float32Array(0) };
   const indices =
     primitive.getIndices()?.getArray() ??
     Uint32Array.from({ length: position.getCount() }, (_, index) => index);
   const triangles = Math.floor(indices.length / 3);
   const areas = new Float32Array(triangles);
+  const output = new Float32Array(triangles * 9);
+  let first = true;
   for (const node of instances) {
     const matrix = node.getWorldMatrix();
     const count = position.getCount();
@@ -105,9 +108,21 @@ function primitiveAreas(
       areas[t] =
         (areas[t] ?? 0) +
         Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
+      if (first) {
+        output[t * 9] = world[a]!;
+        output[t * 9 + 1] = world[a + 1]!;
+        output[t * 9 + 2] = world[a + 2]!;
+        output[t * 9 + 3] = world[b]!;
+        output[t * 9 + 4] = world[b + 1]!;
+        output[t * 9 + 5] = world[b + 2]!;
+        output[t * 9 + 6] = world[c]!;
+        output[t * 9 + 7] = world[c + 1]!;
+        output[t * 9 + 8] = world[c + 2]!;
+      }
     }
+    first = false;
   }
-  return areas;
+  return { areas, positions: output };
 }
 
 export async function loadRealModel(path: string): Promise<RealModel> {
@@ -147,6 +162,7 @@ export async function loadRealModel(path: string): Promise<RealModel> {
       partNames: new Set<string>(),
       uvs: [],
       areas: [],
+      positions: [],
       image: decoded,
       color: [
         linearToSrgb(factor[0]!),
@@ -178,7 +194,8 @@ export async function loadRealModel(path: string): Promise<RealModel> {
       const indices =
         primitive.getIndices()?.getArray() ??
         Uint32Array.from({ length: position.getCount() }, (_, index) => index);
-      const areas = primitiveAreas(primitive, instances);
+      const geometry = primitiveGeometry(primitive, instances);
+      const areas = geometry.areas;
       const triangles = Math.floor(indices.length / 3);
       const offset = transform?.getOffset() ?? [0, 0];
       const scaling = transform?.getScale() ?? [1, 1];
@@ -195,6 +212,8 @@ export async function loadRealModel(path: string): Promise<RealModel> {
           accumulator.uvs.push(Number.isFinite(u) ? u : 0.5, Number.isFinite(v) ? v : 0.5);
         }
         accumulator.areas.push(areas[t] ?? 0);
+        for (let i = 0; i < 9; i++)
+          accumulator.positions.push(geometry.positions[t * 9 + i] ?? 0);
       }
     }
   }
@@ -227,6 +246,7 @@ export async function loadRealModel(path: string): Promise<RealModel> {
       wrap: accumulator.wrap,
       bounds,
       uvs: textured ? Float32Array.from(accumulator.uvs) : null,
+      positions: Float32Array.from(accumulator.positions),
       triangleAreas: textured ? Float32Array.from(accumulator.areas) : null,
       area: accumulator.areas.reduce((sum, value) => sum + value, 0),
     });
