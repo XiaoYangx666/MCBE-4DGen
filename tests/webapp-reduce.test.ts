@@ -73,6 +73,19 @@ describe('webapp mesh reduction', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('does not keep stale part metadata after triangles change', async () => {
+    const source = grid(8);
+    source.sourceParts = new Uint16Array(source.triangles).fill(0);
+    source.sourcePartTable = [{ id: 'p0', name: 'body' }];
+    const result = await reduceBatches([source], { ratio: 0.5, maxError: 0.03 });
+    const reduced = result.batches[0]!;
+    expect(reduced.triangles).toBeLessThan(source.triangles);
+    // A triangle-level part id array from the pre-reduction mesh must not be
+    // left behind: its length no longer matches and selection would be wrong.
+    expect(reduced.sourceParts).toBeUndefined();
+    expect(reduced.sourcePartTable).toBeUndefined();
+  });
+
   it('reports per-material progress for the UI', async () => {
     const calls: [number, number, string][] = [];
     await reduceBatches([grid(4), { ...grid(4), key: 'mat2', name: '第二材质' }], {
