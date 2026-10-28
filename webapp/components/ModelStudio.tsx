@@ -442,6 +442,9 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       used: material.pixels,
       uv: material.uvPixels ?? null,
       weight: weightsByName.get(material.name),
+      flat: atlasRegions
+        .filter((region) => region.name === material.name)
+        .every((region) => region.flat),
     }));
   }, [result, source, weights, atlasRegions]);
 
@@ -970,6 +973,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                 : {}),
             }))}
             materials={atlasMaterials}
+            {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
           />
         </Dialog>
       ) : null}

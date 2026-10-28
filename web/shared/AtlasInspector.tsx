@@ -24,6 +24,8 @@ export interface AtlasInspectorMaterial {
   uv: number | null;
   /** Current pixel weight, when the caller can provide it. */
   weight?: number;
+  /** Untextured solid-color material. */
+  flat?: boolean;
 }
 
 const COLORS = [
@@ -36,15 +38,19 @@ export function AtlasInspector({
   size,
   regions,
   materials,
+  coverageSrc,
   onClose,
 }: {
   src: string;
   size: number;
   regions: readonly AtlasInspectorRegion[];
   materials: readonly AtlasInspectorMaterial[];
+  /** Optional atlas preview with unused rectangle pixels tinted. */
+  coverageSrc?: string;
   onClose?: () => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [showCoverage, setShowCoverage] = useState(false);
   const colorOf = useMemo(() => {
     const map = new Map<string, string>();
     materials.forEach((item, index) => map.set(item.name, COLORS[index % COLORS.length]!));
@@ -74,15 +80,35 @@ export function AtlasInspector({
           </small>
         </div>
         {onClose && (
-          <button type="button" className="icon-button" aria-label="关闭贴图分区" onClick={onClose}>
-            <Icon name="close" size={16} />
+          <div className="atlas-inspector-actions">
+            {coverageSrc && (
+              <button
+                type="button"
+                className={`atlas-inspector-toggle${showCoverage ? ' active' : ''}`}
+                onClick={() => setShowCoverage((value) => !value)}
+              >
+                {showCoverage ? '显示原图' : '高亮未覆盖'}
+              </button>
+            )}
+            <button type="button" className="icon-button" aria-label="关闭贴图分区" onClick={onClose}>
+              <Icon name="close" size={16} />
+            </button>
+          </div>
+        )}
+        {!onClose && coverageSrc && (
+          <button
+            type="button"
+            className={`atlas-inspector-toggle${showCoverage ? ' active' : ''}`}
+            onClick={() => setShowCoverage((value) => !value)}
+          >
+            {showCoverage ? '显示原图' : '高亮未覆盖'}
           </button>
         )}
       </header>
       <div className="atlas-inspector-body">
         <div className="atlas-inspector-stage">
           <div className="atlas-inspector-image">
-            <img src={src} alt="输出贴图分区" />
+            <img src={showCoverage && coverageSrc ? coverageSrc : src} alt="输出贴图分区" />
             <svg viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
               {regions.map((region) => {
                 const owner = region.materials?.[0] ?? region.material;
@@ -107,7 +133,8 @@ export function AtlasInspector({
             </svg>
           </div>
           <p className="field-help">
-            点击色块或右侧材质查看来源。空白比例高的材质可以降低像素权重后重新转换。
+            点击色块或右侧材质查看来源。红色高亮是没有三角面使用的矩形空余；它仍会显示源贴图颜色，但不是有效 UV。
+            空白比例高的材质可以降低像素权重后重新转换。
           </p>
           {selected && selectedRegions.length > 0 && (
             <div className="atlas-inspector-detail">
@@ -124,10 +151,13 @@ export function AtlasInspector({
         </div>
         <div className="atlas-inspector-list">
           {rows.map((row) => {
-            const blank = row.allocated > 0
-              ? Math.max(0, row.allocated - (row.uv ?? row.used ?? 0))
-              : 0;
-            const transparent = Math.max(0, (row.uv ?? row.used ?? 0) - (row.used ?? 0));
+            const flat = row.flat === true;
+            const blank = flat || row.allocated <= 0
+              ? 0
+              : Math.max(0, row.allocated - (row.uv ?? row.used ?? 0));
+            const transparent = flat
+              ? 0
+              : Math.max(0, (row.uv ?? row.used ?? 0) - (row.used ?? 0));
             return (
               <button
                 key={row.name}
@@ -145,8 +175,11 @@ export function AtlasInspector({
                   <i style={{ width: `${row.allocated ? ((row.used ?? 0) / row.allocated) * 100 : 0}%` }} />
                 </span>
                 <span className="atlas-inspector-blank">
-                  空白 {row.allocated ? (blank / row.allocated * 100).toFixed(0) : 0}%
-                  {transparent > 0 ? ` · 透明 ${(transparent / row.allocated * 100).toFixed(0)}%` : ''}
+                  {flat
+                    ? '纯色采样'
+                    : `未覆盖 ${row.allocated ? (blank / row.allocated * 100).toFixed(0) : 0}%${
+                        transparent > 0 ? ` · 透明 ${(transparent / row.allocated * 100).toFixed(0)}%` : ''
+                      }`}
                 </span>
               </button>
             );

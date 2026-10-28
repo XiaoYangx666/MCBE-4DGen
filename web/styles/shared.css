@@ -803,3 +803,8 @@
   .atlas-inspector-body { grid-template-columns: minmax(0, 1fr); }
   .atlas-inspector-list { max-height: 240px; }
 }
+
+.atlas-inspector-actions { display: flex; align-items: center; gap: 8px; }
+.atlas-inspector-toggle { padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); font: inherit; font-size: 10.5px; cursor: pointer; }
+.atlas-inspector-toggle:hover { color: var(--ink); background: var(--hover); }
+.atlas-inspector-toggle.active { border-color: var(--accent); color: var(--accent); background: var(--selected); }
