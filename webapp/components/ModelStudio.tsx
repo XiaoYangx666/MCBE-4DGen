@@ -782,7 +782,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
 
         <div className="model-stage">
           {compact && (
-            <div className="stage-topbar">
+            <div className="stage-side-buttons">
               <button
                 type="button"
                 className="stage-menu-button"
@@ -803,6 +803,10 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                   <Icon name="upload" size={16} />
                 </button>
               )}
+            </div>
+          )}
+          {compact && (
+            <div className="stage-topbar">
               <div className="stage-topbar-right">
                 <button
                   type="button"
