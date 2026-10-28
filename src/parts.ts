@@ -13,7 +13,14 @@
  * mesh reduction (which keeps primitives). Nothing here decides which part
  * matters: the caller passes the keep set.
  */
-import type { Document, Material, Mesh, Node, Primitive } from '@gltf-transform/core';
+import type {
+  Document,
+  Material,
+  Mesh,
+  Node,
+  Primitive,
+  Scene,
+} from '@gltf-transform/core';
 
 export const PART_EXTRA = '_fourdgenPart';
 
@@ -78,14 +85,44 @@ const meshInstances = (document: Document): Map<Mesh, number> => {
   return counts;
 };
 
-/** Detach a node from its Scene/Node parent without assuming a parent type. */
-const detachNode = (node: Node) => {
+type NodeParent = Node | Scene;
+
+/**
+ * Detach a node without assuming whether its parent is a Scene or another Node.
+ * Returns the parent so removed nodes can hand their children back to it.
+ */
+const detachNode = (node: Node): NodeParent | undefined => {
   const parent = node.listParents().find(
     (candidate) =>
       typeof (candidate as unknown as { removeChild?: unknown }).removeChild ===
       'function',
-  ) as unknown as { removeChild(child: Node): void } | undefined;
+  ) as unknown as NodeParent | undefined;
   parent?.removeChild(node);
+  return parent;
+};
+
+/**
+ * Remove one node instance while keeping its child nodes alive. A mesh-instance
+ * node can be a bone parent; disposing the subtree would delete parts the user
+ * asked to keep.
+ */
+const removeNode = (node: Node) => {
+  const parent = detachNode(node);
+  for (const child of node.listChildren()) {
+    node.removeChild(child);
+    parent?.addChild(child);
+  }
+  node.dispose();
+};
+
+/**
+ * Accessors are also parented by their Buffer, so only accessors with no
+ * primitive/animation/skin parent are truly unused. Shared accessors survive.
+ */
+const disposeUnusedAccessors = (document: Document) => {
+  for (const accessor of document.getRoot().listAccessors())
+    if (!accessor.listParents().some((parent) => parent.propertyType !== 'Buffer'))
+      accessor.dispose();
 };
 
 /** Mesh-instance nodes in document order; `PartInfo.nodeIndex` indexes this. */
@@ -187,24 +224,43 @@ export function listParts(document: Document): PartInfo[] {
 export interface FilterReport {
   kept: PartInfo[];
   removed: PartInfo[];
+  /** Keep ids that do not belong to the current model. Never applied silently. */
+  unknown: string[];
   removedTriangles: number;
+  removedPrimitives: number;
   removedMeshes: number;
   removedNodes: number;
 }
 
 /**
- * Remove every part not in `keep`. Shared materials are untouched: only the
- * geometry of the dropped part is disposed, so other parts using the same
- * material keep working.
+ * Remove every part not in `keep`. Shared materials and shared meshes are
+ * untouched: only the geometry of the dropped part is detached, so other parts
+ * using the same material or mesh keep working.
+ *
+ * Deletion is resolved against the primitive objects captured before any
+ * mutation. Removing primitives one by one would shift `listPrimitives()`
+ * indices and silently delete the wrong neighbour when several parts of one
+ * mesh are dropped together.
+ *
+ * A non-empty keep set that matches no current part is rejected. This prevents
+ * a stale selection from another model from deleting the whole document.
  */
 export function filterParts(
   document: Document,
   keep: ReadonlySet<string>,
 ): FilterReport {
   const parts = assignParts(document);
+  const byId = new Map(parts.map((part) => [part.id, part]));
+  const unknown = [...keep].filter((id) => !byId.has(id));
+  if (keep.size > 0 && unknown.length === keep.size)
+    throw new Error(
+      'filterParts: no matching parts for the supplied keep set; refusing to delete every part',
+    );
+
   const nodes = instanceNodes(document);
+  const primitiveTargets = new Map<Mesh, Set<Primitive>>();
+  const instanceTargets = new Set<Node>();
   const removed: PartInfo[] = [];
-  let removedMeshes = 0;
 
   for (const part of parts) {
     if (keep.has(part.id)) continue;
@@ -212,29 +268,67 @@ export function filterParts(
     const node = nodes[part.nodeIndex];
     if (!node) continue;
     if (part.instancePart) {
-      detachNode(node);
-      node.dispose();
+      instanceTargets.add(node);
       continue;
     }
     const mesh = node.getMesh();
     const primitive = mesh?.listPrimitives()[part.primitive];
-    if (!primitive) continue;
-    mesh!.removePrimitive(primitive);
-    primitive.dispose();
-    if (mesh && mesh.listPrimitives().length === 0) {
-      detachNode(node);
-      node.dispose();
-      mesh.dispose();
-      removedMeshes++;
-    }
+    if (!mesh || !primitive) continue;
+    const set = primitiveTargets.get(mesh) ?? new Set<Primitive>();
+    set.add(primitive);
+    primitiveTargets.set(mesh, set);
   }
+
+  const disposedMeshes = new Set<Mesh>();
+  let removedPrimitives = 0;
+  let removedMeshes = 0;
+  let removedNodes = 0;
+
+  const finishMesh = (mesh: Mesh) => {
+    if (disposedMeshes.has(mesh)) return;
+    disposedMeshes.add(mesh);
+    for (const node of [...document.getRoot().listNodes()]) {
+      if (node.getMesh() !== mesh) continue;
+      removeNode(node);
+      removedNodes++;
+    }
+    mesh.dispose();
+    removedMeshes++;
+  };
+
+  // Drop whole instanced nodes first; their shared mesh may still be used by a
+  // kept instance and is only disposed when the last reference is gone.
+  for (const node of instanceTargets) {
+    if (!node.getMesh()) continue;
+    const mesh = node.getMesh()!;
+    removeNode(node);
+    removedNodes++;
+    if (!document.getRoot().listNodes().some((candidate) => candidate.getMesh() === mesh))
+      finishMesh(mesh);
+  }
+
+  // Drop individual primitives. Every primitive is addressed by object identity,
+  // so multiple removals from one mesh cannot shift each other's index.
+  for (const [mesh, primitives] of primitiveTargets) {
+    if (disposedMeshes.has(mesh)) continue;
+    for (const primitive of primitives) {
+      mesh.removePrimitive(primitive);
+      primitive.dispose();
+      removedPrimitives++;
+    }
+    if (mesh.listPrimitives().length === 0) finishMesh(mesh);
+  }
+
+  disposeUnusedAccessors(document);
 
   return {
     kept: parts.filter((part) => keep.has(part.id)),
     removed,
+    unknown,
     removedTriangles: removed.reduce((sum, part) => sum + part.triangles, 0),
+    removedPrimitives,
     removedMeshes,
-    removedNodes: 0,
+    removedNodes,
   };
 }
 

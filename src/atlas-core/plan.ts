@@ -496,12 +496,18 @@ export function planAtlasBudget(
     const shared = slot.members.length > 1;
     const materials = [...new Set(slot.members.map((chart) => chart.material))];
     const materialKeys = [...new Set(slot.members.map((chart) => chart.materialKey))];
+    const slotArea = slot.members.reduce((sum, chart) => sum + chart.uvArea, 0);
+    const slotTarget = requestedArea.get(slot.id) ?? 0;
     if (shared) {
       sharedCharts += slot.members.length;
       sharedSavedPixels +=
         (slot.members.length - 1) * (allocation.width + pad * 2) * (allocation.height + pad * 2);
     }
     for (const member of slot.members) {
+      // A shared slot has one requested area. Split it by UV area so per-material
+      // reports sum back to the slot instead of repeating the target per member.
+      const share =
+        slotArea > 0 ? member.uvArea / slotArea : 1 / slot.members.length;
       planned.push({
         chartId: member.chartId,
         inputId: member.inputId,
@@ -530,7 +536,7 @@ export function planAtlasBudget(
         worldArea: member.worldArea,
         sourceTexels: member.sourceTexels,
         weight: member.weight,
-        targetArea: requestedArea.get(slot.id) ?? 0,
+        targetArea: slotTarget * share,
         width: allocation.width,
         height: allocation.height,
         floorBound: allocation.floorBound,

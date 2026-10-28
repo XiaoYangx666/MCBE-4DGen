@@ -22,8 +22,13 @@ export interface MaterialPlanReport {
   sourceRatio: number;
   /** Pixels covered by this material's triangles (shared pixels count for each). */
   uvPixels: number;
-  /** Content pixels attributed to this material (shared rectangles split by UV area). */
+  /** Sampled pixels also covered by another material. */
+  sharedPixels: number;
+  /** Sampled pixels no other material covers. */
+  uniquePixels: number;
+  /** Content pixels attributed to this material, partitioned across materials. */
   rectPixels: number;
+  /** Attributed content not covered by a triangle, clamped at zero. */
   wastePixels: number;
   /** Continuous area the budget requested for this material's charts. */
   targetArea: number;
@@ -47,12 +52,21 @@ export interface PlanReport {
   slots: number;
   sharedCharts: number;
   sharedSavedPixels: number;
+  /** Unique content pixels inside every rectangle, counted once. */
   contentPixels: number;
   allocatedPixels: number;
   gutterPixels: number;
   emptyPixels: number;
+  /** Unique atlas pixels covered by at least one triangle. */
   uvPixels: number;
+  /** Atlas pixels sampled by two or more materials. */
   overlapPixels: number;
+  /** Unique content pixels that no triangle samples. */
+  unusedContentPixels: number;
+  /** Unique content pixels belonging to shared rectangles. */
+  sharedContentPixels: number;
+  /** Content pixels not attributed to any material (normally zero). */
+  unattributedPixels: number;
   contentUtilization: number;
   allocatedUtilization: number;
   uvUtilization: number;
@@ -127,6 +141,47 @@ const uvAt = (uvs: Float32Array, triangle: number, corner: number): [number, num
   return [uvs[index] ?? 0.5, uvs[index + 1] ?? 0.5];
 };
 
+interface RectAccumulator {
+  content: number;
+  allocated: number;
+  /** Continuous UV area per material inside this rectangle. */
+  areas: Map<string, number>;
+  target: number;
+  charts: number;
+}
+
+/** Split an integer content area into per-material integers that sum exactly. */
+function partitionContent(content: number, areas: ReadonlyMap<string, number>) {
+  const result = new Map<string, number>();
+  const keys = [...areas.keys()].sort();
+  if (!keys.length) return result;
+  const total = keys.reduce((sum, key) => sum + (areas.get(key) ?? 0), 0);
+  const exact = keys.map((key) => {
+    const share = total > 0 ? (areas.get(key) ?? 0) / total : 1 / keys.length;
+    return { key, value: content * share };
+  });
+  const values = new Map<string, number>();
+  let assigned = 0;
+  for (const entry of exact) {
+    const whole = Math.floor(entry.value + 1e-9);
+    values.set(entry.key, whole);
+    assigned += whole;
+  }
+  const order = exact
+    .map((entry, index) => ({
+      key: entry.key,
+      index,
+      fraction: entry.value - Math.floor(entry.value + 1e-9),
+    }))
+    .sort((a, b) => b.fraction - a.fraction || a.key.localeCompare(b.key));
+  for (let add = 0; add < content - assigned; add++) {
+    const target = order[add % order.length]!;
+    values.set(target.key, values.get(target.key)! + 1);
+  }
+  for (const key of keys) result.set(key, values.get(key) ?? 0);
+  return result;
+}
+
 /** Summarize a plan into atlas and per-material/part numbers. */
 export function summarizePlan(
   inputs: readonly ChartInput[],
@@ -147,7 +202,6 @@ export function summarizePlan(
   }
 
   const materialUv = new Map<string, Uint8Array>();
-  const materialArea = new Map<string, number>();
   const materialWorld = new Map<string, number>();
   const materialSource = new Map<string, number>();
   const materialAtlas = new Map<string, number>();
@@ -166,10 +220,19 @@ export function summarizePlan(
     return mask;
   };
 
+  const flatInputs = new Set(
+    plan.charts
+      .filter((chart) => chart.bounds === null)
+      .map((chart) => chart.inputId),
+  );
+
   for (const input of inputs) {
     const key = input.materialKey;
     materialWorld.set(key, (materialWorld.get(key) ?? 0) + input.area);
     maskFor(key);
+    // Flat inputs are not remapped: their original UVs do not describe where
+    // the solid texel lives in the atlas, so they are accounted below.
+    if (flatInputs.has(input.id)) continue;
     const atlas = atlasUvs.get(input.id);
     if (!atlas || !input.uvs) continue;
     const count = Math.floor(input.uvs.length / 6);
@@ -203,73 +266,116 @@ export function summarizePlan(
   const uvMask = new Uint8Array(size * size);
   const owner = new Int16Array(size * size);
   let overlapPixels = 0;
-  const uniqueRects = new Map<string, { content: number; allocated: number }>();
+  const rects = new Map<string, RectAccumulator>();
+
+  const markPixel = (pixel: number, key: string) => {
+    const index = materialIndex.get(key)!;
+    uvMask[pixel] = 1;
+    maskFor(key)[pixel] = 1;
+    const previous = owner[pixel]!;
+    if (previous === 0) owner[pixel] = index + 1;
+    else if (previous > 0 && previous !== index + 1) {
+      owner[pixel] = -1;
+      overlapPixels++;
+    }
+  };
 
   for (const chart of plan.charts) {
     const inner = innerRect(chart.rect);
-    const content = inner.width * inner.height;
-    uniqueRects.set(
-      `${chart.rect.x},${chart.rect.y},${chart.rect.width},${chart.rect.height}`,
-      { content, allocated: chart.rect.width * chart.rect.height },
-    );
+    const rectKey = `${chart.rect.x},${chart.rect.y},${chart.rect.width},${chart.rect.height}`;
+    const rect = rects.get(rectKey) ?? {
+      content: inner.width * inner.height,
+      allocated: chart.rect.width * chart.rect.height,
+      areas: new Map<string, number>(),
+      target: 0,
+      charts: 0,
+    };
+    rect.charts++;
+    // Chart targets are already split between shared members by the planner,
+    // so summing them recovers the slot target once.
+    rect.target += options.targetArea?.get(chart.chartId) ?? 0;
+    rects.set(rectKey, rect);
+
     const groups =
       chart.triangles ?? [{ inputId: chart.inputId, triangles: null as number[] | null }];
-    const coverages: { key: string; area: number }[] = [];
     for (const group of groups) {
       const input = byId.get(group.inputId);
-      const atlas = atlasUvs.get(group.inputId);
-      if (!input || !atlas) continue;
+      if (!input) continue;
       const key = input.materialKey;
-      const index = materialIndex.get(key)!;
-      const count = Math.floor(atlas.length / 6);
-      const triangles =
-        group.triangles ?? Array.from({ length: count }, (_, triangle) => triangle);
-      const mask = maskFor(key);
-      let uvArea = 0;
-      for (const triangle of triangles) {
-        if (triangle < 0 || triangle >= count) continue;
-        uvArea += uvTriangleArea(atlas, triangle);
-        raster(
-          [uvAt(atlas, triangle, 0), uvAt(atlas, triangle, 1), uvAt(atlas, triangle, 2)],
-          size,
-          (pixel) => {
-            uvMask[pixel] = 1;
-            mask[pixel] = 1;
-            const previous = owner[pixel]!;
-            if (previous === 0) owner[pixel] = index + 1;
-            else if (previous > 0 && previous !== index + 1) {
-              owner[pixel] = -1;
-              overlapPixels++;
-            }
-          },
-        );
+      const atlas = atlasUvs.get(group.inputId);
+      if (!atlas) continue;
+
+      if (!chart.bounds) {
+        // A flat material samples one solid texel; attribute exactly one pixel
+        // instead of the whole rectangle or the original UV triangles.
+        const centre =
+          (inner.y + Math.floor(inner.height / 2)) * size +
+          inner.x +
+          Math.floor(inner.width / 2);
+        markPixel(centre, key);
+        rect.areas.set(key, (rect.areas.get(key) ?? 0) + 1);
+        materialAtlas.set(key, (materialAtlas.get(key) ?? 0) + 1);
+      } else {
+        const count = Math.floor(atlas.length / 6);
+        const triangles =
+          group.triangles ?? Array.from({ length: count }, (_, triangle) => triangle);
+        let uvArea = 0;
+        for (const triangle of triangles) {
+          if (triangle < 0 || triangle >= count) continue;
+          uvArea += uvTriangleArea(atlas, triangle);
+          raster(
+            [uvAt(atlas, triangle, 0), uvAt(atlas, triangle, 1), uvAt(atlas, triangle, 2)],
+            size,
+            (pixel) => markPixel(pixel, key),
+          );
+        }
+        rect.areas.set(key, (rect.areas.get(key) ?? 0) + uvArea);
       }
-      coverages.push({ key, area: uvArea });
+
       materialCharts.set(key, (materialCharts.get(key) ?? 0) + 1);
       const ids = materialChartIds.get(key) ?? [];
-      ids.push(chart.chartId);
+      if (!ids.includes(chart.chartId)) ids.push(chart.chartId);
       materialChartIds.set(key, ids);
       if (options.floorBound?.has(chart.chartId))
         materialFloor.set(key, (materialFloor.get(key) ?? 0) + 1);
-      materialTarget.set(
-        key,
-        (materialTarget.get(key) ?? 0) + (options.targetArea?.get(chart.chartId) ?? 0),
-      );
     }
-    const totalArea = coverages.reduce((sum, entry) => sum + entry.area, 0);
-    for (const entry of coverages) {
-      const share = totalArea > 0 ? entry.area / totalArea : 1 / coverages.length;
-      materialRect.set(entry.key, (materialRect.get(entry.key) ?? 0) + content * share);
+  }
+
+  // Partition every rectangle once. Shared rectangles give each material a
+  // share of the same content instead of full content for every member.
+  let sharedContentPixels = 0;
+  for (const rect of rects.values()) {
+    if (rect.charts > 1 || rect.areas.size > 1) sharedContentPixels += rect.content;
+    const shares = partitionContent(rect.content, rect.areas);
+    for (const [key, pixels] of shares)
+      materialRect.set(key, (materialRect.get(key) ?? 0) + pixels);
+    const totalArea = [...rect.areas.values()].reduce((sum, value) => sum + value, 0);
+    for (const key of rect.areas.keys()) {
+      const share =
+        totalArea > 0
+          ? (rect.areas.get(key) ?? 0) / totalArea
+          : 1 / rect.areas.size;
+      materialTarget.set(key, (materialTarget.get(key) ?? 0) + rect.target * share);
     }
   }
 
   let uvPixels = 0;
   for (const value of uvMask) uvPixels += value ? 1 : 0;
-  const contentPixels = [...uniqueRects.values()].reduce((sum, entry) => sum + entry.content, 0);
-  const allocatedPixels = [...uniqueRects.values()].reduce(
-    (sum, entry) => sum + entry.allocated,
+  const contentPixels = [...rects.values()].reduce((sum, rect) => sum + rect.content, 0);
+  const allocatedPixels = [...rects.values()].reduce(
+    (sum, rect) => sum + rect.allocated,
     0,
   );
+  const attributedPixels = [...materialRect.values()].reduce((sum, value) => sum + value, 0);
+
+  // Pixels covered by this material and at least one other material. Walking
+  // the owner map once keeps the count independent of raster order.
+  const sharedByMaterial = new Map<string, number>();
+  for (let pixel = 0; pixel < owner.length; pixel++) {
+    if (owner[pixel] !== -1) continue;
+    for (const [key, mask] of materialUv)
+      if (mask[pixel]) sharedByMaterial.set(key, (sharedByMaterial.get(key) ?? 0) + 1);
+  }
 
   const materials: MaterialPlanReport[] = materialOrder.map((key) => {
     const input = inputs.find((entry) => entry.materialKey === key)!;
@@ -280,6 +386,7 @@ export function summarizePlan(
     const mask = materialUv.get(key);
     if (mask) for (const value of mask) pixels += value ? 1 : 0;
     const rectPixels = materialRect.get(key) ?? 0;
+    const sharedPixels = sharedByMaterial.get(key) ?? 0;
     return {
       material: input.material,
       materialKey: key,
@@ -292,8 +399,10 @@ export function summarizePlan(
       texelDensity: worldArea > 0 ? atlasTexels / worldArea : 0,
       sourceRatio: sourceTexels > 0 ? atlasTexels / sourceTexels : 0,
       uvPixels: pixels,
+      sharedPixels,
+      uniquePixels: Math.max(0, pixels - sharedPixels),
       rectPixels,
-      wastePixels: Math.max(0, rectPixels - pixels),
+      wastePixels: Math.max(0, rectPixels - Math.min(pixels, rectPixels)),
       targetArea: materialTarget.get(key) ?? 0,
       actualArea: rectPixels,
       chartIds: materialChartIds.get(key) ?? [],
@@ -304,7 +413,7 @@ export function summarizePlan(
     size,
     pad: plan.pad,
     charts: plan.charts.length,
-    slots: uniqueRects.size,
+    slots: rects.size,
     sharedCharts: plan.charts.filter((chart) => chart.origin === 'shared').length,
     sharedSavedPixels: options.sharedSavedPixels ?? 0,
     contentPixels,
@@ -313,6 +422,9 @@ export function summarizePlan(
     emptyPixels: Math.max(0, size * size - allocatedPixels),
     uvPixels,
     overlapPixels,
+    unusedContentPixels: Math.max(0, contentPixels - uvPixels),
+    sharedContentPixels,
+    unattributedPixels: Math.max(0, contentPixels - attributedPixels),
     contentUtilization: contentPixels / (size * size),
     allocatedUtilization: allocatedPixels / (size * size),
     uvUtilization: uvPixels / (size * size),

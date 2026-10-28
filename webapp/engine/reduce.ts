@@ -140,9 +140,10 @@ function reduceParts(batch: SourceBatch, options: ReduceOptions) {
     error = Math.max(error, simplified.detail.error);
   }
   const merged = mergeFloat(positionChunks);
+  const { sourceParts: _sourceParts, sourcePartTable: _sourcePartTable, ...rest } = batch;
   return {
     batch: {
-      ...batch,
+      ...rest,
       positions: merged,
       normals: mergeFloat(normalChunks),
       uvs: batch.uvs ? mergeFloat(uvChunks) : null,
@@ -247,7 +248,7 @@ function simplifyBatch(batch: SourceBatch, options: ReduceOptions) {
     }
   }
 
-  const { parts: _parts, ...rest } = batch;
+  const { parts: _parts, sourceParts: _sourceParts, sourcePartTable: _sourcePartTable, ...rest } = batch;
   return {
     batch: {
       ...rest,
