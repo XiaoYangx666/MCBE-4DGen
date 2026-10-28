@@ -1,9 +1,10 @@
 import { getBounds } from '@gltf-transform/core';
-import type { Document, Node, Primitive, mat4 as CoreMatrix, vec3 as Vector } from '@gltf-transform/core';
+import type { Document, Mesh, Node, Primitive, mat4 as CoreMatrix, vec3 as Vector } from '@gltf-transform/core';
 import { cloneDocument, compactPrimitive, transformPrimitive } from '@gltf-transform/functions';
 import { mat3, mat4, vec3 } from 'gl-matrix';
 import type { IntermediateModel } from './model.ts';
 import { validateModel } from './validate-model.ts';
+import { PART_EXTRA } from './parts.ts';
 
 export interface PrepareOptions {
   scale?: number | Vector;
@@ -270,12 +271,39 @@ export async function prepareStaticModel(input: IntermediateModel, options: Prep
   if (!instances.length) throw new Error('Selected scene contains no mesh instances');
   const activeSkins = new Set(instances.map((n) => n.getSkin()).filter(Boolean)).size;
   const hasMorph = instances.some((n) => n.getMesh()!.listPrimitives().some((p) => p.listTargets().length));
+  // Part ids are assigned here so they survive the snapshot (which rebuilds
+  // one mesh per node instance) and stay stable through reduction and atlas.
+  const instanceCounts = new Map<Mesh, number>();
   for (const node of instances) {
-    if (node.getExtension('EXT_mesh_gpu_instancing')) throw new Error('GPU instancing must be expanded before Static preparation');
-    const mesh = doc.createMesh(node.getMesh()!.getName());
-    for (const source of node.getMesh()!.listPrimitives()) mesh.addPrimitive(snapshotPrimitive(doc, source, node, warn));
-    snapshot.addChild(doc.createNode(node.getName()).setMesh(mesh));
+    const mesh = node.getMesh()!;
+    instanceCounts.set(mesh, (instanceCounts.get(mesh) ?? 0) + 1);
   }
+  instances.forEach((node, index) => {
+    if (node.getExtension('EXT_mesh_gpu_instancing')) throw new Error('GPU instancing must be expanded before Static preparation');
+    const sourceMesh = node.getMesh()!;
+    const mesh = doc.createMesh(sourceMesh.getName());
+    const nodeName = node.getName() || `node${index}`;
+    const instanced = (instanceCounts.get(sourceMesh) ?? 0) > 1;
+    const primitives = sourceMesh.listPrimitives();
+    primitives.forEach((source, primitiveIndex) => {
+      const primitive = snapshotPrimitive(doc, source, node, warn);
+      const partId = instanced ? `n${index}` : `p${index}.${primitiveIndex}`;
+      const partName =
+        !instanced && primitives.length > 1
+          ? `${nodeName}#${primitiveIndex}`
+          : nodeName;
+      primitive.setExtras({
+        ...primitive.getExtras(),
+        [PART_EXTRA]: { id: partId, name: partName },
+      });
+      mesh.addPrimitive(primitive);
+    });
+    const created = doc.createNode(nodeName).setMesh(mesh);
+    const extras = { ...node.getExtras() };
+    if (instanced) extras[PART_EXTRA] = { id: `n${index}`, name: nodeName };
+    created.setExtras(extras);
+    snapshot.addChild(created);
+  });
   root.setDefaultScene(snapshot);
   if (activeSkins) warn('Initial skin pose frozen to rigid geometry; original rig/weights remain only in the unmodified input.');
   if (previous.animations.length) warn('Animation clips were not evaluated; the file initial pose was frozen.');

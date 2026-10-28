@@ -50,6 +50,10 @@ export interface SourceBatch {
    * humanoid rig. Missing entries mean "body".
    */
   parts?: Uint8Array;
+  /** Part index per triangle; indexes `sourcePartTable`. */
+  sourceParts?: Uint16Array;
+  /** Stable part ids for this material batch (mesh instance × material group). */
+  sourcePartTable?: { id: string; name: string }[];
 }
 
 export interface AtlasRect {

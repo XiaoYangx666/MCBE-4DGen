@@ -18,6 +18,8 @@ import { convertTgaTextures } from './textures.ts';
 import { detectArmRig, type ArmRig } from './pose.ts';
 import { detectHumanoidRig, type HumanoidRig } from './humanoid.ts';
 import { extractModel, type ExtractedModel } from './extract.ts';
+import { filterBatchParts } from './parts.ts';
+export { extractedParts, type ExtractedPart } from './parts.ts';
 import { reduceBatches } from './reduce.ts';
 import { convertBatches, type BindingMode, type ConvertResult } from './convert.ts';
 import { nextFrame } from './frame.ts';
@@ -220,6 +222,8 @@ export interface ConvertExtractedOptions {
   ratio: number;
   maxError: number;
   included: ReadonlySet<string>;
+  /** Part ids to keep; omitted means every part of the included materials. */
+  includedParts?: ReadonlySet<string>;
   weights: Readonly<Record<string, number>>;
   onProgress?: ProgressHandler;
 }
@@ -238,7 +242,18 @@ export async function convertExtractedModel(
 ): Promise<ConvertExtractedResult> {
   const report = reporter(options.onProgress);
   let batches = extracted.batches.filter((batch) => options.included.has(batch.key));
-  if (!batches.length) throw new Error('请至少保留一个材质');
+  if (options.includedParts) {
+    const kept: typeof batches = [];
+    for (const batch of batches) {
+      const filtered = filterBatchParts(batch, options.includedParts);
+      if (filtered) kept.push(filtered);
+    }
+    batches = kept;
+  }
+  if (!batches.length) throw new Error('请至少保留一个材质或部件');
+  // Materials that lost every triangle to the part filter still count as
+  // excluded, otherwise the report would claim they were exported.
+  const keptMaterialKeys = new Set(batches.map((batch) => batch.key));
   const sourceTriangles = batches.reduce((sum, batch) => sum + batch.triangles, 0);
 
   let reductionWarnings: string[] = [];
@@ -275,7 +290,9 @@ export async function convertExtractedModel(
   });
   const excludedMaterials = [...new Set(
     extracted.batches
-      .filter((batch) => !options.included.has(batch.key))
+      .filter(
+        (batch) => !options.included.has(batch.key) || !keptMaterialKeys.has(batch.key),
+      )
       .map((batch) => batch.name),
   )];
   return {
@@ -330,6 +347,8 @@ export interface ModelResultKeyInput {
   ratio: number;
   maxError: number;
   included: Iterable<string>;
+  /** Part ids included in the conversion; omitted means all parts. */
+  includedParts?: Iterable<string>;
   weights: Readonly<Record<string, number>>;
   modelTriangles: number;
 }
@@ -345,6 +364,7 @@ export function modelResultKey(input: ModelResultKeyInput) {
     input.ratio.toFixed(2),
     input.maxError.toFixed(3),
     [...input.included].sort().join(','),
+    input.includedParts ? [...input.includedParts].sort().join(',') : '*',
     Object.entries(input.weights)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => `${key}:${value}`)

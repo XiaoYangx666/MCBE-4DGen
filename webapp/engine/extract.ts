@@ -39,6 +39,10 @@ interface Accumulator {
   texture: TextureSource | null;
   /** PART_CODE per triangle. */
   parts: number[];
+  /** Stable part id per triangle, and the table it indexes. */
+  sourceParts: number[];
+  sourcePartTable: { id: string; name: string }[];
+  sourcePartIndex: Map<string, number>;
   minU: number;
   minV: number;
   maxU: number;
@@ -100,9 +104,11 @@ export function extractModel(
   const rig = options.rig ?? null;
   const pivots = rig ? humanoidPivots(rig, rotation) : null;
 
+  let meshIndex = 0;
   scene.traverseVisible((object) => {
     const mesh = object as THREE.Mesh;
     if (!(mesh as unknown as { isMesh?: boolean }).isMesh || !mesh.geometry) return;
+    const currentMesh = meshIndex++;
     if ((object as THREE.SkinnedMesh).isSkinnedMesh) {
       warnings.add(options.rig
         ? '模型包含骨骼网格：按当前绑定姿势导出六部位，播放中的源动画不会保留。'
@@ -157,11 +163,20 @@ export function extractModel(
       return dominantHumanoidPart(partScores);
     };
 
-    for (const group of groups) {
+    for (const [groupIndex, group] of groups.entries()) {
       const material = materials[group.materialIndex ?? 0] as (THREE.Material & MaterialFields) | undefined;
       if (!material || material.visible === false || material.colorWrite === false) continue;
       if ((material.opacity ?? 1) <= 0) continue;
       const accumulator = accumulatorFor(accumulators, material, warnings);
+      const partId = `w${currentMesh}.${groupIndex}`;
+      const baseName = mesh.name?.trim() || `mesh${currentMesh}`;
+      const partName = groups.length > 1 ? `${baseName}#${groupIndex}` : baseName;
+      let partIndex = accumulator.sourcePartIndex.get(partId);
+      if (partIndex === undefined) {
+        partIndex = accumulator.sourcePartTable.length;
+        accumulator.sourcePartIndex.set(partId, partIndex);
+        accumulator.sourcePartTable.push({ id: partId, name: partName });
+      }
       const start = Math.max(0, group.start);
       const end = Math.min(indexCount, group.start + group.count);
       for (let i = start; i + 2 < end; i += 3) {
@@ -234,6 +249,7 @@ export function extractModel(
 
         accumulator.area += crossLength / 2;
         accumulator.parts.push(PART_CODE[partOfTriangle(ia, ib, ic)]);
+        accumulator.sourceParts.push(partIndex);
         accumulator.triangles++;
         sourceTriangles++;
       }
@@ -280,6 +296,8 @@ export function extractModel(
       uvBounds: bounds && bounds[2] - bounds[0] > 1e-6 && bounds[3] - bounds[1] > 1e-6 ? bounds : null,
       triangles: accumulator.triangles,
       area: accumulator.area,
+      sourceParts: Uint16Array.from(accumulator.sourceParts),
+      sourcePartTable: accumulator.sourcePartTable,
       ...(rig ? { parts: Uint8Array.from(accumulator.parts) } : {}),
     });
   }
@@ -327,6 +345,9 @@ function accumulatorFor(
     doubleSided: material.side === THREE.DoubleSide,
     texture,
     parts: [],
+    sourceParts: [],
+    sourcePartTable: [],
+    sourcePartIndex: new Map<string, number>(),
     minU: Infinity,
     minV: Infinity,
     maxU: -Infinity,
