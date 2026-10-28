@@ -315,6 +315,21 @@ export function summarizePlan(
         markPixel(centre, key);
         rect.areas.set(key, (rect.areas.get(key) ?? 0) + 1);
         materialAtlas.set(key, (materialAtlas.get(key) ?? 0) + 1);
+        // Flat parts still own triangles even though they share one texel.
+        if (input.partIndex && input.parts) {
+          for (const index of input.partIndex) {
+            const part = input.parts[index] ?? input.parts[0];
+            if (!part) continue;
+            const existing = partAtlas.get(part.id) ?? {
+              id: part.id,
+              name: part.name,
+              triangles: 0,
+              atlasTexels: 0,
+            };
+            existing.triangles++;
+            partAtlas.set(part.id, existing);
+          }
+        }
       } else {
         const count = Math.floor(atlas.length / 6);
         const triangles =

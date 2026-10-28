@@ -154,6 +154,11 @@ test('flat materials are attributed one sampleable texel', () => {
   assert.equal(report.materials[0]!.uvPixels, 1);
   assert.equal(report.materials[0]!.wastePixels, 0);
   assert.equal(report.unattributedPixels, 0);
+  // Flat materials still report their part ownership even though they share
+  // one solid texel and have no remapped UV triangle area.
+  assert.equal(report.parts.length, 1);
+  assert.equal(report.parts[0]!.triangles, 1);
+  assert.equal(report.parts[0]!.atlasTexels, 0);
 });
 
 test('summarizePlan flags floor-bound charts and requested area', () => {
