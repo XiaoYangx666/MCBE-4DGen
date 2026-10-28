@@ -576,7 +576,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     );
     return (result.textureReport.materials ?? []).map((material) => ({
       id: material.key,
-      name: material.name,
+      name: materialLabels.get(material.key) ?? material.name,
       allocated: atlasRegions
         .filter((region) => region.materialKeys?.includes(material.key))
         .reduce((sum, region) => sum + region.contentPixels, 0),
@@ -592,7 +592,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       wastePixels: material.wastePixels,
       mode: result.textureReport.mode,
     }));
-  }, [result, source, weights, atlasRegions]);
+  }, [result, source, weights, atlasRegions, materialLabels]);
 
   return (
     <div className={`studio-layout model-layout ${compact ? 'compact' : ''} ${stageFullscreen ? 'stage-hidden' : ''}`}>
@@ -803,6 +803,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                   warnings={warnings}
                   stale={stale}
                   selectedMaterial={selectedMaterial}
+                  materialLabels={materialLabels}
                   onSelectMaterial={(materialKey) => {
                     const batch = source?.batches.find((item) => item.key === materialKey);
                     if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
@@ -1076,6 +1077,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
               warnings={warnings}
               stale={stale}
               selectedMaterial={selectedMaterial}
+              materialLabels={materialLabels}
               onSelectMaterial={(materialKey) => {
                 const batch = source?.batches.find((item) => item.key === materialKey);
                 if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);

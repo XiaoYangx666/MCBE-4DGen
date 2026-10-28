@@ -4,6 +4,8 @@ import type { HumanoidProfile } from './humanoid.ts';
 export interface MaterialSummary {
   /** Stable identity `m:{name}#{occurrence}`; display names can repeat. */
   key: string;
+  /** Disambiguated display label, e.g. `Body #2`. */
+  label?: string;
   name: string;
   triangles: number;
   alpha: number;

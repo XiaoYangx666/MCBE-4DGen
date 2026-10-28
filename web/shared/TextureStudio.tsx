@@ -222,19 +222,21 @@ export function TextureStudio({
                   const kept = groupIds.filter((id) => includedParts.has(id)).length;
                   return (
                     <div className="texture-part-group" key={group}>
-                      <div className="texture-part-group-head">
-                        <span title={group}>{group}</span>
-                        <small>{kept}/{list.length}</small>
-                        <button
-                          type="button"
-                          disabled={disabled || kept === list.length}
-                          onClick={() =>
-                            onSetParts([...new Set([...includedParts, ...groupIds])])
-                          }
-                        >
-                          全选
-                        </button>
-                      </div>
+                      {(list.length > 1 || list[0]!.name !== group) && (
+                        <div className="texture-part-group-head">
+                          <span title={group}>{group}</span>
+                          <small>{kept}/{list.length}</small>
+                          <button
+                            type="button"
+                            disabled={disabled || kept === list.length}
+                            onClick={() =>
+                              onSetParts([...new Set([...includedParts, ...groupIds])])
+                            }
+                          >
+                            全选
+                          </button>
+                        </div>
+                      )}
                       {list.map((part) => {
                         const included = includedParts.has(part.id);
                         return (
@@ -253,7 +255,7 @@ export function TextureStudio({
                               type="button"
                               className="texture-part-name"
                               disabled={disabled || !included}
-                              title={included ? '在预览中只显示这个部件' : '部件已删除'}
+                              title={included ? `在预览中只显示 ${part.name}` : '部件已删除'}
                               onClick={() =>
                                 onSelectPart(selectedPart === part.id ? null : part.id)
                               }

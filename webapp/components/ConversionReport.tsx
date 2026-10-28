@@ -8,12 +8,14 @@ export function ConversionReport({
   stale,
   selectedMaterial,
   onSelectMaterial,
+  materialLabels,
 }: {
   result: ConvertResult;
   warnings: string[];
   stale: boolean;
   selectedMaterial?: string | null;
   onSelectMaterial?: (name: string) => void;
+  materialLabels?: ReadonlyMap<string, string>;
 }) {
   const report = result.textureReport;
   const size = report.size || 128;
@@ -44,12 +46,12 @@ export function ConversionReport({
       materials={[
         ...materials.map((material) => ({
           id: material.key,
-          name: material.name,
+          name: materialLabels?.get(material.key) ?? material.name,
           pixels: material.pixels,
         })),
         ...removed.map((name, index) => ({
           id: result.excludedMaterialKeys?.[index] ?? `removed:${index}`,
-          name,
+          name: materialLabels?.get(result.excludedMaterialKeys?.[index] ?? '') ?? name,
           pixels: null,
           excluded: true,
         })),

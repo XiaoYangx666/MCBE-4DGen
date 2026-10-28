@@ -52,11 +52,12 @@ export function OutputPanels({
     shared: (region.materialKeys?.length ?? 0) > 1,
     source: `${region.resized.width}×${region.resized.height}`,
   }));
+  const materialByKey = new Map((session?.materials ?? []).map((material) => [material.key, material]));
   const atlasMaterials = (texture?.materials ?? []).map((measurement) => {
     const key = measurement.key ?? measurement.name;
     return {
       id: key,
-      name: measurement.name,
+      name: materialByKey.get(key)?.label ?? measurement.name,
       allocated: atlasRegions
         .filter((region) =>
           region.materialKeys?.length
@@ -143,7 +144,7 @@ export function OutputPanels({
             }
             materials={materials.map((m) => ({
               id: m.key,
-              name: m.name || '未命名',
+              name: m.label ?? (m.name || '未命名'),
               pixels: m.measurement?.pixels ?? null,
               excluded: m.excluded,
             }))}

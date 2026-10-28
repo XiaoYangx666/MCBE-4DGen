@@ -127,7 +127,7 @@ export function AtlasInspector({
               ? ` · 共享 ${((summary.sharedContentPixels / totalPixels) * 100).toFixed(1)}%`
               : ''}
             {summary?.unusedContentPixels
-              ? ` · 内容未用 ${((summary.unusedContentPixels / totalPixels) * 100).toFixed(1)}%`
+              ? ` · 矩形内未采样 ${((summary.unusedContentPixels / totalPixels) * 100).toFixed(1)}%`
               : ''}
           </small>
         </div>
@@ -194,9 +194,9 @@ export function AtlasInspector({
                 <span>{(selectedMaterial.uv ?? 0).toLocaleString('zh-CN')} px 被三角面覆盖</span>
               )}
               {selectedMaterial.shared ? (
-                <span>其中 {selectedMaterial.shared.toLocaleString('zh-CN')} px 与其他材质共享</span>
+                <span>其中 {selectedMaterial.shared.toLocaleString('zh-CN')} px 与其他材质重叠</span>
               ) : (
-                <span>无共享采样</span>
+                <span>无跨材质重叠采样</span>
               )}
               <span>
                 {selectedMaterial.flat

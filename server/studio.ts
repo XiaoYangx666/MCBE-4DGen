@@ -312,30 +312,42 @@ export class Studio {
       instancePart: part.instancePart,
     }));
     const keys = materialKeyMap(model.document);
+    const nameTotals = new Map<string, number>();
+    for (const material of model.document.getRoot().listMaterials()) {
+      const name = material.getName() || "(默认)";
+      nameTotals.set(name, (nameTotals.get(name) ?? 0) + 1);
+    }
+    const nameSeen = new Map<string, number>();
     const materials = model.document
       .getRoot()
       .listMaterials()
-      .map((material) => ({
-        key: keys.get(material) ?? `m:${material.getName() || '(default)'}#1`,
-        name: material.getName(),
-        alpha: material.getBaseColorFactor()[3],
-        doubleSided: material.getDoubleSided(),
-        transparent: material.getAlphaMode() === 'BLEND',
-        partIds: parts
-          .filter((part) => part.materialKey === keys.get(material))
-          .map((part) => part.id),
-        triangles: instances
-          .flatMap((mesh) => mesh.listPrimitives())
-          .filter((primitive) => primitive.getMaterial() === material)
-          .reduce(
-            (sum, primitive) =>
-              sum +
-              (primitive.getIndices()?.getCount() ??
-                primitive.getAttribute('POSITION')!.getCount()) /
-                3,
-            0,
-          ),
-      }));
+      .map((material) => {
+        const name = material.getName() || "(默认)";
+        const index = (nameSeen.get(name) ?? 0) + 1;
+        nameSeen.set(name, index);
+        return {
+          key: keys.get(material) ?? `m:${material.getName() || '(default)'}#1`,
+          label: (nameTotals.get(name) ?? 1) > 1 ? `${name} #${index}` : name,
+          name: material.getName(),
+          alpha: material.getBaseColorFactor()[3],
+          doubleSided: material.getDoubleSided(),
+          transparent: material.getAlphaMode() === 'BLEND',
+          partIds: parts
+            .filter((part) => part.materialKey === keys.get(material))
+            .map((part) => part.id),
+          triangles: instances
+            .flatMap((mesh) => mesh.listPrimitives())
+            .filter((primitive) => primitive.getMaterial() === material)
+            .reduce(
+              (sum, primitive) =>
+                sum +
+                (primitive.getIndices()?.getCount() ??
+                  primitive.getAttribute('POSITION')!.getCount()) /
+                  3,
+              0,
+            ),
+        };
+      });
     const fingerprint = selectionFingerprint(materials, parts);
     const selectionWarnings: string[] = [];
     let settings: EditSettings | null = null;

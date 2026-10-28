@@ -80,6 +80,10 @@ export function MaterialPanel({
     const seen = new Map<string, number>();
     const map = new Map<string, string>();
     for (const material of materials) {
+      if (material.label) {
+        map.set(material.key, material.label);
+        continue;
+      }
       if ((totals.get(material.name) ?? 1) <= 1) {
         map.set(material.key, material.name || "未命名");
         continue;
@@ -125,7 +129,7 @@ export function MaterialPanel({
     const pixels = measurement?.pixels ?? null;
     return {
       id: material.key,
-      name: labels.get(material.key) ?? material.name || "未命名",
+      name: labels.get(material.key) ?? (material.name || "未命名"),
       meta: `${material.triangles.toLocaleString("zh-CN")} 面${partText}${
         material.alpha < 1 ? ` · α ${material.alpha}` : ""
       }${related.length > 0 && kept === 0 ? " · 无保留部件" : ""}`,
@@ -262,7 +266,8 @@ export function MaterialPanel({
             重置全部权重
           </button>
           <span className="material-caption">
-            权重占比{" "}
+            {" "}
+            · 权重占比{" "}
             {weightSum
               ? (
                   ((studioMaterials.find((material) => material.selected)?.quality ?? 1) /
@@ -279,7 +284,13 @@ export function MaterialPanel({
         disabled={busy || !stale}
         onClick={convert}
       >
-        {busy ? "更新中…" : stale ? "生成4D皮肤 · 查看调整" : "结果已是最新"}
+        {busy
+          ? "更新中…"
+          : !result
+            ? "调整后生成 4D 皮肤"
+            : stale
+              ? "生成4D皮肤 · 查看调整"
+              : "结果已是最新"}
       </button>
     </>
   );
