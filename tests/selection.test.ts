@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  materialDisplayLabels,
   normalizeSelection,
   selectionFingerprint,
   type MaterialIdentity,
@@ -71,5 +72,13 @@ describe('selection identity', () => {
     expect(selectionFingerprint(materials, parts)).not.toBe(
       selectionFingerprint(materials.slice(0, 2), parts),
     );
+  });
+
+  it('disambiguates duplicate names without changing keys', () => {
+    expect([...materialDisplayLabels(materials).entries()]).toEqual([
+      ['m:Body#1', 'Body #1'],
+      ['m:Body#2', 'Body #2'],
+      ['m:Face#1', 'Face'],
+    ]);
   });
 });

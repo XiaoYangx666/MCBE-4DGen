@@ -24,7 +24,7 @@ import type { HumanoidProfile, PreparedHumanoid } from '../src/humanoid.ts';
 import { importModel } from '../src/importer.ts';
 import type { IntermediateModel } from '../src/model.ts';
 import { assignParts, materialKeyMap } from '../src/parts.ts';
-import { normalizeSelection, selectionFingerprint } from '../src/selection.ts';
+import { normalizeSelection, selectionFingerprint, materialDisplayLabels } from '../src/selection.ts';
 import { PackManager } from '../src/pack-manager.ts';
 import type { ManagerConfig } from '../src/pack-manager.ts';
 import type { PackMeta } from '../src/pack-types.ts';
@@ -312,22 +312,23 @@ export class Studio {
       instancePart: part.instancePart,
     }));
     const keys = materialKeyMap(model.document);
-    const nameTotals = new Map<string, number>();
-    for (const material of model.document.getRoot().listMaterials()) {
-      const name = material.getName() || "(默认)";
-      nameTotals.set(name, (nameTotals.get(name) ?? 0) + 1);
-    }
-    const nameSeen = new Map<string, number>();
+    const labels = materialDisplayLabels(
+      model.document
+        .getRoot()
+        .listMaterials()
+        .map((material) => ({
+          key: keys.get(material) ?? '',
+          name: material.getName() || '(默认)',
+        })),
+    );
     const materials = model.document
       .getRoot()
       .listMaterials()
       .map((material) => {
-        const name = material.getName() || "(默认)";
-        const index = (nameSeen.get(name) ?? 0) + 1;
-        nameSeen.set(name, index);
+        const name = material.getName() || '(默认)';
         return {
           key: keys.get(material) ?? `m:${material.getName() || '(default)'}#1`,
-          label: (nameTotals.get(name) ?? 1) > 1 ? `${name} #${index}` : name,
+          label: labels.get(keys.get(material) ?? '') ?? name,
           name: material.getName(),
           alpha: material.getBaseColorFactor()[3],
           doubleSided: material.getDoubleSided(),

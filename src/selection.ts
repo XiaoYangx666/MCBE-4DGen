@@ -56,6 +56,29 @@ export function materialKeysByName(
   return map;
 }
 
+/** Disambiguated labels; keys remain the only persisted identity. */
+export function materialDisplayLabels(
+  materials: readonly { key: string; name: string }[],
+): Map<string, string> {
+  const totals = new Map<string, number>();
+  for (const material of materials) {
+    const name = material.name || '(默认)';
+    totals.set(name, (totals.get(name) ?? 0) + 1);
+  }
+  const seen = new Map<string, number>();
+  const labels = new Map<string, string>();
+  for (const material of materials) {
+    const name = material.name || '(默认)';
+    const index = (seen.get(name) ?? 0) + 1;
+    seen.set(name, index);
+    labels.set(
+      material.key,
+      (totals.get(name) ?? 1) > 1 ? `${name} #${index}` : name,
+    );
+  }
+  return labels;
+}
+
 export function clampMaterialWeight(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return Math.min(MAX_WEIGHT, Math.max(0, value));

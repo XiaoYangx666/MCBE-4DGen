@@ -93,7 +93,18 @@ export async function updateModel(
       !settings.materialWeights ||
       Object.values(settings.materialWeights).some(
         (value) => !Number.isFinite(value) || value < 0 || value > 20,
-      )
+      ) ||
+      (settings.includedParts !== undefined &&
+        (!Array.isArray(settings.includedParts) ||
+          settings.includedParts.some((value) => typeof value !== 'string'))) ||
+      (settings.textureMode !== undefined &&
+        !['legacy', 'budget'].includes(settings.textureMode)) ||
+      (settings.textureTarget !== undefined &&
+        !['texel-density', 'texel-retention'].includes(settings.textureTarget)) ||
+      (settings.atlasSharing !== undefined &&
+        typeof settings.atlasSharing !== 'boolean') ||
+      (settings.fingerprint !== undefined &&
+        typeof settings.fingerprint !== 'string')
     )
       throw Error('编辑配置无效');
   }
