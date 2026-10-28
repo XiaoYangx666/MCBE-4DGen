@@ -70,15 +70,32 @@ export interface TextureAtlasReport {
 
 export interface TextureMaterialUsage {
   name: string;
+  /** Stable material identity; names can repeat. */
+  key?: string;
   pixels: number;
   /** Triangle-covered pixels, including transparent texels. */
   uvPixels?: number;
   regions: number[];
+  /** Exact atlas texels the material's triangles map to. */
+  atlasTexels?: number;
+  /** Native texels the material samples. */
+  sourceTexels?: number;
+  /** Atlas texels per world unit². */
+  texelDensity?: number;
+  /** Charts clamped to the technical minimum size. */
+  floorCharts?: number;
+  /** Content pixels attributed to this material. */
+  rectPixels?: number;
+  wastePixels?: number;
+  /** Continuous area requested by the budget. */
+  targetArea?: number;
+  actualArea?: number;
 }
 
 export interface TextureRegionReport {
   id: number;
   material: string;
+  materialKey?: string | null;
   materials: string[];
   surfaceAreas: Record<string, number>;
   weightedArea: number;
@@ -102,6 +119,10 @@ export interface TextureReport {
   materialWeights?: Record<string, number>;
   materials?: TextureMaterialUsage[];
   regions?: TextureRegionReport[];
+  /** Rectangles saved by overlaying identical charts. */
+  shared?: { charts: number; savedPixels: number };
+  /** Per-part texture demand, when part ids are available. */
+  parts?: { id: string; name: string; triangles: number; atlasTexels: number }[];
   warnings?: string[];
 }
 
