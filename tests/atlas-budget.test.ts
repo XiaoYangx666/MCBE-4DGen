@@ -61,6 +61,18 @@ test('desktop budget path writes a valid 128 atlas and keeps UVs in range', asyn
   assert.ok(result.report.atlas.contentUtilization > 0.2);
   assert.ok(result.report.atlas.allocatedUtilization <= 1);
   assert.equal(result.report.allocation, 'texel-retention');
+  // Per-material statistics are filled (previously empty in budget mode).
+  assert.equal(result.report.materials.length, 2);
+  for (const material of result.report.materials) {
+    assert.ok(material.uvPixels > 0);
+    assert.ok(material.atlasTexels && material.atlasTexels > 0);
+    assert.ok(typeof material.key === 'string' && material.key.length > 0);
+    assert.ok(typeof result.report.atlas.uvUtilization === 'number');
+  }
+  assert.equal(new Set(result.report.materials.map((material) => material.key)).size, 2);
+  // Part demand is reported per primitive.
+  assert.equal(result.report.parts?.length, 2);
+  assert.ok(result.report.parts!.every((part) => part.triangles === 1));
 });
 
 test('desktop budget path responds to per-material weights', async () => {

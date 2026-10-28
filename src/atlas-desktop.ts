@@ -12,11 +12,13 @@ import type { Material, Primitive } from '@gltf-transform/core';
 import type { Transform } from '@gltf-transform/extensions';
 import { cloneDocument } from '@gltf-transform/functions';
 import { planAtlasBudget } from './atlas-core/plan.ts';
+import { summarizePlan } from './atlas-core/report.ts';
 import { sampleArea, type RgbaImage } from './atlas-core/sample.ts';
 import type { ChartInput } from './atlas-core/types.ts';
 import { inspectModel } from './inspect.ts';
 import { validateModel } from './validate-model.ts';
 import type { IntermediateModel } from './model.ts';
+import { materialKeyMap, readPartExtra } from './parts.ts';
 import { normalizeWrapMode, type WrapMode } from './texture-chart-math.ts';
 import {
   bakeBaseColorPixels,
@@ -65,6 +67,10 @@ interface Batch {
   areas: number[];
   owners: { primitive: Primitive; triangle: number }[];
   copies: Map<Primitive, Copy>;
+  /** Part index per triangle, and the part table it indexes. */
+  partIds: number[];
+  partTable: { id: string; name: string }[];
+  partIndexByPrimitive: Map<Primitive, number>;
   area: number;
 }
 
@@ -117,7 +123,7 @@ export async function optimizeTexturesWithBudget(
     return image;
   };
 
-  const materialList = root.listMaterials();
+  const materialKeyById = materialKeyMap(doc);
   const batches = new Map<Material | null, Batch>();
   for (const mesh of root.listMeshes()) {
     const instances = root.listNodes().filter((node) => node.getMesh() === mesh);
@@ -131,13 +137,14 @@ export async function optimizeTexturesWithBudget(
           imageBytes && imageBytes.byteLength ? await decode(imageBytes) : null;
         const info = material?.getBaseColorTextureInfo();
         const factor = material?.getBaseColorFactor() ?? [1, 1, 1, 1];
-        const index = material ? materialList.indexOf(material) : -1;
         const name = material?.getName() || '(default)';
         batch = {
           material,
           id: `m${batches.size}`,
           name,
-          key: `m${index}:${name}`,
+          key: material
+            ? (materialKeyById.get(material) ?? `m:${name}#1`)
+            : 'm:(default)#0',
           image,
           textureKey: imageBytes
             ? createHash('sha256').update(imageBytes).digest('hex')
@@ -158,6 +165,9 @@ export async function optimizeTexturesWithBudget(
           areas: [],
           owners: [],
           copies: new Map(),
+          partIds: [],
+          partTable: [],
+          partIndexByPrimitive: new Map(),
           area: 0,
         };
         batches.set(material, batch);
@@ -216,12 +226,23 @@ export async function optimizeTexturesWithBudget(
             Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx) / 2;
         }
       }
+      const extra = readPartExtra(primitive.getExtras());
+      let partIndex = batch.partIndexByPrimitive.get(primitive);
+      if (partIndex === undefined) {
+        partIndex = batch.partTable.length;
+        batch.partTable.push({
+          id: extra?.id ?? `${batch.key}#${partIndex}`,
+          name: extra?.name ?? `${batch.name}#${partIndex}`,
+        });
+        batch.partIndexByPrimitive.set(primitive, partIndex);
+      }
       for (let t = 0; t < triangles; t++) {
         for (let corner = 0; corner < 3; corner++) {
           const vertex = indices[t * 3 + corner]!;
           batch.uvs.push(vertexUvs[vertex * 2]!, vertexUvs[vertex * 2 + 1]!);
         }
         batch.areas.push(areas[t] ?? 0);
+        batch.partIds.push(partIndex);
         batch.owners.push({ primitive, triangle: t });
         batch.area += areas[t] ?? 0;
       }
@@ -258,6 +279,8 @@ export async function optimizeTexturesWithBudget(
     uvs: batch.uvs.length ? Float32Array.from(batch.uvs) : null,
     triangleAreas: batch.areas.length ? Float32Array.from(batch.areas) : null,
     area: batch.area,
+    partIndex: batch.partIds.length ? Uint16Array.from(batch.partIds) : null,
+    parts: batch.partTable,
   }));
 
   const planned = planAtlasBudget(inputs, {
@@ -445,18 +468,20 @@ export async function optimizeTexturesWithBudget(
   );
   validateModel(model);
 
-  const rectKeys = new Set<string>();
-  let contentPixels = 0;
-  let allocatedPixels = 0;
-  for (const chart of planned.plan.charts) {
-    const key = `${chart.rect.x},${chart.rect.y},${chart.rect.width},${chart.rect.height}`;
-    if (rectKeys.has(key)) continue;
-    rectKeys.add(key);
-    const inner = innerRect(chart.rect);
-    contentPixels += inner.width * inner.height;
-    allocatedPixels += chart.rect.width * chart.rect.height;
-  }
-  const n = size * size;
+  const floorBound = new Set(
+    planned.charts.filter((chart) => chart.floorBound).map((chart) => chart.chartId),
+  );
+  const targetArea = new Map(
+    planned.charts.map((chart) => [chart.chartId, chart.targetArea]),
+  );
+  const summary = summarizePlan(inputs, planned.plan, {
+    floorBound,
+    targetArea,
+    sharedSavedPixels: planned.budget.sharedSavedPixels,
+  });
+  const chartIndex = new Map(
+    planned.plan.charts.map((chart, index) => [chart.chartId, index]),
+  );
   return {
     model,
     png,
@@ -471,30 +496,52 @@ export async function optimizeTexturesWithBudget(
         height: size,
         bytes: png.length,
         sampledUtilization: undefined,
-        uvUtilization: undefined,
-        contentUtilization: contentPixels / n,
-        allocatedUtilization: allocatedPixels / n,
+        uvUtilization: summary.uvUtilization,
+        contentUtilization: summary.contentUtilization,
+        allocatedUtilization: summary.allocatedUtilization,
         sampledPixels: undefined,
-        uvPixels: undefined,
-        contentPixels,
-        allocatedPixels,
-        gutterPixels: Math.max(0, allocatedPixels - contentPixels),
-        emptyPixels: Math.max(0, n - allocatedPixels),
-        gutterUtilization: Math.max(0, allocatedPixels - contentPixels) / n,
-        emptyUtilization: Math.max(0, n - allocatedPixels) / n,
-        chartCoverage: undefined,
+        uvPixels: summary.uvPixels,
+        contentPixels: summary.contentPixels,
+        allocatedPixels: summary.allocatedPixels,
+        gutterPixels: summary.gutterPixels,
+        emptyPixels: summary.emptyPixels,
+        gutterUtilization: summary.gutterPixels / (size * size),
+        emptyUtilization: summary.emptyPixels / (size * size),
+        chartCoverage: summary.chartCoverage,
       },
       filter,
       padding,
       allocation: options.target,
       materialWeights: options.materialWeights ?? {},
-      materials: [] as { name: string; pixels: number; uvPixels: number; regions: number[] }[],
+      shared: {
+        charts: summary.sharedCharts,
+        savedPixels: summary.sharedSavedPixels,
+      },
+      materials: summary.materials.map((material) => ({
+        name: material.material,
+        key: material.materialKey,
+        pixels: material.uvPixels,
+        uvPixels: material.uvPixels,
+        regions: material.chartIds
+          .map((id) => chartIndex.get(id))
+          .filter((index): index is number => index !== undefined),
+        atlasTexels: material.atlasTexels,
+        sourceTexels: material.sourceTexels,
+        texelDensity: material.texelDensity,
+        floorCharts: material.floorCharts,
+        rectPixels: material.rectPixels,
+        wastePixels: material.wastePixels,
+        targetArea: material.targetArea,
+        actualArea: material.actualArea,
+      })),
+      parts: summary.parts,
       regions: planned.plan.charts.map((chart, index) => {
         const inner = innerRect(chart.rect);
         const batch = batchById.get(chart.inputId);
         return {
           id: index,
           material: chart.materials.join(' / ') || '(default)',
+          materialKey: chart.materialKeys?.[0] ?? null,
           materials: chart.materials,
           surfaceAreas: {} as Record<string, number>,
           weightedArea: 0,

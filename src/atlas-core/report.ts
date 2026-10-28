@@ -1,0 +1,323 @@
+/**
+ * Plan diagnostics shared by every adapter.
+ *
+ * Counts are computed from the plan and the remapped UVs, without touching
+ * pixels, so the desktop and browser paths report the same numbers for the
+ * same plan. Shared rectangles are counted once for atlas totals and split
+ * between materials by their UV area, never double-counted.
+ */
+import { innerRect, remapPlan } from './remap.ts';
+import type { AtlasPlan, ChartInput } from './types.ts';
+
+export interface MaterialPlanReport {
+  material: string;
+  materialKey: string;
+  inputId: string;
+  charts: number;
+  floorCharts: number;
+  worldArea: number;
+  sourceTexels: number;
+  atlasTexels: number;
+  texelDensity: number;
+  sourceRatio: number;
+  /** Pixels covered by this material's triangles (shared pixels count for each). */
+  uvPixels: number;
+  /** Content pixels attributed to this material (shared rectangles split by UV area). */
+  rectPixels: number;
+  wastePixels: number;
+  /** Continuous area the budget requested for this material's charts. */
+  targetArea: number;
+  /** Integer content area actually attributed. */
+  actualArea: number;
+  /** Chart ids that belong to this material. */
+  chartIds: string[];
+}
+
+export interface PartPlanReport {
+  id: string;
+  name: string;
+  triangles: number;
+  atlasTexels: number;
+}
+
+export interface PlanReport {
+  size: number;
+  pad: number;
+  charts: number;
+  slots: number;
+  sharedCharts: number;
+  sharedSavedPixels: number;
+  contentPixels: number;
+  allocatedPixels: number;
+  gutterPixels: number;
+  emptyPixels: number;
+  uvPixels: number;
+  overlapPixels: number;
+  contentUtilization: number;
+  allocatedUtilization: number;
+  uvUtilization: number;
+  chartCoverage: number;
+  materials: MaterialPlanReport[];
+  parts: PartPlanReport[];
+}
+
+export interface SummarizeOptions {
+  /** Chart ids clamped to the technical minimum. */
+  floorBound?: ReadonlySet<string>;
+  /** Requested continuous area per chart id. */
+  targetArea?: ReadonlyMap<string, number>;
+  /** Pixels saved by overlaying identical charts. */
+  sharedSavedPixels?: number;
+}
+
+
+const uvTriangleArea = (uvs: Float32Array, triangle: number): number => {
+  const ax = uvs[triangle * 6] ?? 0;
+  const ay = uvs[triangle * 6 + 1] ?? 0;
+  const bx = uvs[triangle * 6 + 2] ?? 0;
+  const by = uvs[triangle * 6 + 3] ?? 0;
+  const cx = uvs[triangle * 6 + 4] ?? 0;
+  const cy = uvs[triangle * 6 + 5] ?? 0;
+  return Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) / 2;
+};
+
+const raster = (
+  points: readonly [number, number][],
+  size: number,
+  onPixel: (index: number) => void,
+) => {
+  const [a, b, c] = points;
+  if (!a || !b || !c) return;
+  const ax = a[0] * size;
+  const ay = a[1] * size;
+  const bx = b[0] * size;
+  const by = b[1] * size;
+  const cx = c[0] * size;
+  const cy = c[1] * size;
+  const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  if (Math.abs(area) < 1e-9) {
+    const x = Math.max(0, Math.min(size - 1, Math.floor((ax + bx + cx) / 3)));
+    const y = Math.max(0, Math.min(size - 1, Math.floor((ay + by + cy) / 3)));
+    onPixel(y * size + x);
+    return;
+  }
+  const x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx)));
+  const x1 = Math.min(size - 1, Math.ceil(Math.max(ax, bx, cx)));
+  const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy)));
+  const y1 = Math.min(size - 1, Math.ceil(Math.max(ay, by, cy)));
+  const e0dx = ay - by;
+  const e1dx = by - cy;
+  const e2dx = cy - ay;
+  const startX = x0 + 0.5;
+  for (let y = y0; y <= y1; y++) {
+    const py = y + 0.5;
+    let e0 = (bx - ax) * (py - ay) - (by - ay) * (startX - ax);
+    let e1 = (cx - bx) * (py - by) - (cy - by) * (startX - bx);
+    let e2 = (ax - cx) * (py - cy) - (ay - cy) * (startX - cx);
+    for (let x = x0; x <= x1; x++, e0 += e0dx, e1 += e1dx, e2 += e2dx) {
+      if (!((e0 >= 0 && e1 >= 0 && e2 >= 0) || (e0 <= 0 && e1 <= 0 && e2 <= 0)))
+        continue;
+      onPixel(y * size + x);
+    }
+  }
+};
+
+const uvAt = (uvs: Float32Array, triangle: number, corner: number): [number, number] => {
+  const index = triangle * 6 + corner * 2;
+  return [uvs[index] ?? 0.5, uvs[index + 1] ?? 0.5];
+};
+
+/** Summarize a plan into atlas and per-material/part numbers. */
+export function summarizePlan(
+  inputs: readonly ChartInput[],
+  plan: AtlasPlan,
+  options: SummarizeOptions = {},
+): PlanReport {
+  const size = plan.size;
+  const atlasUvs = remapPlan(inputs, plan);
+  const byId = new Map(inputs.map((input) => [input.id, input]));
+  const materialIndex = new Map<string, number>();
+  const materialOrder: string[] = [];
+  for (const input of inputs) {
+    const key = input.materialKey;
+    if (!materialIndex.has(key)) {
+      materialIndex.set(key, materialOrder.length);
+      materialOrder.push(key);
+    }
+  }
+
+  const materialUv = new Map<string, Uint8Array>();
+  const materialArea = new Map<string, number>();
+  const materialWorld = new Map<string, number>();
+  const materialSource = new Map<string, number>();
+  const materialAtlas = new Map<string, number>();
+  const materialCharts = new Map<string, number>();
+  const materialChartIds = new Map<string, string[]>();
+  const materialFloor = new Map<string, number>();
+  const materialRect = new Map<string, number>();
+  const materialTarget = new Map<string, number>();
+  const partAtlas = new Map<string, PartPlanReport>();
+  const maskFor = (key: string) => {
+    let mask = materialUv.get(key);
+    if (!mask) {
+      mask = new Uint8Array(size * size);
+      materialUv.set(key, mask);
+    }
+    return mask;
+  };
+
+  for (const input of inputs) {
+    const key = input.materialKey;
+    materialWorld.set(key, (materialWorld.get(key) ?? 0) + input.area);
+    maskFor(key);
+    const atlas = atlasUvs.get(input.id);
+    if (!atlas || !input.uvs) continue;
+    const count = Math.floor(input.uvs.length / 6);
+    for (let triangle = 0; triangle < count; triangle++) {
+      const atlasArea = uvTriangleArea(atlas, triangle);
+      const sourceArea = uvTriangleArea(input.uvs, triangle);
+      const texels = atlasArea * size * size;
+      materialAtlas.set(key, (materialAtlas.get(key) ?? 0) + texels);
+      materialSource.set(
+        key,
+        (materialSource.get(key) ?? 0) +
+          sourceArea * (input.texture?.width ?? 0) * (input.texture?.height ?? 0),
+      );
+      if (input.partIndex && input.parts) {
+        const part = input.parts[input.partIndex[triangle] ?? 0];
+        if (part) {
+          const existing = partAtlas.get(part.id) ?? {
+            id: part.id,
+            name: part.name,
+            triangles: 0,
+            atlasTexels: 0,
+          };
+          existing.triangles++;
+          existing.atlasTexels += texels;
+          partAtlas.set(part.id, existing);
+        }
+      }
+    }
+  }
+
+  const uvMask = new Uint8Array(size * size);
+  const owner = new Int16Array(size * size);
+  let overlapPixels = 0;
+  const uniqueRects = new Map<string, { content: number; allocated: number }>();
+
+  for (const chart of plan.charts) {
+    const inner = innerRect(chart.rect);
+    const content = inner.width * inner.height;
+    uniqueRects.set(
+      `${chart.rect.x},${chart.rect.y},${chart.rect.width},${chart.rect.height}`,
+      { content, allocated: chart.rect.width * chart.rect.height },
+    );
+    const groups =
+      chart.triangles ?? [{ inputId: chart.inputId, triangles: null as number[] | null }];
+    const coverages: { key: string; area: number }[] = [];
+    for (const group of groups) {
+      const input = byId.get(group.inputId);
+      const atlas = atlasUvs.get(group.inputId);
+      if (!input || !atlas) continue;
+      const key = input.materialKey;
+      const index = materialIndex.get(key)!;
+      const count = Math.floor(atlas.length / 6);
+      const triangles =
+        group.triangles ?? Array.from({ length: count }, (_, triangle) => triangle);
+      const mask = maskFor(key);
+      let uvArea = 0;
+      for (const triangle of triangles) {
+        if (triangle < 0 || triangle >= count) continue;
+        uvArea += uvTriangleArea(atlas, triangle);
+        raster(
+          [uvAt(atlas, triangle, 0), uvAt(atlas, triangle, 1), uvAt(atlas, triangle, 2)],
+          size,
+          (pixel) => {
+            uvMask[pixel] = 1;
+            mask[pixel] = 1;
+            const previous = owner[pixel]!;
+            if (previous === 0) owner[pixel] = index + 1;
+            else if (previous > 0 && previous !== index + 1) {
+              owner[pixel] = -1;
+              overlapPixels++;
+            }
+          },
+        );
+      }
+      coverages.push({ key, area: uvArea });
+      materialCharts.set(key, (materialCharts.get(key) ?? 0) + 1);
+      const ids = materialChartIds.get(key) ?? [];
+      ids.push(chart.chartId);
+      materialChartIds.set(key, ids);
+      if (options.floorBound?.has(chart.chartId))
+        materialFloor.set(key, (materialFloor.get(key) ?? 0) + 1);
+      materialTarget.set(
+        key,
+        (materialTarget.get(key) ?? 0) + (options.targetArea?.get(chart.chartId) ?? 0),
+      );
+    }
+    const totalArea = coverages.reduce((sum, entry) => sum + entry.area, 0);
+    for (const entry of coverages) {
+      const share = totalArea > 0 ? entry.area / totalArea : 1 / coverages.length;
+      materialRect.set(entry.key, (materialRect.get(entry.key) ?? 0) + content * share);
+    }
+  }
+
+  let uvPixels = 0;
+  for (const value of uvMask) uvPixels += value ? 1 : 0;
+  const contentPixels = [...uniqueRects.values()].reduce((sum, entry) => sum + entry.content, 0);
+  const allocatedPixels = [...uniqueRects.values()].reduce(
+    (sum, entry) => sum + entry.allocated,
+    0,
+  );
+
+  const materials: MaterialPlanReport[] = materialOrder.map((key) => {
+    const input = inputs.find((entry) => entry.materialKey === key)!;
+    const worldArea = materialWorld.get(key) ?? 0;
+    const atlasTexels = materialAtlas.get(key) ?? 0;
+    const sourceTexels = materialSource.get(key) ?? 0;
+    let pixels = 0;
+    const mask = materialUv.get(key);
+    if (mask) for (const value of mask) pixels += value ? 1 : 0;
+    const rectPixels = materialRect.get(key) ?? 0;
+    return {
+      material: input.material,
+      materialKey: key,
+      inputId: input.id,
+      charts: materialCharts.get(key) ?? 0,
+      floorCharts: materialFloor.get(key) ?? 0,
+      worldArea,
+      sourceTexels,
+      atlasTexels,
+      texelDensity: worldArea > 0 ? atlasTexels / worldArea : 0,
+      sourceRatio: sourceTexels > 0 ? atlasTexels / sourceTexels : 0,
+      uvPixels: pixels,
+      rectPixels,
+      wastePixels: Math.max(0, rectPixels - pixels),
+      targetArea: materialTarget.get(key) ?? 0,
+      actualArea: rectPixels,
+      chartIds: materialChartIds.get(key) ?? [],
+    };
+  });
+
+  return {
+    size,
+    pad: plan.pad,
+    charts: plan.charts.length,
+    slots: uniqueRects.size,
+    sharedCharts: plan.charts.filter((chart) => chart.origin === 'shared').length,
+    sharedSavedPixels: options.sharedSavedPixels ?? 0,
+    contentPixels,
+    allocatedPixels,
+    gutterPixels: Math.max(0, allocatedPixels - contentPixels),
+    emptyPixels: Math.max(0, size * size - allocatedPixels),
+    uvPixels,
+    overlapPixels,
+    contentUtilization: contentPixels / (size * size),
+    allocatedUtilization: allocatedPixels / (size * size),
+    uvUtilization: uvPixels / (size * size),
+    chartCoverage: contentPixels > 0 ? uvPixels / contentPixels : 0,
+    materials,
+    parts: [...partAtlas.values()].sort((a, b) => b.atlasTexels - a.atlasTexels),
+  };
+}

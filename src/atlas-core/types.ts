@@ -38,6 +38,10 @@ export interface ChartInput {
   triangleAreas: Float32Array | null;
   /** Total world-space surface area. */
   area: number;
+  /** Per-triangle part index, optional; indexes `parts`. */
+  partIndex?: Uint16Array | null;
+  /** Part table for `partIndex`. */
+  parts?: { id: string; name: string }[];
 }
 
 export interface ChartRect {
