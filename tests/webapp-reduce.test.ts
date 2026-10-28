@@ -73,6 +73,20 @@ describe('webapp mesh reduction', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('reports per-material progress for the UI', async () => {
+    const calls: [number, number, string][] = [];
+    await reduceBatches([grid(4), { ...grid(4), key: 'mat2', name: '第二材质' }], {
+      ratio: 0.5,
+      maxError: 0.03,
+      onProgress: (done, total, name) => calls.push([done, total, name]),
+    });
+    expect(calls).toEqual([
+      [0, 2, '测试材质'],
+      [1, 2, '第二材质'],
+      [2, 2, ''],
+    ]);
+  });
+
   it('rejects out-of-range settings', async () => {
     await expect(reduceBatches([grid(2)], { ratio: 0, maxError: 0.03 })).rejects.toThrow(/1%–100%/);
     await expect(reduceBatches([grid(2)], { ratio: 0.5, maxError: -1 })).rejects.toThrow(/不能为负数/);

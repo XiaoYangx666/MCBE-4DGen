@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { DropZone } from './DropZone';
-import { ModelSourcesDialog } from './ModelSourcesDialog';
 import { DownloadButtons, WarningList } from './Common';
 import { Icon } from './Icons';
 import { Viewport } from './Viewport';
@@ -17,6 +16,8 @@ import {
 import { extractModel, type ExtractedModel } from '../engine/extract';
 import type { DoubleSidedPolicy } from '../engine/bedrock';
 import { nextFrame } from '../engine/frame';
+import { preparePreviewMaterials } from '../engine/preview-materials';
+import type { TaskProgress } from '../engine/progress';
 import {
   convertExtractedModel,
   loadModelJob,
@@ -48,12 +49,6 @@ const DEFAULT_NAME = '我的 4D 皮肤';
 const WEB_UNAVAILABLE_FORMATS: readonly ModelFormat[] = ['pmd'];
 const thumbnailCache = new Map<string, string | null>();
 
-/** Default and maximum mobile sheet heights, shared by CSS and drag state. */
-const normalSheetHeight = () => Math.min(window.innerHeight * 0.6, 620);
-const maxSheetHeight = () => Math.max(320, window.innerHeight - 72);
-const clampSheetHeight = (value: number) =>
-  Math.max(160, Math.min(maxSheetHeight(), value));
-
 function textureThumbnail(texture: TextureSource | null): string | null {
   if (!texture) return null;
   if (thumbnailCache.has(texture.key)) return thumbnailCache.get(texture.key)!;
@@ -78,7 +73,7 @@ function textureThumbnail(texture: TextureSource | null): string | null {
   return result;
 }
 
-export function ModelStudio() {
+export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const [model, setModel] = useState<LoadedModel | null>(null);
   const [sourceBytes, setSourceBytes] = useState(0);
   const [name, setName] = useState(DEFAULT_NAME);
@@ -95,12 +90,8 @@ export function ModelStudio() {
   const [source, setSource] = useState<ExtractedModel | null>(null);
   const [included, setIncluded] = useState<Set<string>>(new Set());
   const [mobileTab, setMobileTab] = useState<'basic' | 'pose' | 'material' | 'result'>('basic');
-  const [sheetOpen, setSheetOpen] = useState(true);
-  const [sheetHeight, setSheetHeight] = useState<number | null>(null);
-  const [sheetDragging, setSheetDragging] = useState(false);
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const sheetDrag = useRef<{ startY: number; startHeight: number; moved: boolean } | null>(null);
-  const suppressSheetClick = useRef(false);
+  /** CSS fullscreen for the 3D stage: keeps the floating buttons visible. */
+  const [stageFullscreen, setStageFullscreen] = useState(false);
   const compact = useCompactViewport();
   const [previewRoot, setPreviewRoot] = useState<THREE.Group | null>(null);
   const [weights, setWeights] = useState<Record<string, number>>({});
@@ -117,12 +108,12 @@ export function ModelStudio() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [phase, setPhase] = useState('');
+  /** Latest pipeline step; keeps the overlay informative on large models. */
+  const [progress, setProgress] = useState<TaskProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [packBusy, setPackBusy] = useState(false);
   const [packMessage, setPackMessage] = useState('');
   const [packError, setPackError] = useState('');
-  const [sourcesOpen, setSourcesOpen] = useState(false);
   /** Archive with several models: the picker waits for the user's choice. */
   const [pending, setPending] = useState<{ input: PreparedModelInput; main: string } | null>(null);
   const { addSkin } = useSkinPack();
@@ -132,15 +123,18 @@ export function ModelStudio() {
   /** 用户手动改过朝向之后，加载新模型不再自动套用默认旋转。 */
   const customRotation = useRef(false);
   const modelInput = useRef<HTMLInputElement>(null);
-  const closeSources = useCallback(() => setSourcesOpen(false), []);
 
+  /** Both desktop and mobile route to the standalone 获取模型 page. */
+  const gotoSources = useCallback(() => {
+    history.replaceState(null, '', '#sources');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  }, []);
+
+  // Leaving the model page must not keep the stage fullscreen.
   useEffect(() => {
-    if (!compact) return;
-    const onResize = () => setSheetHeight((height) =>
-      height == null ? null : clampSheetHeight(height));
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    if (!compact) setStageFullscreen(false);
   }, [compact]);
+  useEffect(() => () => setStageFullscreen(false), []);
 
   useEffect(() => () => {
     modelRef.current?.dispose();
@@ -207,7 +201,10 @@ export function ModelStudio() {
     humanoidRig.current = null;
     previewRootRef.current = null;
     setPreviewRoot(null);
-    sourcePose.current = '0|0';
+    // The import already extracted the bind pose without rotation or arm spread,
+    // so the first convert of a static model can reuse it instead of repeating
+    // the whole extraction. Key shape matches convert(): rotation|spread|binding.
+    sourcePose.current = '0|0|static';
     customRotation.current = false;
     modelRef.current?.dispose();
     modelRef.current = null;
@@ -219,18 +216,21 @@ export function ModelStudio() {
     const token = ++loadId.current;
     setError(null);
     setLoading(true);
-    setPhase('读取文件…');
+    setProgress({ label: '读取文件…' });
     resetLoadState();
     try {
       const job = await loadModelJob(prepared, {
         ...(main === undefined ? {} : { main }),
-        onPhase: setPhase,
+        onProgress: setProgress,
         isCurrent: () => token === loadId.current,
       });
       if (token !== loadId.current) {
         job.model.dispose();
         return;
       }
+      // Same preview material rules as the desktop workbench: blended
+      // opaque-alpha materials become cutouts instead of translucent films.
+      preparePreviewMaterials(job.model.scene);
       originalVisibility.current = collectMaterialVisibility(job.model.scene);
       humanoidRig.current = job.rig;
       setRigAvailable(!!job.rig);
@@ -256,7 +256,7 @@ export function ModelStudio() {
     } finally {
       if (token === loadId.current) {
         setLoading(false);
-        setPhase('');
+        setProgress(null);
       }
     }
   };
@@ -266,7 +266,7 @@ export function ModelStudio() {
     const token = ++loadId.current;
     setError(null);
     setLoading(true);
-    setPhase('读取文件…');
+    setProgress({ label: '读取文件…' });
     setPending(null);
     try {
       const prepared = await prepareModelInput(incoming);
@@ -277,7 +277,7 @@ export function ModelStudio() {
         // Let the user pick instead of silently loading the first model.
         setPending({ input: prepared, main: candidate.path });
         setLoading(false);
-        setPhase('');
+        setProgress(null);
         return;
       }
       await runJob(prepared, candidate.path);
@@ -285,7 +285,7 @@ export function ModelStudio() {
       if (token === loadId.current) {
         setError(cause instanceof Error ? cause.message : String(cause));
         setLoading(false);
-        setPhase('');
+        setProgress(null);
       }
     }
   };
@@ -317,13 +317,18 @@ export function ModelStudio() {
     if (!model || busy) return;
     setBusy(true);
     setError(null);
-    setPhase('读取网格…');
+    setProgress({ label: '提取网格…' });
     const startedAt = performance.now();
     try {
       await nextFrame();
       let extracted = source;
       const poseKey = `${rotationY}|${armSpread}|${binding}`;
       if (!extracted || sourcePose.current !== poseKey) {
+        setProgress({
+          label: '按当前姿势重新提取网格…',
+          detail: `${model.stats.triangles.toLocaleString('zh-CN')} 个三角面`,
+        });
+        await nextFrame();
         const root = previewRootRef.current;
         const saved = root?.rotation.y ?? 0;
         if (root) {
@@ -362,7 +367,7 @@ export function ModelStudio() {
         maxError,
         included,
         weights,
-        onPhase: setPhase,
+        onProgress: setProgress,
       });
       setResult({
         ...converted.result,
@@ -372,15 +377,12 @@ export function ModelStudio() {
       setResultKey(key);
       setWarnings([...new Set([...merged, ...converted.warnings])]);
       setViewMode('output');
-      if (compact) {
-        setMobileTab('result');
-        setSheetOpen(true);
-      }
+      if (compact) setMobileTab('result');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
-      setPhase('');
+      setProgress(null);
     }
   };
 
@@ -424,11 +426,8 @@ export function ModelStudio() {
     [source],
   );
 
-  const sheetIsExpanded = sheetOpen && sheetHeight !== null && sheetHeight > normalSheetHeight() * 1.15;
-  const sheetWillCollapse = sheetDragging && sheetHeight !== null && sheetHeight < normalSheetHeight() * 0.55;
-
   return (
-    <div className={`studio-layout model-layout ${compact ? 'compact' : ''} ${sheetOpen ? '' : 'sheet-collapsed'}`}>
+    <div className={`studio-layout model-layout ${compact ? 'compact' : ''} ${stageFullscreen ? 'stage-hidden' : ''}`}>
       <input
         ref={modelInput}
         className="mobile-model-input"
@@ -442,81 +441,7 @@ export function ModelStudio() {
           if (next.length) void choose(next);
         }}
       />
-      <div
-        ref={sheetRef}
-        className="studio-sheet"
-        style={sheetHeight !== null
-          ? { height: sheetHeight, ...(sheetDragging ? { transition: 'none' } : {}) }
-          : undefined}
-      >
-        <div className="sheet-handle">
-          <button
-            type="button"
-            aria-expanded={sheetOpen}
-            title="上下拖动调整设置面板高度"
-            onPointerDown={(event) => {
-              if (!compact || !sheetOpen) return;
-              const element = sheetRef.current;
-              if (!element) return;
-              sheetDrag.current = {
-                startY: event.clientY,
-                startHeight: element.getBoundingClientRect().height,
-                moved: false,
-              };
-              setSheetDragging(true);
-              try {
-                event.currentTarget.setPointerCapture(event.pointerId);
-              } catch { /* synthetic events may not capture */ }
-            }}
-            onPointerMove={(event) => {
-              const drag = sheetDrag.current;
-              if (!drag) return;
-              const delta = drag.startY - event.clientY;
-              if (Math.abs(delta) > 4) drag.moved = true;
-              if (!drag.moved) return;
-              setSheetHeight(clampSheetHeight(drag.startHeight + delta));
-            }}
-            onPointerUp={(event) => {
-              const drag = sheetDrag.current;
-              sheetDrag.current = null;
-              setSheetDragging(false);
-              try {
-                if (event.currentTarget.hasPointerCapture(event.pointerId))
-                  event.currentTarget.releasePointerCapture(event.pointerId);
-              } catch { /* ignore */ }
-              if (!drag?.moved) return;
-              const height = sheetRef.current?.getBoundingClientRect().height ?? normalSheetHeight();
-              const normal = normalSheetHeight();
-              const max = maxSheetHeight();
-              if (height < normal * 0.55) {
-                // Pulling well below the normal height collapses the sheet.
-                setSheetOpen(false);
-                setSheetHeight(null);
-              } else {
-                const threshold = normal + (max - normal) * 0.3;
-                setSheetHeight(height >= threshold ? max : normal);
-              }
-              suppressSheetClick.current = true;
-              window.setTimeout(() => { suppressSheetClick.current = false; }, 250);
-            }}
-            onPointerCancel={() => {
-              sheetDrag.current = null;
-              setSheetDragging(false);
-            }}
-            onClick={() => {
-              if (suppressSheetClick.current) return;
-              setSheetOpen((open) => !open);
-            }}
-          >
-            <span className="sheet-grip" aria-hidden="true" />
-            <span>{sheetOpen
-              ? sheetWillCollapse
-                ? '松开收起'
-                : sheetIsExpanded ? '已放大 · 可下拉' : '收起设置'
-              : '展开设置'}</span>
-            <span className="sheet-caret" aria-hidden="true">{sheetOpen ? '▾' : '▴'}</span>
-          </button>
-        </div>
+      <div className="studio-sheet">
         {compact && (
           <div className="mobile-settings-tabs" role="tablist" aria-label="模型设置">
             {([
@@ -531,10 +456,7 @@ export function ModelStudio() {
                 role="tab"
                 aria-selected={mobileTab === key}
                 className={mobileTab === key ? 'active' : ''}
-                onClick={() => {
-                  setMobileTab(key);
-                  setSheetOpen(true);
-                }}
+                onClick={() => setMobileTab(key)}
               >
                 {label}
               </button>
@@ -681,16 +603,6 @@ export function ModelStudio() {
           <div className="settings-section result-section" data-section="result">
             {result ? (
               <>
-                <ConversionReport
-                  result={result}
-                  warnings={warnings}
-                  stale={stale}
-                  selectedMaterial={selectedMaterial}
-                  onSelectMaterial={(material) => {
-                    const batch = source?.batches.find((item) => item.name === material);
-                    if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
-                  }}
-                />
                 <div className="mobile-result-actions">
                   <button
                     type="button"
@@ -703,6 +615,28 @@ export function ModelStudio() {
                   </button>
                   <DownloadButtons files={result.files} name={name.trim()} compact />
                 </div>
+                {compact && packMessage && (
+                  <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
+                )}
+                {compact && packError && (
+                  <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
+                )}
+                {result.textureUrl && (
+                  <figure className="result-png-preview">
+                    <figcaption>输出贴图 {result.textureReport.size} × {result.textureReport.size} PNG</figcaption>
+                    <img src={result.textureUrl} alt="输出贴图预览" loading="lazy" />
+                  </figure>
+                )}
+                <ConversionReport
+                  result={result}
+                  warnings={warnings}
+                  stale={stale}
+                  selectedMaterial={selectedMaterial}
+                  onSelectMaterial={(material) => {
+                    const batch = source?.batches.find((item) => item.name === material);
+                    if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
+                  }}
+                />
               </>
             ) : (
               <>
@@ -731,7 +665,7 @@ export function ModelStudio() {
                     disabled={loading || busy}
                   />
                   <div className="model-source-entry">
-                    <button type="button" className="button-link" onClick={() => setSourcesOpen(true)}>
+                    <button type="button" className="button-link" onClick={() => gotoSources()}>
                       获取模型 <Icon name="arrow" size={13} />
                     </button>
                   </div>
@@ -804,65 +738,97 @@ export function ModelStudio() {
           {compact && stale && (
             <p className="stale-note" role="status"><Icon name="alert" size={14} /> 参数已修改，请重新转换。</p>
           )}
-          {compact && packMessage && (
-            <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
-          )}
-          {compact && packError && (
-            <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
-          )}
           {error && <p className="error-message" role="alert"><Icon name="alert" size={15} />{error}</p>}
+          {(busy || loading) && (
+            <p className="task-step" role="status">
+              {progress?.label ?? (busy ? '正在转换…' : '正在读取文件…')}
+              {progress?.detail ? ` · ${progress.detail}` : ''}
+            </p>
+          )}
           <button type="button" className="primary" disabled={!model || busy || loading || !name.trim() || !heightValid || !included.size} onClick={() => void convert()}>
             <Icon name={busy ? 'reset' : 'spark'} size={15} className={busy ? 'spin' : undefined} />
-            {busy ? phase || '正在转换…' : result ? '重新转换' : '转换为 4D 皮肤'}
+            {busy ? '正在转换…' : result ? '重新转换' : '转换为 4D 皮肤'}
           </button>
         </div>
       </div>
 
       <section className="studio-result model-result">
-        <div className="result-header">
-          <div>
-            <h2>{result && viewMode === 'output' ? '输出预览' : model ? '源模型预览' : '模型预览'}</h2>
-            <p>
-              {result && viewMode === 'output'
-                ? '实际导出的 poly_mesh 与 128 × 128 贴图。'
-                : model
-                  ? `${model.stats.triangles.toLocaleString('zh-CN')} 三角面 · ${model.stats.materials} 材质 · ${model.stats.textures} 贴图`
-                  : '导入模型后在这里预览。'}
-            </p>
+        {!compact && (
+          <div className="result-header">
+            <div>
+              <h2>{result && viewMode === 'output' ? '输出预览' : model ? '源模型预览' : '模型预览'}</h2>
+              <p>
+                {result && viewMode === 'output'
+                  ? '实际导出的 poly_mesh 与 128 × 128 贴图。'
+                  : model
+                    ? `${model.stats.triangles.toLocaleString('zh-CN')} 三角面 · ${model.stats.materials} 材质 · ${model.stats.textures} 贴图`
+                    : '导入模型后在这里预览。'}
+              </p>
+            </div>
+            <div className="tabs">
+              {model && (
+                <button type="button" className={viewMode === 'source' ? 'active' : ''} onClick={() => setViewMode('source')}>
+                  源模型
+                </button>
+              )}
+              {result && (
+                <button type="button" className={viewMode === 'output' ? 'active' : ''} onClick={() => setViewMode('output')}>
+                  4D 输出
+                </button>
+              )}
+            </div>
           </div>
-          <div className="tabs">
-            {model && (
-              <button type="button" className={viewMode === 'source' ? 'active' : ''} onClick={() => setViewMode('source')}>
-                源模型
-              </button>
-            )}
-            {result && (
-              <button type="button" className={viewMode === 'output' ? 'active' : ''} onClick={() => setViewMode('output')}>
-                4D 输出
-              </button>
-            )}
-          </div>
-        </div>
+        )}
 
         <div className="model-stage">
-          {compact && model && (
-            <div className="mobile-import-actions">
+          {compact && (
+            <div className="stage-topbar">
               <button
                 type="button"
-                className="mobile-import-fab"
-                disabled={loading || busy}
-                onClick={() => modelInput.current?.click()}
+                className="stage-menu-button"
+                aria-label="打开菜单"
+                onClick={onOpenMenu}
               >
-                <Icon name="upload" size={13} /> 更换模型
+                <Icon name="menu" size={18} />
               </button>
-              <button
-                type="button"
-                className="mobile-import-fab"
-                disabled={loading || busy}
-                onClick={() => setSourcesOpen(true)}
-              >
-                获取模型
-              </button>
+              {model && (
+                <button
+                  type="button"
+                  className="stage-icon-button"
+                  aria-label="更换模型"
+                  title="更换模型"
+                  disabled={loading || busy}
+                  onClick={() => modelInput.current?.click()}
+                >
+                  <Icon name="upload" size={16} />
+                </button>
+              )}
+              <div className="stage-topbar-right">
+                <button
+                  type="button"
+                  className="stage-icon-button"
+                  aria-label={stageFullscreen ? '显示设置面板' : '全屏预览'}
+                  aria-pressed={stageFullscreen}
+                  title={stageFullscreen ? '显示设置面板' : '全屏预览'}
+                  onClick={() => setStageFullscreen((value) => !value)}
+                >
+                  <Icon name={stageFullscreen ? 'shrink' : 'expand'} size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+          {compact && (model || result) && (
+            <div className="stage-viewswitch" role="tablist" aria-label="预览切换">
+              {model && (
+                <button type="button" className={viewMode === 'source' ? 'active' : ''} onClick={() => setViewMode('source')}>
+                  源
+                </button>
+              )}
+              {result && (
+                <button type="button" className={viewMode === 'output' ? 'active' : ''} onClick={() => setViewMode('output')}>
+                  4D
+                </button>
+              )}
             </div>
           )}
           {viewObject ? (
@@ -870,31 +836,29 @@ export function ModelStudio() {
               object={viewObject}
               grid={viewMode === 'output'}
               facing={viewMode === 'source' ? 'source' : 'output'}
+              showFrontCheck={false}
             />
           ) : (
             <div className="empty-state compact">
               {loading ? (
                 <>
                   <span className="spinner" />
-                  <h2>{phase || '正在解析模型…'}</h2>
-                  <p>大模型需要几秒钟，请保持页面打开。</p>
+                  <h2>{progress?.label || '正在解析模型…'}</h2>
+                  <p>{progress?.detail ? `${progress.detail}，` : ''}大模型需要十几秒，请保持页面打开。</p>
                 </>
               ) : (
                 <>
                   <Icon name="cube" size={42} />
                   <h2>还没有导入模型</h2>
-                  <p>{compact ? '选择模型文件，或从常用站点获取。' : '拖入模型或 ZIP，或从常用站点获取。'}</p>
+                  <p>{compact ? '选择模型文件，或从侧边栏「获取模型」进入站点目录。' : '拖入模型或 ZIP，或从「获取模型」页进入站点目录。'}</p>
                   {compact ? (
                     <div className="empty-actions">
                       <button type="button" className="button-link" onClick={() => modelInput.current?.click()}>
                         选择模型文件
                       </button>
-                      <button type="button" className="button-link" onClick={() => setSourcesOpen(true)}>
-                        获取模型 <Icon name="arrow" size={13} />
-                      </button>
                     </div>
                   ) : (
-                    <button type="button" className="button-link" onClick={() => setSourcesOpen(true)}>
+                    <button type="button" className="button-link" onClick={() => gotoSources()}>
                       获取模型 <Icon name="arrow" size={13} />
                     </button>
                   )}
@@ -905,8 +869,11 @@ export function ModelStudio() {
           {(busy || loading) && viewObject && (
             <div className="busy-overlay">
               <span className="spinner" />
-              <b>{phase || (busy ? '正在转换…' : '正在读取文件…')}</b>
-              <small>大模型可能需要几秒钟</small>
+              <b>{progress?.label || (busy ? '正在转换…' : '正在读取文件…')}</b>
+              <small>
+                {progress?.detail ? `${progress.detail}，` : ''}
+                大模型需要十几秒，请保持页面打开。
+              </small>
             </div>
           )}
         </div>
@@ -949,8 +916,6 @@ export function ModelStudio() {
           </div>
         )}
       </section>
-
-      {sourcesOpen && <ModelSourcesDialog onClose={closeSources} />}
 
       {pending && (
         <Dialog

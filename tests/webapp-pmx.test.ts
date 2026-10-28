@@ -2,12 +2,17 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { png } from './fixtures.ts';
 import { pmxFixture } from './pmx-fixture.ts';
+import { ASSIMP_IMPORT_POST_PROCESS } from '../src/assimp-import.ts';
 import { applyPmxMaterials, convertPmxModel, isPmdModel, isPmxModel } from '../webapp/engine/pmx.ts';
 
 describe('webapp PMX conversion', () => {
   it('converts PMX to GLB and resolves sidecar textures by basename', async () => {
     const texture = new File([new Uint8Array(await png())], '脸.png', { type: 'image/png' });
-    const result = await convertPmxModel([new File([new Uint8Array(pmxFixture())], '角色.pmx'), texture]);
+    const stages: string[] = [];
+    const result = await convertPmxModel(
+      [new File([new Uint8Array(pmxFixture())], '角色.pmx'), texture],
+      { onProgress: (update) => stages.push(update.label) },
+    );
 
     expect(result.file.name).toBe('角色.glb');
     expect(result.file.type).toBe('model/gltf-binary');
@@ -15,6 +20,20 @@ describe('webapp PMX conversion', () => {
     expect(new TextDecoder().decode(glb.subarray(0, 4))).toBe('glTF');
     expect(result.warnings.some((warning) => warning.includes('静态'))).toBe(true);
     expect(result.materials.length).toBe(2);
+    expect(stages).toContain('转换 PMX 模型…');
+
+    // The lean post-process must keep triangulated UV geometry, not just a header.
+    const jsonLength = new DataView(glb.buffer, glb.byteOffset, glb.byteLength).getUint32(12, true);
+    const json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLength)));
+    const primitives = (json.meshes as { primitives: { attributes: Record<string, number>; indices: number }[] }[])
+      .flatMap((mesh) => mesh.primitives);
+    expect(primitives.length).toBeGreaterThan(0);
+    expect(primitives.every((primitive) => primitive.attributes.TEXCOORD_0 !== undefined)).toBe(true);
+    const triangles = primitives.reduce(
+      (sum, primitive) => sum + json.accessors[primitive.indices].count / 3,
+      0,
+    );
+    expect(triangles).toBe(2);
   }, 60_000);
 
   it('restores PMX names, diffuse alpha and the double-sided flag in order', () => {
@@ -35,6 +54,11 @@ describe('webapp PMX conversion', () => {
     expect(hair.transparent).toBe(true);
     expect(hair.side).toBe(THREE.FrontSide);
     expect(applyPmxMaterials(scene, [{ name: '只有一个', alpha: 1, doubleSided: false }])).toBe(0);
+  });
+
+  it('shares the lean Assimp post-process with the desktop importer', () => {
+    expect(ASSIMP_IMPORT_POST_PROCESS).not.toContain('joinIdenticalVertices');
+    expect(ASSIMP_IMPORT_POST_PROCESS).toContain('triangulate');
   });
 
   it('warns about missing textures and rejects PMD', async () => {

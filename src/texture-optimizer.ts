@@ -7,6 +7,12 @@ import { inspectModel } from "./inspect.ts";
 import { validateModel } from "./validate-model.ts";
 import { textureCharts } from "./texture-charts.ts";
 import { bakeBaseColorPixels } from "./texture-pixels.ts";
+import {
+  normalizeWrapMode,
+  tileEdge,
+  unwrapChartBounds,
+  wrapIndex,
+} from "./texture-chart-math.ts";
 
 export interface TextureOptions {
   /** Maximum dimension of each source image, preserving aspect ratio. Omit for Original. */
@@ -159,13 +165,9 @@ function pack(
   return result;
 }
 
+/** glTF wrap codes go through the shared wrapper (repeat / clamp / mirror). */
 function sampleIndex(i: number, size: number, mode: number): number {
-  if (mode === 33071) return Math.min(size - 1, Math.max(0, i));
-  if (mode === 33648) {
-    const v = ((i % (size * 2)) + size * 2) % (size * 2);
-    return v < size ? v : size * 2 - 1 - v;
-  }
-  return ((i % size) + size) % size;
+  return wrapIndex(i, size, normalizeWrapMode(mode));
 }
 
 export async function optimizeTextures(
@@ -288,17 +290,10 @@ export async function optimizeTextures(
     }
     // sin/cos at 90° can put an exact tile edge a few ulps outside its integer.
     // Stabilize the allocation bounds only; keep actual UVs unchanged for sampling.
-    const tileEdge = (v: number) =>
-      Math.abs(v - Math.round(v)) < 1e-7 ? Math.round(v) : v;
-    const min: [number, number] = [
-      Math.floor(tileEdge(low[0]!)),
-      Math.floor(tileEdge(low[1]!)),
-    ];
-    const tiles: [number, number] = [
-      Math.max(1, Math.ceil(tileEdge(high[0]!)) - min[0]),
-      Math.max(1, Math.ceil(tileEdge(high[1]!)) - min[1]),
-    ];
-    if (tiles.some((v) => v > 16))
+    const unwrapped = unwrapChartBounds(low[0]!, low[1]!, high[0]!, high[1]!);
+    const min: [number, number] = [unwrapped.min[0], unwrapped.min[1]];
+    const tiles: [number, number] = [unwrapped.tiles[0], unwrapped.tiles[1]];
+    if (unwrapped.exceedsTileSpan)
       throw new Error(
         "UV span exceeds 16 tiles; reduce tiling before atlas baking.",
       );

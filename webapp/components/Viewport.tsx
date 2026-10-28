@@ -4,9 +4,7 @@ import {
   createPreviewViewport,
   type PreviewViewport,
 } from '../../web/shared/preview-viewport';
-import { Icon } from './Icons';
-
-// Lighting starts off on every page load. The toggle is remembered for the
+import { Icon } from './Icons';// Lighting starts off on every page load. The toggle is remembered for the
 // current session only, so it survives mode switches without becoming sticky.
 let lightingPreference = false;
 
@@ -26,6 +24,8 @@ interface ViewportProps {
   autoRotate?: boolean;
   /** Source models are authored +Z; exported packs and image skins face -Z. */
   facing?: 'source' | 'output';
+  /** The compact workbench drops the front check to keep controls minimal. */
+  showFrontCheck?: boolean;
 }
 
 export function Viewport({
@@ -34,6 +34,7 @@ export function Viewport({
   grid = false,
   autoRotate = false,
   facing = 'output',
+  showFrontCheck = true,
 }: ViewportProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<PreviewViewport | null>(null);
@@ -116,17 +117,19 @@ export function Viewport({
             title={lit ? '关闭光照，按贴图原色显示' : '开启光照，查看立体明暗'}
             onClick={toggleLighting}
           >
-            <Icon name="sun" size={12} /> 光照 {lit ? '开' : '关'}
+            <Icon name="sun" size={14} />
           </button>
           <div className="viewport-actions">
-            <button
-              type="button"
-              className="viewport-reset viewport-front"
-              title="切换到角色正面检查"
-              onClick={() => view.current?.fit('front')}
-            >
-              正面检查
-            </button>
+            {showFrontCheck && (
+              <button
+                type="button"
+                className="viewport-reset"
+                title="切换到角色正面检查"
+                onClick={() => view.current?.fit('front')}
+              >
+                正面检查
+              </button>
+            )}
             <button
               type="button"
               className="viewport-reset"

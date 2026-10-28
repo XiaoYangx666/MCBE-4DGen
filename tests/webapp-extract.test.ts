@@ -42,6 +42,32 @@ describe('webapp model extraction', () => {
     expect(hasVertex(positions, 0, 0, 1)).toBe(false);
   });
 
+  it('keeps out-of-range UV bounds and source wrap modes for the atlas', () => {
+    const scene = sceneWithTriangle();
+    const mesh = scene.children[0] as THREE.Mesh;
+    const geometry = mesh.geometry as THREE.BufferGeometry;
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute([
+      -0.25, 0,
+      1.25, 0,
+      -0.25, 1.25,
+    ], 2));
+    const texture = new THREE.Texture({ width: 4, height: 4 } as unknown as HTMLImageElement);
+    texture.wrapS = THREE.MirroredRepeatWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    (mesh.material as THREE.MeshBasicMaterial).map = texture;
+
+    const extracted = extractModel(scene);
+    const batch = extracted.batches[0]!;
+    // flipY maps v=0 to 1 and v=1.25 to -0.25; nothing is clipped to 0..1.
+    expect(batch.uvBounds![0]).toBeCloseTo(-0.25);
+    expect(batch.uvBounds![1]).toBeCloseTo(-0.25);
+    expect(batch.uvBounds![2]).toBeCloseTo(1.25);
+    expect(batch.uvBounds![3]).toBeCloseTo(1);
+    expect(batch.texture?.wrapS).toBe(THREE.MirroredRepeatWrapping);
+    expect(batch.texture?.wrapT).toBe(THREE.ClampToEdgeWrapping);
+    expect(extracted.warnings.some((warning) => warning.includes('环绕模式'))).toBe(true);
+  });
+
   it('bakes a posed skeleton only when requested', () => {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute([

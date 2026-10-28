@@ -15,6 +15,7 @@
     "./**/*.ts",
     "./**/*.tsx",
     "../src/bedrock-types.ts",
+    "../src/assimp-import.ts",
     "../src/geometry-validator.ts",
     "../src/humanoid-roles.ts",
     "../src/model-candidates.ts",
@@ -26,6 +27,7 @@
     "../src/skin-pack-files.ts",
     "../src/source-sites.ts",
     "../src/tga.ts",
+    "../src/texture-chart-math.ts",
     "../src/texture-pixels.ts",
     "../src/vrm-humanoid.ts",
     "../web/shared/**/*.ts",
@@ -39,7 +41,11 @@
     "../tests/webapp-pmx.test.ts",
     "../tests/webapp-pose.test.ts",
     "../tests/webapp-materials.test.ts",
+    "../tests/webapp-output-preview.test.ts",
+    "../tests/webapp-preview-materials.test.ts",
+    "../tests/webapp-progress.test.ts",
     "../tests/webapp-reduce.test.ts",
+    "../tests/webapp-resources.test.ts",
     "../tests/webapp-pack-import.test.ts",
     "../tests/webapp-vrm-materials.test.ts"
   ]
