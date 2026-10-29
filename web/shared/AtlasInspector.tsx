@@ -111,6 +111,8 @@ export function AtlasInspector({
   const [showCoverage, setShowCoverage] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [hover, setHover] = useState<{ region: AtlasInspectorRegion; x: number; y: number } | null>(null);
+  const imageRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
 
@@ -172,7 +174,6 @@ export function AtlasInspector({
       moved: false,
     };
     suppressClick.current = false;
-    event.currentTarget.setPointerCapture(event.pointerId);
   };
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const current = drag.current;
@@ -182,6 +183,9 @@ export function AtlasInspector({
     if (!current.moved && Math.hypot(dx, dy) > 3) {
       current.moved = true;
       suppressClick.current = true;
+      // Capture only once a real drag starts: capturing on pointerdown makes the
+      // image swallow clicks aimed at the atlas rectangles.
+      event.currentTarget.setPointerCapture(event.pointerId);
     }
     if (!current.moved) return;
     setPan({
@@ -216,7 +220,7 @@ export function AtlasInspector({
     <div className={`atlas-inspector variant-${variant}`}>
       <header className="atlas-inspector-head">
         <div>
-          <b>贴图诊断</b>
+          <b>最终贴图</b>
           <small>
             {size} × {size} · 内容 {((content / totalPixels) * 100).toFixed(1)}% ·
             三角采样 {((uv / totalPixels) * 100).toFixed(1)}%
@@ -226,6 +230,7 @@ export function AtlasInspector({
             {summary?.unusedContentPixels
               ? ` · 矩形内未采样 ${((summary.unusedContentPixels / totalPixels) * 100).toFixed(1)}%`
               : ''}
+            {' · 点色块定位材质'}
           </small>
         </div>
         <div className="atlas-inspector-actions">
@@ -264,11 +269,13 @@ export function AtlasInspector({
           <div className="atlas-inspector-stage">
             <div
               className={`atlas-inspector-image${zoom > 1 ? ' zoomed' : ''}`}
+              ref={imageRef}
               onWheel={onWheel}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
+              onMouseLeave={() => setHover(null)}
             >
               <div
                 className="atlas-inspector-canvas"
@@ -300,60 +307,68 @@ export function AtlasInspector({
                         strokeWidth={active ? 1.6 : 0.7}
                         strokeDasharray={shared ? '2 1.5' : undefined}
                         onClick={() => pickRegion(region)}
+                        onMouseEnter={(event) => {
+                          const box = imageRef.current?.getBoundingClientRect();
+                          if (!box) return;
+                          setHover({
+                            region,
+                            x: event.clientX - box.left,
+                            y: event.clientY - box.top,
+                          });
+                        }}
+                        onMouseMove={(event) => {
+                          const box = imageRef.current?.getBoundingClientRect();
+                          if (!box) return;
+                          setHover({
+                            region,
+                            x: event.clientX - box.left,
+                            y: event.clientY - box.top,
+                          });
+                        }}
+                        onMouseLeave={() => setHover(null)}
                       />
                     );
                   })}
                 </svg>
               </div>
+              {hover && (() => {
+                const hoverOwner =
+                  hover.region.materialKeys?.[0] ??
+                  hover.region.materialKey ??
+                  hover.region.material;
+                const hoverRow =
+                  rows.find((row) => (row.id ?? row.name) === hoverOwner) ??
+                  rows.find((row) => row.name === hover.region.material);
+                return (
+                  <div
+                    className="atlas-region-tip"
+                    style={{
+                      left: Math.max(4, Math.min(hover.x + 12, 168)),
+                      top: hover.y + 12,
+                    }}
+                  >
+                    <b>{hoverRow?.name ?? hover.region.material}</b>
+                    {hoverRow && (
+                      <span>
+                        分配 {hoverRow.allocated.toLocaleString('zh-CN')} px · 占整图{' '}
+                        {((hoverRow.allocated / totalPixels) * 100).toFixed(1)}%
+                      </span>
+                    )}
+                    {(hover.region.materialKeys?.length ?? 0) > 1 && (
+                      <span>共享矩形 ×{hover.region.materialKeys!.length}</span>
+                    )}
+                    <span>
+                      {hover.region.width}×{hover.region.height} @ {hover.region.x},{hover.region.y}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
-            {selectedMaterial && (
-              <div className="atlas-inspector-detail">
-                <b style={{ color: colorOf.get(selectedMaterial.id ?? selectedMaterial.name) }}>
-                  {selectedMaterial.name}
-                </b>
-                <span>{selectedMaterial.allocated.toLocaleString('zh-CN')} px 归属</span>
-                {selectedMaterial.uv != null && (
-                  <span>{(selectedMaterial.uv ?? 0).toLocaleString('zh-CN')} px 被三角面覆盖</span>
-                )}
-                {selectedMaterial.shared ? (
-                  <span>其中 {selectedMaterial.shared.toLocaleString('zh-CN')} px 与其他材质重叠</span>
-                ) : (
-                  <span>无跨材质重叠采样</span>
-                )}
-                <span>
-                  {selectedMaterial.flat
-                    ? '纯色采样'
-                    : selectedMaterial.floorCharts
-                      ? `受最小尺寸限制的 UV 岛：${selectedMaterial.floorCharts}`
-                      : '未触发最小尺寸限制'}
-                </span>
-                {selectedMaterial.weight !== undefined && (
-                  <span>当前质量 {selectedMaterial.weight.toFixed(2)}×</span>
-                )}
-                {selectedRegions.map((region) => (
-                  <span key={region.id}>
-                    {region.width}×{region.height} @ {region.x},{region.y}
-                    {region.materialKeys && region.materialKeys.length > 1
-                      ? ` · 共享 ×${region.materialKeys.length}`
-                      : ''}
-                    {region.source ? ` · ${region.source}` : ''}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
           {showList && (
             <div className="atlas-inspector-list">
               {rows.map((row) => {
                 const id = row.id ?? row.name;
-                const flat = row.flat === true;
-                const blank = flat || row.allocated <= 0
-                  ? 0
-                  : Math.max(0, row.allocated - (row.uv ?? row.used ?? 0));
-                const transparent = flat
-                  ? 0
-                  : Math.max(0, (row.uv ?? row.used ?? 0) - (row.used ?? 0));
-                const atFloor = (row.floorCharts ?? 0) > 0;
                 return (
                   <button
                     key={id}
@@ -363,23 +378,54 @@ export function AtlasInspector({
                   >
                     <span className="atlas-inspector-dot" style={{ background: colorOf.get(id) }} />
                     <span className="atlas-inspector-name" title={row.name}>{row.name}</span>
-                    <span className="atlas-inspector-stat">
-                      {row.allocated.toLocaleString('zh-CN')} px
-                      {row.weight !== undefined ? ` · ${row.weight.toFixed(2)}×` : ''}
-                    </span>
-                    <span className="atlas-inspector-bar">
-                      <i style={{ width: `${row.allocated ? ((row.used ?? 0) / row.allocated) * 100 : 0}%` }} />
-                    </span>
-                    <span className="atlas-inspector-blank">
-                      {flat
-                        ? '纯色采样'
-                        : `未覆盖 ${row.allocated ? (blank / row.allocated * 100).toFixed(0) : 0}%${
-                            transparent > 0 ? ` · 透明 ${(transparent / row.allocated * 100).toFixed(0)}%` : ''
-                          }${atFloor ? ' · 已触底' : ''}`}
+                    <span className="atlas-inspector-stat" title="分配像素 · 占整张图的比例">
+                      {row.allocated.toLocaleString('zh-CN')} px ·{' '}
+                      {((row.allocated / totalPixels) * 100).toFixed(1)}%
                     </span>
                   </button>
                 );
               })}
+            </div>
+          )}
+          {selectedMaterial && (
+            <div className="atlas-inspector-detail">
+              <b style={{ color: colorOf.get(selectedMaterial.id ?? selectedMaterial.name) }}>
+                {selectedMaterial.name}
+              </b>
+              <span>
+                分配 {selectedMaterial.allocated.toLocaleString('zh-CN')} px · 占整图{' '}
+                {((selectedMaterial.allocated / totalPixels) * 100).toFixed(1)}%
+              </span>
+              {selectedMaterial.uv != null && (
+                <span>
+                  实际用到 {(selectedMaterial.uv ?? 0).toLocaleString('zh-CN')} px（其余{' '}
+                  {Math.max(0, selectedMaterial.allocated - (selectedMaterial.uv ?? 0)).toLocaleString('zh-CN')} px 为留边/空隙）
+                </span>
+              )}
+              {selectedMaterial.shared ? (
+                <span>其中 {selectedMaterial.shared.toLocaleString('zh-CN')} px 与其他材质重叠</span>
+              ) : (
+                <span>无跨材质重叠采样</span>
+              )}
+              <span>
+                {selectedMaterial.flat
+                  ? '纯色采样'
+                  : selectedMaterial.floorCharts
+                    ? `受最小尺寸限制的 UV 岛：${selectedMaterial.floorCharts}`
+                    : '未触发最小尺寸限制'}
+              </span>
+              {selectedMaterial.weight !== undefined && (
+                <span>当前质量 {selectedMaterial.weight.toFixed(2)}×</span>
+              )}
+              {selectedRegions.map((region) => (
+                <span key={region.id}>
+                  {region.width}×{region.height} @ {region.x},{region.y}
+                  {region.materialKeys && region.materialKeys.length > 1
+                    ? ` · 共享 ×${region.materialKeys.length}`
+                    : ''}
+                  {region.source ? ` · ${region.source}` : ''}
+                </span>
+              ))}
             </div>
           )}
         </div>
@@ -406,7 +452,7 @@ export function AtlasInspector({
                   <td>{(row.uv ?? row.used ?? 0).toLocaleString('zh-CN')} px</td>
                   <td>{(row.shared ?? 0).toLocaleString('zh-CN')} px</td>
                   <td>{(row.wastePixels ?? 0).toLocaleString('zh-CN')} px</td>
-                  <td>{(row.floorCharts ?? 0) > 0 ? `触底 ×${row.floorCharts}` : '—'}</td>
+                  <td>{(row.floorCharts ?? 0) > 0 ? `已到最小 ×${row.floorCharts}` : '—'}</td>
                 </tr>
               ))}
             </tbody>

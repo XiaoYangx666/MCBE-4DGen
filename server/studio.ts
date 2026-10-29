@@ -24,6 +24,7 @@ import type { HumanoidProfile, PreparedHumanoid } from '../src/humanoid.ts';
 import { importModel } from '../src/importer.ts';
 import type { IntermediateModel } from '../src/model.ts';
 import { assignParts, materialKeyMap } from '../src/parts.ts';
+import { materialThumbnail } from '../src/material-thumbnail.ts';
 import { normalizeSelection, selectionFingerprint, materialDisplayLabels } from '../src/selection.ts';
 import { PackManager } from '../src/pack-manager.ts';
 import type { ManagerConfig } from '../src/pack-manager.ts';
@@ -322,34 +323,38 @@ export class Studio {
           name: material.getName() || '(默认)',
         })),
     );
-    const materials = model.document
-      .getRoot()
-      .listMaterials()
-      .map((material) => {
-        const name = material.getName() || '(默认)';
-        return {
-          key: keys.get(material) ?? `m:${material.getName() || '(default)'}#1`,
-          label: labels.get(keys.get(material) ?? '') ?? name,
-          name: material.getName(),
-          alpha: material.getBaseColorFactor()[3],
-          doubleSided: material.getDoubleSided(),
-          transparent: material.getAlphaMode() === 'BLEND',
-          partIds: parts
-            .filter((part) => part.materialKey === keys.get(material))
-            .map((part) => part.id),
-          triangles: instances
-            .flatMap((mesh) => mesh.listPrimitives())
-            .filter((primitive) => primitive.getMaterial() === material)
-            .reduce(
-              (sum, primitive) =>
-                sum +
-                (primitive.getIndices()?.getCount() ??
-                  primitive.getAttribute('POSITION')!.getCount()) /
-                  3,
-              0,
-            ),
-        };
-      });
+    const materials = await Promise.all(
+      model.document
+        .getRoot()
+        .listMaterials()
+        .map(async (material) => {
+          const name = material.getName() || '(默认)';
+          const thumbnail = await materialThumbnail(material);
+          return {
+            key: keys.get(material) ?? `m:${material.getName() || '(default)'}#1`,
+            label: labels.get(keys.get(material) ?? '') ?? name,
+            name: material.getName(),
+            alpha: material.getBaseColorFactor()[3],
+            doubleSided: material.getDoubleSided(),
+            transparent: material.getAlphaMode() === 'BLEND',
+            ...(thumbnail ? { thumbnail } : {}),
+            partIds: parts
+              .filter((part) => part.materialKey === keys.get(material))
+              .map((part) => part.id),
+            triangles: instances
+              .flatMap((mesh) => mesh.listPrimitives())
+              .filter((primitive) => primitive.getMaterial() === material)
+              .reduce(
+                (sum, primitive) =>
+                  sum +
+                  (primitive.getIndices()?.getCount() ??
+                    primitive.getAttribute('POSITION')!.getCount()) /
+                    3,
+                0,
+              ),
+          };
+        }),
+    );
     const fingerprint = selectionFingerprint(materials, parts);
     const selectionWarnings: string[] = [];
     let settings: EditSettings | null = null;

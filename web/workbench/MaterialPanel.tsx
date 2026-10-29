@@ -37,8 +37,6 @@ export function MaterialPanel({
   setTextureTarget,
   selectedPart,
   setSelectedPart,
-  showKeptParts,
-  setShowKeptParts,
   materialDeltas,
 }: {
   session: Session | null;
@@ -67,8 +65,6 @@ export function MaterialPanel({
   setTextureTarget: (target: TextureTarget) => void;
   selectedPart: string | null;
   setSelectedPart: (part: string | null) => void;
-  showKeptParts: boolean;
-  setShowKeptParts: (value: boolean) => void;
   materialDeltas: Map<string, number>;
 }) {
   const materials: MaterialRow[] = session?.materials ?? [];
@@ -133,7 +129,7 @@ export function MaterialPanel({
       meta: `${material.triangles.toLocaleString("zh-CN")} 面${partText}${
         material.alpha < 1 ? ` · α ${material.alpha}` : ""
       }${related.length > 0 && kept === 0 ? " · 无保留部件" : ""}`,
-      included: !excluded.includes(material.key),
+      thumbnail: material.thumbnail ?? null,
       weight: materialWeights[material.key] ?? 1,
       quality: materialWeights[material.key] ?? 1,
       selected: selected === material.key,
@@ -144,7 +140,7 @@ export function MaterialPanel({
       ...(pixels !== null
         ? {
             status: `${pixels.toLocaleString("zh-CN")} px${
-              (measurement?.floorCharts ?? 0) > 0 ? " · 触底" : ""
+              (measurement?.floorCharts ?? 0) > 0 ? " · 已到最小" : ""
             }`,
           }
         : {}),
@@ -181,15 +177,6 @@ export function MaterialPanel({
             setSelected(key ?? "");
             setMode(() => "pose");
           }}
-          onToggleMaterial={(key) => {
-            setExcluded((items) =>
-              items.includes(key)
-                ? items.filter((item) => item !== key)
-                : [...items, key],
-            );
-            if (excluded.includes(key) && solo === key) setSolo(() => null);
-            changed();
-          }}
           onWeight={adjust}
           onResetWeight={(key) => {
             setMaterialWeights((weights) => {
@@ -222,11 +209,6 @@ export function MaterialPanel({
           }}
           selectedPart={selectedPart}
           onSelectPart={setSelectedPart}
-          showKeptOnly={showKeptParts}
-          onShowKeptOnly={(value) => {
-            setShowKeptParts(value);
-            changed();
-          }}
           disabled={busy}
           note={
             result?.details?.texture?.allocation

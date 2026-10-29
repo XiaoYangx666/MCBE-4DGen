@@ -14,6 +14,8 @@ export interface StudioPart {
   meta: string;
   /** Materials this part samples. */
   materials: readonly string[];
+  /** Small data-URL preview of the part's base color texture. */
+  thumbnail?: string | null;
   /** Stable material key, when the host has one. */
   materialKey?: string;
   /** Other part names that sample the same material. */

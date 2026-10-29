@@ -32,8 +32,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     setTextureTarget,
     selectedPart,
     setSelectedPart,
-    showKeptParts,
-    setShowKeptParts,
     materialDeltas,
     materialWeights,
     setMaterialWeights,
@@ -75,9 +73,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
   } = workbench;
   const [saveOpen, setSaveOpen] = useState(false);
   const [candidates, setCandidates] = useState<MaterialCandidate[] | null>(null);
-  const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(true);
-  const [maximizePreview, setMaximizePreview] = useState(false);
   const leftPanel = useResizableWidth(310, 250, 460, "left");
   const rightPanel = useResizableWidth(380, 300, 560, "right");
 
@@ -189,7 +184,7 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
       parts={session?.parts ?? []}
       includedParts={includedParts}
       selectedPart={selectedPart}
-      showKeptParts={showKeptParts}
+      onUnlitChange={setUnlit}
       onSelect={(name) => {
         if (mode === "result") return;
         chooseNames([name]);
@@ -212,7 +207,7 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
 
   return (
     <>
-      <div className={`workspace workbench-shell${maximizePreview ? ' preview-max' : ''}`}>
+      <div className="workspace workbench-shell">
         <header className="workspace-header">
           <div className="workspace-project">
             <span className="eyebrow">4DGen / 本地模型工作台</span>
@@ -245,11 +240,11 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
         <div
           className={`workspace-body workbench-${workspace}`}
           style={{
-            "--texture-left": leftOpen ? `${leftPanel.width}px` : "0px",
-            "--texture-right": rightOpen ? `${rightPanel.width}px` : "0px",
+            "--texture-left": `${leftPanel.width}px`,
+            "--texture-right": `${rightPanel.width}px`,
           } as CSSProperties}
         >
-          <aside className={`workspace-side left${workspace === "texture" && !leftOpen ? " closed" : ""}`}>
+          <aside className="workspace-side left">
             {workspace === "model" && (
               <ModelPartsPanel
                 session={session}
@@ -257,8 +252,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                 setIncludedParts={setIncludedParts}
                 selectedPart={selectedPart}
                 setSelectedPart={setSelectedPart}
-                showKeptParts={showKeptParts}
-                setShowKeptParts={setShowKeptParts}
                 busy={busy}
                 changed={changed}
               />
@@ -271,8 +264,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                 previewBusy={previewBusy}
                 selected={selected}
                 setSelected={setSelected}
-                excluded={excluded}
-                setExcluded={setExcluded}
                 materialWeights={materialWeights}
                 setMaterialWeights={setMaterialWeights}
                 changed={changed}
@@ -282,18 +273,13 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                 textureTarget={textureTarget}
                 setTextureTarget={setTextureTarget}
                 includedParts={includedParts}
-                setIncludedParts={setIncludedParts}
-                selectedPart={selectedPart}
-                setSelectedPart={setSelectedPart}
-                showKeptParts={showKeptParts}
-                setShowKeptParts={setShowKeptParts}
                 materialDeltas={materialDeltas}
               />
             )}
           </aside>
 
           <div
-            className={`workspace-splitter${workspace === "texture" && leftOpen && !maximizePreview ? "" : " hidden"}`}
+            className={`workspace-splitter${workspace === "texture" ? "" : " hidden"}`}
             aria-hidden="true"
             {...leftPanel.handleProps}
           />
@@ -332,14 +318,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                   <label>
                     <input
                       type="checkbox"
-                      checked={unlit}
-                      onChange={(event) => setUnlit(event.target.checked)}
-                    />{" "}
-                    无光照
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
                       checked={wire}
                       onChange={(event) => setWire(event.target.checked)}
                     />{" "}
@@ -368,15 +346,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                       已选：{nameByKey.get(selected) ?? selected}
                     </span>
                   )}
-                  <button type="button" onClick={() => setLeftOpen((value) => !value)}>
-                    {leftOpen ? "收起材质" : "展开材质"}
-                  </button>
-                  <button type="button" onClick={() => setRightOpen((value) => !value)}>
-                    {rightOpen ? "收起图集" : "展开图集"}
-                  </button>
-                  <button type="button" onClick={() => setMaximizePreview((value) => !value)}>
-                    {maximizePreview ? "还原布局" : "最大化预览"}
-                  </button>
                 </>
               )}
               {workspace === "export" && (
@@ -441,12 +410,12 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
           </section>
 
           <div
-            className={`workspace-splitter${workspace === "texture" && rightOpen && !maximizePreview ? "" : " hidden"}`}
+            className={`workspace-splitter${workspace === "texture" ? "" : " hidden"}`}
             aria-hidden="true"
             {...rightPanel.handleProps}
           />
 
-          <aside className={`workspace-side right${workspace === "texture" && !rightOpen ? " closed" : ""}`}>
+          <aside className="workspace-side right">
             {workspace === "model" && (
               <SettingsPanel
                 session={session}
@@ -579,10 +548,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
           }}
         />
       )}
-      <footer>
-        <span>4DGen / 本地模型工作台</span>
-        <span>文件在本机处理 · 启用皮肤包时会写入游戏目录</span>
-      </footer>
     </>
   );
 }

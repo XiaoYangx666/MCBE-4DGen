@@ -124,14 +124,7 @@
   backdrop-filter: blur(6px);
 }
 .part-selection-note button { margin-left: 6px; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 10px; cursor: pointer; }
-.part-explainer {
-  margin: 6px 0 10px;
-  padding: 6px 8px;
-  border-left: 2px solid var(--line);
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.6;
-}
+.model-parts-panel .section-label { margin-bottom: 8px; }
 
 .export-workspace {
   display: grid;

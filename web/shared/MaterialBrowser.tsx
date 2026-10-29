@@ -7,13 +7,11 @@ import type {
   TextureTarget,
 } from './texture-types';
 
-type MaterialFilter = 'all' | 'included' | 'excluded' | 'limited';
+type MaterialFilter = 'all' | 'limited';
 
 const FILTER_LABEL: Record<MaterialFilter, string> = {
   all: '全部',
-  included: '保留',
-  excluded: '已排除',
-  limited: '触底',
+  limited: '已到最小',
 };
 
 export interface MaterialPixelInfo {
@@ -25,8 +23,17 @@ export interface MaterialPixelInfo {
 }
 
 const QUALITY_MIN = 0.1;
-const QUALITY_MAX = 4;
-const QUALITY_STEP = 0.05;
+const QUALITY_MAX = 20;
+const QUALITY_STEP = 1;
+const QUALITY_LOG = Math.log(QUALITY_MAX / QUALITY_MIN);
+const qualityToSlider = (quality: number) =>
+  Math.round(
+    (Math.log(Math.min(QUALITY_MAX, Math.max(QUALITY_MIN, quality)) / QUALITY_MIN) /
+      QUALITY_LOG) *
+      100,
+  );
+const sliderToQuality = (value: number) =>
+  QUALITY_MIN * Math.exp((value / 100) * QUALITY_LOG);
 
 /**
  * The texture workspace's material browser. It owns search, filtering and the
@@ -37,7 +44,6 @@ export function MaterialBrowser({
   materials,
   selectedMaterial,
   onSelectMaterial,
-  onToggleMaterial,
   onWeight,
   onResetWeight,
   onResetAllWeights,
@@ -49,11 +55,11 @@ export function MaterialBrowser({
   pixelInfo,
   previewState = 'idle',
   previewNote,
+  atlas,
 }: {
   materials: readonly StudioMaterial[];
   selectedMaterial: string | null;
   onSelectMaterial: (id: string | null) => void;
-  onToggleMaterial: (id: string) => void;
   onWeight: (id: string, value: number) => void;
   onResetWeight: (id: string) => void;
   onResetAllWeights: () => void;
@@ -65,6 +71,7 @@ export function MaterialBrowser({
   pixelInfo?: (material: StudioMaterial) => MaterialPixelInfo;
   previewState?: 'idle' | 'queued' | 'running' | 'stale';
   previewNote?: string;
+  atlas?: { width: number; height: number; contentUtilization: number } | null;
 }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<MaterialFilter>('all');
@@ -74,8 +81,6 @@ export function MaterialBrowser({
 
   const rows = useMemo(() => {
     const list = materials.filter((material) => {
-      if (filter === 'included' && !material.included) return false;
-      if (filter === 'excluded' && material.included) return false;
       if (filter === 'limited' && !material.limited) return false;
       if (!normalized) return true;
       return (
@@ -99,7 +104,7 @@ export function MaterialBrowser({
       : '相对细节保留'
     : '旧版像素权重';
   const qualityUnit = mode === 'budget' ? '×' : '';
-  const presets = mode === 'budget' ? [0.5, 1, 1.5, 2] : [0.5, 1, 2, 4];
+  const presets = [0.5, 1, 2, 4, 10];
   const info = selected && pixelInfo ? pixelInfo(selected) : null;
 
   return (
@@ -127,6 +132,14 @@ export function MaterialBrowser({
           全部恢复
         </button>
       </div>
+      <p className="material-browser-summary">
+        {atlas
+          ? `输出贴图 ${atlas.width}×${atlas.height} · 已用 ${(atlas.contentUtilization * 100).toFixed(1)}% · ${materials.length} 个材质`
+          : previewState === 'running'
+            ? '正在计算最终贴图…'
+            : '运行一次预览后显示最终贴图的占用。'}
+      </p>
+      {previewNote && <p className="material-browser-note">{previewNote}</p>}
       <div className="material-browser-tools">
         <input
           type="search"
@@ -176,20 +189,22 @@ export function MaterialBrowser({
           </div>
           <input
             type="range"
-            min={QUALITY_MIN}
-            max={QUALITY_MAX}
+            min={0}
+            max={100}
             step={QUALITY_STEP}
-            value={Math.min(QUALITY_MAX, Math.max(QUALITY_MIN, selected.quality))}
-            disabled={disabled || !selected.included}
+            value={qualityToSlider(selected.quality)}
+            disabled={disabled}
             aria-label={`${selected.name} ${qualityLabel}`}
-            onChange={(event) => onWeight(selected.id, Number(event.target.value))}
+            onChange={(event) =>
+              onWeight(selected.id, Math.round(sliderToQuality(Number(event.target.value)) * 100) / 100)
+            }
           />
           <div className="texture-quality-actions">
             {presets.map((value) => (
               <button
                 type="button"
                 key={value}
-                disabled={disabled || !selected.included}
+                disabled={disabled}
                 onClick={() => onWeight(selected.id, value)}
               >
                 {value}×
@@ -236,11 +251,6 @@ export function MaterialBrowser({
               <small>转换后在这里显示实际像素与限制信息。</small>
             )}
           </div>
-          <div className="texture-quality-actions footer">
-            <button type="button" disabled={disabled} onClick={onResetAllWeights}>
-              全部恢复默认
-            </button>
-          </div>
         </div>
       )}
 
@@ -252,7 +262,6 @@ export function MaterialBrowser({
             meta: material.meta,
             thumbnail: material.thumbnail ?? null,
             ...(material.color ? { color: material.color } : {}),
-            included: material.included,
             weight: material.weight,
             selected: material.id === selectedMaterial,
             ...(material.status ? { status: material.status } : {}),
@@ -260,7 +269,6 @@ export function MaterialBrowser({
           }))}
           disabled={disabled}
           showWeight={false}
-          onToggle={onToggleMaterial}
           onSelect={(id) => onSelectMaterial(id === selectedMaterial ? null : id)}
           onWeight={onWeight}
         />
@@ -270,50 +278,6 @@ export function MaterialBrowser({
         </p>
       )}
 
-      <details className="texture-algorithm">
-        <summary>分配算法：{mode === 'budget' ? '纹理预算' : '旧版算法'}</summary>
-        <div className="texture-studio-mode" role="group" aria-label="纹理分配模式">
-          <button
-            type="button"
-            className={mode === 'legacy' ? 'active' : ''}
-            disabled={disabled}
-            onClick={() => onMode('legacy')}
-          >
-            旧版算法
-          </button>
-          <button
-            type="button"
-            className={mode === 'budget' ? 'active' : ''}
-            disabled={disabled}
-            onClick={() => onMode('budget')}
-          >
-            纹理预算
-          </button>
-        </div>
-        {mode === 'budget' && (
-          <div className="texture-studio-target" role="group" aria-label="预算目标">
-            <button
-              type="button"
-              className={target === 'density' ? 'active' : ''}
-              disabled={disabled}
-              onClick={() => onTarget('density')}
-              title="按表面积分配像素，适合整体轮廓"
-            >
-              密度
-            </button>
-            <button
-              type="button"
-              className={target === 'retention' ? 'active' : ''}
-              disabled={disabled}
-              onClick={() => onTarget('retention')}
-              title="按原始 UV 细节分配像素，适合脸部与小装饰"
-            >
-              细节保留
-            </button>
-          </div>
-        )}
-        {previewNote && <p className="texture-studio-note">{previewNote}</p>}
-      </details>
     </div>
   );
 }

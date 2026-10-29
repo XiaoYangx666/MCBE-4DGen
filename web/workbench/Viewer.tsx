@@ -15,7 +15,7 @@ import {
   createPreviewViewport,
   type PreviewViewport,
 } from "../shared/preview-viewport";
-import { HoldOriginalButton } from "./HoldOriginalButton";
+import { Icon } from "../shared/Icons";
 import { captureCameraView, restoreCameraView, type CameraViewState } from "./camera-state";
 
 type CameraState = CameraViewState & { sessionId: string };
@@ -38,7 +38,7 @@ export function Viewer({
   parts,
   includedParts,
   selectedPart,
-  showKeptParts,
+  onUnlitChange,
 }: {
   previewUrl?: string;
   session: Session | null;
@@ -58,19 +58,19 @@ export function Viewer({
   parts?: readonly PartSummary[];
   includedParts: ReadonlySet<string>;
   selectedPart: string | null;
-  showKeptParts: boolean;
+  /** Toggle scene lighting; omit to hide the button (preview-only hosts). */
+  onUnlitChange?: (unlit: boolean) => void;
 }) {
   const viewKind = mode === "result" && result ? "result" : "source";
-  const [compareOriginal, setCompareOriginal] = useState(false);
   const host = useRef<HTMLDivElement>(null);
   const poseSettings = useRef({ profile, height, binding });
   poseSettings.current = { profile, height, binding };
-  const settings = useRef({ excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect, onSelectCandidates, parts, includedParts, selectedPart, showKeptParts });
-  settings.current = { excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect, onSelectCandidates, parts, includedParts, selectedPart, showKeptParts };
+  const settings = useRef({ excluded, wire, unlit, focus, solo, mode, ...poseSettings.current, onSelect, onSelectCandidates, parts, includedParts, selectedPart });
+  settings.current = { excluded, wire, unlit, focus, solo, mode, ...poseSettings.current, onSelect, onSelectCandidates, parts, includedParts, selectedPart };
   const frameRef = useRef<((part?: string) => void) | null>(null);
   const frontRef = useRef<(() => void) | null>(null);
   const invalidate = useRef<(() => void) | null>(null);
-  useEffect(()=>{invalidate.current?.();},[excluded,wire,unlit,focus,solo,mode,compareOriginal,profile,height,binding,parts,includedParts,selectedPart,showKeptParts]);
+  useEffect(()=>{invalidate.current?.();},[excluded,wire,unlit,focus,solo,mode,profile,height,binding,parts,includedParts,selectedPart]);
   const cameraState = useRef<CameraState | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -123,9 +123,9 @@ export function Viewer({
       if (!poseController) return;
       const current = settings.current;
       const options = {
-        profile: current.compareOriginal ? null : current.profile,
+        profile: current.profile,
         height: current.height,
-        humanoid: !current.compareOriginal && current.binding === "humanoid",
+        humanoid: current.binding === "humanoid",
         excluded: current.excluded,
       };
       const signature = JSON.stringify(options);
@@ -305,9 +305,7 @@ export function Viewer({
         ? current.selectedPart
         : null;
       const keepPart = (id: string) =>
-        selectedPartMapped
-          ? id === selectedPartMapped
-          : !current.showKeptParts || current.includedParts.has(id);
+        selectedPartMapped ? id === selectedPartMapped : current.includedParts.has(id);
       group.traverse((object) => {
         if (!(object instanceof THREE.Mesh)) return;
         const state = partStateByMesh.get(object);
@@ -366,9 +364,20 @@ export function Viewer({
         </div>
       )}
       <div className="view-hint">拖动旋转 · 滚轮缩放 · 右键平移 · 点击选择</div>
-      <div className="orientation-hint">{compareOriginal && mode === "pose" ? "原始状态对照 · 松开恢复调整" : "正面检查：脸和胸前应朝向绿色箭头"}</div>
+      <div className="orientation-hint">正面检查：脸和胸前应朝向绿色箭头</div>
+      {onUnlitChange && (
+        <button
+          type="button"
+          className={`view-lighting-button${unlit ? "" : " active"}`}
+          aria-pressed={!unlit}
+          aria-label={unlit ? "开启光照" : "关闭光照"}
+          title={unlit ? "开启光照" : "关闭光照"}
+          onClick={() => onUnlitChange(!unlit)}
+        >
+          <Icon name="sun" size={15} />
+        </button>
+      )}
       <div className="view-buttons">
-        {session && mode === "pose" && <HoldOriginalButton key={session.id} onChange={setCompareOriginal} />}
         <button onClick={() => frontRef.current?.()}>正面检查</button>
         <button onClick={() => frameRef.current?.()}>⌖ 全景</button>
       </div>

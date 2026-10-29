@@ -341,6 +341,23 @@ main {
 }
 .view-buttons { position: absolute; right: 15px; bottom: 13px; display: flex; gap: 6px; max-width: calc(100% - 30px); flex-wrap: wrap; }
 .view-buttons button { font-size: 11px; background: color-mix(in srgb,var(--selected) 90.2%,transparent); }
+.view-lighting-button {
+  position: absolute;
+  top: 13px;
+  right: 15px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--selected) 90.2%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+}
+.view-lighting-button:hover { color: var(--ink); }
+.view-lighting-button.active { color: var(--accent); border-color: var(--accent); }
 .orientation-hint { position: absolute; top: 40px; left: 18px; color: var(--ink); font-size: 11px; pointer-events: none; }
 .rotation-presets { display: flex; gap: 6px; margin-top: 10px; }
 .rotation-presets button { flex: 1; padding: 6px 2px; font-size: 11px; }
@@ -609,15 +626,6 @@ details button {
   to {
     transform: rotate(360deg);
   }
-}
-footer {
-  display: flex;
-  justify-content: space-between;
-  border-top: 1px solid var(--line);
-  padding: 12px 25px;
-  font-size: 9px;
-  color: var(--muted);
-  flex: 0 0 auto;
 }
 .viewer-error {
   position: absolute;
@@ -1038,10 +1046,6 @@ button.packs-chip:hover:not(:disabled) { background: var(--selected); }
   }
   .toolbar {
     gap: 12px;
-  }
-  footer {
-    gap: 20px;
-    line-height: 1.6;
   }
 }
 .material-weight {

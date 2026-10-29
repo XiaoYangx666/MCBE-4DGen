@@ -496,8 +496,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 }
 .material-actions .text-button { font-size: 11px; }
 
-/* ---------- compact model workbench: preview above a fixed settings sheet ---------- */
-.mobile-settings-tabs { display: none; }
+/* ---------- compact model workbench: preview above the settings panel ---------- */
 .settings-section-title {
   margin: 18px 0 0;
   padding-top: 14px;
@@ -549,26 +548,15 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .app.mode-model:has(.studio-layout.compact) .app-nav-mobile { display: none; }
 body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
 
+/* Compact/mobile model page: the scene fills the window and only floating
+   controls sit on top; the panel below is a plain fixed block. */
 .studio-layout.compact {
-  --sheet-height: min(60dvh, 620px);
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
 }
-.studio-layout.compact .studio-result {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  /* End where the settings sheet begins: the preview never runs behind it. */
-  bottom: calc(var(--sheet-height) + env(safe-area-inset-bottom));
-  height: auto;
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
-}
-.studio-layout.compact.stage-hidden .studio-result { bottom: 0; }
 .studio-layout.compact .model-stage {
   flex: 1 1 auto;
   height: auto;
@@ -578,27 +566,28 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
 /* Floating stage controls: menu + change-model stacked vertically under the
    top-left corner; fullscreen sits alone at the top-right. All overlay the
    scene without reserving height. */
+.stage-floating-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}
+.stage-floating-controls > * { pointer-events: auto; }
 .stage-side-buttons {
   position: absolute;
   top: 10px;
   left: 10px;
-  z-index: 7;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  pointer-events: none;
 }
-.stage-side-buttons > * { pointer-events: auto; }
 .stage-topbar {
   position: absolute;
   top: 10px;
   right: 10px;
-  z-index: 7;
   display: flex;
   justify-content: flex-end;
-  pointer-events: none;
 }
-.stage-topbar > * { pointer-events: auto; }
 .stage-menu-button,
 .stage-icon-button {
   display: grid;
@@ -627,7 +616,6 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
   right: 10px;
   top: 50%;
   transform: translateY(-50%);
-  z-index: 7;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -666,82 +654,13 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
 }
 .studio-layout.compact .viewport-actions .viewport-reset { min-height: 36px; }
 
-.studio-layout.compact.stage-hidden .studio-sheet { display: none; }
-.studio-layout.compact .studio-sheet {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: env(safe-area-inset-bottom);
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: var(--sheet-height);
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  border-top: 1px solid var(--line);
-  border-radius: 0;
-  background: var(--surface);
-  box-shadow: 0 -12px 40px rgb(0 0 0 / 0.22);
-}
-.studio-layout.compact .mobile-settings-tabs {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 4px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-}
-.studio-layout.compact .mobile-settings-tabs button {
-  flex: 1;
-  min-height: 36px;
-  padding: 7px 8px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.studio-layout.compact .mobile-settings-tabs button.active {
-  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
-  background: var(--selected);
-  color: var(--ink);
-}
-.studio-layout.compact .sheet-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 12px 16px 8px;
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-.studio-layout.compact .studio-materials,
-.studio-layout.compact .studio-inspector {
-  display: block;
-  min-height: 0;
-  height: auto;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
+/* Workspace/section titles are compact on mobile; the field labels carry the
+   structure instead. */
 .studio-layout.compact .panel-heading { display: none; }
 .studio-layout.compact .panel-scroll {
   padding: 0;
   overflow: visible;
 }
-.studio-layout.compact .sheet-body[data-tab="basic"] .settings-section:not([data-section="basic"]),
-.studio-layout.compact .sheet-body[data-tab="pose"] .settings-section:not([data-section="pose"]),
-.studio-layout.compact .sheet-body[data-tab="material"] .settings-section:not([data-section="material"]),
-.studio-layout.compact .sheet-body[data-tab="result"] .settings-section:not([data-section="result"]) {
-  display: none;
-}
-.studio-layout.compact .sheet-body[data-tab="material"] .studio-inspector { display: none; }
-.studio-layout.compact .sheet-body[data-tab="basic"] .studio-materials,
-.studio-layout.compact .sheet-body[data-tab="pose"] .studio-materials,
-.studio-layout.compact .sheet-body[data-tab="result"] .studio-materials { display: none; }
 .studio-layout.compact .settings-section-title { display: none; }
 .studio-layout.compact .settings-footer {
   flex: 0 0 auto;
@@ -776,24 +695,28 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
   align-self: flex-start;
 }
 /* Compact per-material pixel rows: two columns, tight padding. */
-.studio-layout.compact .material-allocation h3 { margin: 12px 0 4px; font-size: 12px; }
+.studio-layout.compact .material-allocation h3 { margin: 8px 0 2px; font-size: 11px; }
 .studio-layout.compact .material-allocation p { display: none; }
 .studio-layout.compact .allocation-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
-  gap: 4px 10px;
-  padding: 5px 6px;
+  gap: 2px 8px;
+  padding: 3px 4px;
+  border-radius: 4px;
 }
 .studio-layout.compact .allocation-label {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.35;
 }
-.studio-layout.compact .allocation-track { height: 7px; grid-column: 1 / -1; }
+.studio-layout.compact .allocation-track { height: 5px; border-radius: 3px; grid-column: 1 / -1; }
+.studio-layout.compact .allocation-track > span { border-radius: 3px; }
 .studio-layout.compact .allocation-value {
   grid-column: 2;
   grid-row: 1;
-  font-size: 10px;
+  font-size: 9px;
+  line-height: 1.35;
 }
 
 .text-button {
@@ -1942,14 +1865,6 @@ footer a { color: var(--accent); }
   backdrop-filter: blur(6px);
 }
 .part-selection-note button { margin-left: 6px; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 10px; cursor: pointer; }
-.part-explainer {
-  margin: 6px 0 10px;
-  padding: 6px 8px;
-  border-left: 2px solid var(--line);
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.6;
-}
 
 /* Export workspace */
 .export-workspace {
@@ -1982,6 +1897,8 @@ footer a { color: var(--accent); }
 .result-kind.final { background: color-mix(in srgb, #3f8f5f 18%, transparent); color: #3f8f5f; }
 .result-kind.preview { background: color-mix(in srgb, #c08552 18%, transparent); color: #c08552; }
 .export-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.export-actions-top { margin: 0 0 10px; }
+.export-actions-top .download-buttons { flex: 1 1 auto; min-width: 0; }
 .export-actions .primary { min-height: 38px; }
 .export-report { padding: 12px 16px; }
 .export-atlas { border-top: 1px solid var(--line); padding: 10px 16px 16px; }
@@ -2014,14 +1931,28 @@ footer a { color: var(--accent); }
 .studio-layout.model-layout.compact.workspace-shell {
   display: flex;
   height: 100%;
+  /* The scene runs to the window edges: no page gutter around it. */
   border: 0;
   border-radius: 0;
 }
-.studio-layout.compact .workspace-header {
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 8px;
+/* Workspace switch: a plain tab row right above the scene on mobile. The
+   hidden workspace header still hosts the desktop tabs. */
+.workspace-tabs-panel {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
 }
+.workspace-tabs-panel .workspace-tabs { flex: 1 1 auto; justify-content: stretch; border: 0; padding: 0; background: transparent; }
+.workspace-tabs-panel .workspace-tabs button { flex: 1; min-width: 0; min-height: 36px; padding: 4px 6px; }
+.workspace-tabs-panel .workspace-tabs small { display: none; }
+.studio-layout.compact .workspace-header {
+  display: none;
+}
+/* Compact/mobile: the scene fills the screen with only floating controls; the
+   header and status bar are dropped so the preview keeps full height. */
+.studio-layout.compact .workspace-statusbar { display: none; }
+.studio-layout.compact .workspace-toolbar { display: none; }
 .studio-layout.compact .workspace-project { flex: 1 1 100%; }
 .studio-layout.compact .workspace-project h2 { font-size: 14px; }
 .studio-layout.compact .workspace-project small { display: none; }
@@ -2031,19 +1962,44 @@ footer a { color: var(--accent); }
 .studio-layout.compact .workspace-global { flex: 0 0 auto; }
 .studio-layout.compact .workspace-global .button-link { padding: 5px 8px; font-size: 10px; }
 .studio-layout.compact .workspace-body { min-height: 0; }
+/* The scene takes whatever height the window has left; the panel below is a
+   plain fixed block, never a floating sheet or modal. */
 .studio-layout.compact .model-workspace {
   display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
 }
-.studio-layout.compact .model-workspace .workspace-preview { order: 1; min-height: 44dvh; }
-.studio-layout.compact .model-workspace .workspace-panel { order: 2; overflow: visible; border: 0; border-top: 1px solid var(--line); }
-.studio-layout.compact .model-workspace .workspace-panel.model-right { order: 3; }
-.studio-layout.compact .model-workspace .workspace-panel .panel-scroll { overflow: visible; }
+.studio-layout.compact .workspace-preview {
+  order: 1;
+  flex: 1 1 auto;
+  /* Keeps a usable scene on short landscape windows. */
+  min-height: 44dvh;
+  /* The floating controls are absolutely positioned over the canvas. */
+  position: relative;
+}
+.studio-layout.compact .model-workspace .workspace-side {
+  order: 2;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px 14px;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.studio-layout.compact .model-workspace .workspace-side.right {
+  order: 3;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.studio-layout.compact .model-workspace .panel-scroll { overflow: visible; }
 .studio-layout.compact .texture-workspace {
   display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
   flex-direction: column;
-  height: 100%;
+  overflow: auto;
 }
 .studio-layout.compact .texture-workspace .workspace-splitter { display: none; }
 .studio-layout.compact .texture-workspace .texture-side,
@@ -2054,9 +2010,26 @@ footer a { color: var(--accent); }
 .studio-layout.compact .texture-mobile-tabs { display: flex; gap: 3px; }
 .studio-layout.compact .texture-center .workspace-toolbar { flex-wrap: wrap; }
 .studio-layout.compact .texture-center .workspace-toolbar > button:not(.texture-mobile-tabs button) { font-size: 9px; }
-.studio-layout.compact .export-workspace { display: flex; flex-direction: column; overflow: auto; }
-.studio-layout.compact .export-workspace .workspace-preview { min-height: 44dvh; }
-.studio-layout.compact .export-side { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+.studio-layout.compact .export-workspace {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  overflow: auto;
+}
+.studio-layout.compact .export-workspace .workspace-preview {
+  order: 1;
+  flex: 1 1 auto;
+  min-height: 44dvh;
+}
+.studio-layout.compact .export-side {
+  order: 2;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: visible;
+  border-left: 0;
+  border-top: 1px solid var(--line);
+}
 .studio-layout.compact .workspace-statusbar { padding: 3px 8px; }
 
 /* ---------- persistent three-region workspace body ---------- */
@@ -2114,6 +2087,25 @@ footer a { color: var(--accent); }
     border: 0 !important;
   }
   .studio-layout.workspace-shell .workspace-preview { order: 1; min-height: 42dvh; }
+  /* Model page owns its own fixed scene + panel stack on mobile; the generic
+     rules below would grow the panel and scroll the scene away. */
+  .studio-layout.compact.workspace-model .workspace-body,
+  .studio-layout.compact.workspace-export .workspace-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .studio-layout.compact.workspace-model .workspace-side,
+  .studio-layout.compact.workspace-export .workspace-side {
+    flex: 0 1 auto;
+    overflow: auto;
+  }
+  .studio-layout.compact.workspace-model .workspace-preview,
+  .studio-layout.compact.workspace-export .workspace-preview {
+    flex: 1 1 auto;
+    min-height: 44dvh;
+    overflow: hidden;
+  }
   .studio-layout.workspace-model .workspace-side.left { order: 2; border-top: 1px solid var(--line) !important; }
   .studio-layout.workspace-model .workspace-side.right { order: 3; border-top: 1px solid var(--line) !important; }
   .studio-layout.workspace-texture .workspace-side,

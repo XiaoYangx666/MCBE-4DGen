@@ -11,6 +11,8 @@ export interface MaterialSummary {
   alpha: number;
   doubleSided: boolean;
   transparent: boolean;
+  /** Small data-URL preview of the base color texture, when one exists. */
+  thumbnail?: string;
   /** Parts that own triangles of this material. */
   partIds: string[];
 }

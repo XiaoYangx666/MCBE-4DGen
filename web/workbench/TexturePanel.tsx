@@ -1,10 +1,7 @@
 import { useMemo } from "react";
 import { MaterialBrowser, type MaterialPixelInfo } from "../shared/MaterialBrowser";
-import { PartBrowser } from "../shared/PartBrowser";
-import { partDisplayNames } from "../shared/part-labels";
 import type {
   StudioMaterial,
-  StudioPart,
   TextureMode,
   TextureTarget,
 } from "../shared/texture-types";
@@ -21,8 +18,6 @@ export function TexturePanel({
   previewBusy,
   selected,
   setSelected,
-  excluded,
-  setExcluded,
   materialWeights,
   setMaterialWeights,
   changed,
@@ -32,11 +27,6 @@ export function TexturePanel({
   textureTarget,
   setTextureTarget,
   includedParts,
-  setIncludedParts,
-  selectedPart,
-  setSelectedPart,
-  showKeptParts,
-  setShowKeptParts,
   materialDeltas,
 }: {
   session: Session | null;
@@ -45,8 +35,6 @@ export function TexturePanel({
   previewBusy: boolean;
   selected: string;
   setSelected: (key: string) => void;
-  excluded: string[];
-  setExcluded: (update: (items: string[]) => string[]) => void;
   materialWeights: Record<string, number>;
   setMaterialWeights: (
     update: (weights: Record<string, number>) => Record<string, number>,
@@ -58,11 +46,6 @@ export function TexturePanel({
   textureTarget: TextureTarget;
   setTextureTarget: (target: TextureTarget) => void;
   includedParts: ReadonlySet<string>;
-  setIncludedParts: (update: (parts: Set<string>) => Set<string>) => void;
-  selectedPart: string | null;
-  setSelectedPart: (part: string | null) => void;
-  showKeptParts: boolean;
-  setShowKeptParts: (value: boolean) => void;
   materialDeltas: Map<string, number>;
 }) {
   const materials = session?.materials ?? [];
@@ -94,31 +77,8 @@ export function TexturePanel({
       material,
     ]),
   );
-  const materialParts = new Map<string, string[]>();
-  for (const part of parts) {
-    const list = materialParts.get(part.materialKey) ?? [];
-    list.push(part.name);
-    materialParts.set(part.materialKey, list);
-  }
-  const names = partDisplayNames(
-    parts.map((part) => ({
-      name: part.name,
-      node: part.node,
-      mesh: part.mesh,
-      material: labels.get(part.materialKey) ?? part.materialName,
-    })),
-  );
-  const studioParts: StudioPart[] = parts.map((part, index) => ({
-    id: part.id,
-    name: names[index]!,
-    group: part.mesh?.trim() || part.node?.trim() || "模型结构",
-    meta: `${part.triangles.toLocaleString("zh-CN")} 面 · ${labels.get(part.materialKey) ?? part.materialName}`,
-    materials: [labels.get(part.materialKey) ?? part.materialName],
-    materialKey: part.materialKey,
-    sharedWith: (materialParts.get(part.materialKey) ?? []).filter(
-      (name) => name !== part.name,
-    ),
-  }));
+  const atlas = result?.details?.texture?.atlas ?? null;
+  const atlasPixels = atlas ? atlas.width * atlas.height : 0;
   const studioMaterials: StudioMaterial[] = materials.map((material) => {
     const measurement = measurements.get(material.key);
     const related = parts.filter((part) => part.materialKey === material.key);
@@ -128,14 +88,16 @@ export function TexturePanel({
         ? ` · ${related.length} 部件`
         : ` · 保留 ${kept}/${related.length} 部件`
       : "";
-    const pixels = measurement?.pixels ?? null;
+    const pixels = measurement?.rectPixels ?? measurement?.pixels ?? null;
     return {
       id: material.key,
       name: labels.get(material.key) ?? (material.name || "未命名"),
       meta: `${material.triangles.toLocaleString("zh-CN")} 面${partText}${
         material.alpha < 1 ? ` · α ${material.alpha}` : ""
-      }${related.length > 0 && kept === 0 ? " · 无保留部件" : ""}`,
-      included: !excluded.includes(material.key),
+      }${related.length > 0 && kept === 0 ? " · 无保留部件" : ""}${
+        (measurement?.floorCharts ?? 0) > 0 ? " · 已到最小" : ""
+      }`,
+      thumbnail: material.thumbnail ?? null,
       weight: materialWeights[material.key] ?? 1,
       quality: materialWeights[material.key] ?? 1,
       selected: selected === material.key,
@@ -146,7 +108,7 @@ export function TexturePanel({
       ...(pixels !== null
         ? {
             status: `${pixels.toLocaleString("zh-CN")} px${
-              (measurement?.floorCharts ?? 0) > 0 ? " · 触底" : ""
+              atlasPixels > 0 ? ` · ${((pixels / atlasPixels) * 100).toFixed(1)}%` : ""
             }`,
           }
         : {}),
@@ -187,15 +149,6 @@ export function TexturePanel({
         materials={studioMaterials}
         selectedMaterial={selected || null}
         onSelectMaterial={(key) => setSelected(key ?? "")}
-        onToggleMaterial={(key) => {
-          setExcluded((items) =>
-            items.includes(key)
-              ? items.filter((item) => item !== key)
-              : [...items, key],
-          );
-          if (excluded.includes(key) && selected === key) setSelected("");
-          changed();
-        }}
         onWeight={(key, value) => {
           setMaterialWeights((weights) => ({
             ...weights,
@@ -239,35 +192,7 @@ export function TexturePanel({
               }${result.preview ? " · 预览" : ""}`
             : undefined
         }
-      />
-      <PartBrowser
-        compact
-        parts={studioParts}
-        includedParts={includedParts}
-        onTogglePart={(id) => {
-          setIncludedParts((current) => {
-            const next = new Set(current);
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
-          });
-          if (selectedPart === id) setSelectedPart(null);
-          changed();
-        }}
-        onSetParts={(ids) => {
-          setIncludedParts(() => new Set(ids));
-          if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
-          changed();
-        }}
-        selectedPart={selectedPart}
-        onSelectPart={setSelectedPart}
-        showKeptOnly={showKeptParts}
-        onShowKeptOnly={(value) => {
-          setShowKeptParts(value);
-          changed();
-        }}
-        disabled={busy}
-        title="关联部件"
+        atlas={atlas}
       />
     </div>
   );
