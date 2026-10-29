@@ -6,6 +6,7 @@ import { Viewer } from "../workbench/Viewer";
 import type { Workbench } from "../workbench/use-workbench";
 import { WorkspaceTabs } from "../shared/WorkspaceTabs";
 import { MaterialCandidates, type MaterialCandidate } from "../shared/MaterialCandidates";
+import { partDisplayNames } from "../shared/part-labels";
 import { useResizableWidth } from "../shared/use-resizable";
 import { ModelPartsPanel } from "../workbench/ModelPartsPanel";
 import { TexturePanel } from "../workbench/TexturePanel";
@@ -100,6 +101,19 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     if (!name) return null;
     // A duplicate display name would isolate every material with that name.
     return (keysByName.get(name)?.length ?? 0) === 1 ? name : null;
+  })();
+  const selectedPartName = (() => {
+    const parts = session?.parts ?? [];
+    const index = parts.findIndex((part) => part.id === selectedPart);
+    if (index < 0) return null;
+    return partDisplayNames(
+      parts.map((part) => ({
+        name: part.name,
+        node: part.node,
+        mesh: part.mesh,
+        material: part.materialName,
+      })),
+    )[index]!;
   })();
 
   useEffect(() => {
@@ -245,10 +259,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                 setSelectedPart={setSelectedPart}
                 showKeptParts={showKeptParts}
                 setShowKeptParts={setShowKeptParts}
-                excluded={excluded}
-                setExcluded={setExcluded}
-                selected={selected}
-                setSelected={setSelected}
                 busy={busy}
                 changed={changed}
               />
@@ -404,6 +414,14 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                     <br />
                     <a href="#/models">打开模型管理 →</a>
                   </p>
+                </div>
+              )}
+              {selectedPart && (
+                <div className="part-selection-note">
+                  正在只看部件「{selectedPartName ?? selectedPart}」。
+                  <button type="button" onClick={() => setSelectedPart(null)}>
+                    显示全部部件
+                  </button>
                 </div>
               )}
               {candidates && (

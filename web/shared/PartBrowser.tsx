@@ -148,14 +148,6 @@ export function PartBrowser({
               </label>
             </div>
           )}
-          {selectedPart && (
-            <p className="texture-studio-preview-note">
-              正在只显示所选部件。
-              <button type="button" onClick={() => onSelectPart(null)}>
-                显示保留结果
-              </button>
-            </p>
-          )}
           {!visible.length && <p className="workspace-empty">没有匹配的部件。</p>}
           <div className="texture-studio-part-groups">
             {groups.map(([group, list]) => {

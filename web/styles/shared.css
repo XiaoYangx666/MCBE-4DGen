@@ -1183,7 +1183,15 @@
 .part-browser { display: flex; flex-direction: column; min-height: 0; }
 .part-browser-tools { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
 .part-browser.compact .texture-studio-part-groups { min-height: 0; max-height: 190px; }
-.part-browser.compact .texture-part-meta { display: none; }
+.part-browser.compact .texture-part-row { flex-wrap: wrap; align-items: flex-start; }
+.part-browser.compact .texture-part-name { max-width: calc(100% - 40px); }
+.part-browser.compact .texture-part-meta {
+  flex: 1 0 100%;
+  padding-left: 22px;
+  white-space: normal;
+  font-size: 9.5px;
+  line-height: 1.4;
+}
 
 /* ---------- atlas zoom / pan ---------- */
 .atlas-inspector-image { touch-action: none; cursor: grab; }

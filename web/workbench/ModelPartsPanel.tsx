@@ -1,13 +1,13 @@
 import { useMemo } from "react";
-import { MaterialList } from "../shared/MaterialList";
 import { PartBrowser } from "../shared/PartBrowser";
+import { partDisplayNames } from "../shared/part-labels";
 import type { StudioPart } from "../shared/texture-types";
 import type { Session } from "./types";
 
 /**
- * Model workspace left panel: part filtering/selection/deletion plus a compact
- * material include list. Texture quality and atlas diagnostics deliberately do
- * not live here.
+ * Model workspace left panel: part filtering, selection and deletion. Material
+ * retention and quality deliberately live in the texture workspace so the two
+ * lists do not look like duplicates.
  */
 export function ModelPartsPanel({
   session,
@@ -17,10 +17,6 @@ export function ModelPartsPanel({
   setSelectedPart,
   showKeptParts,
   setShowKeptParts,
-  excluded,
-  setExcluded,
-  selected,
-  setSelected,
   busy,
   changed,
 }: {
@@ -31,14 +27,9 @@ export function ModelPartsPanel({
   setSelectedPart: (part: string | null) => void;
   showKeptParts: boolean;
   setShowKeptParts: (value: boolean) => void;
-  excluded: string[];
-  setExcluded: (update: (items: string[]) => string[]) => void;
-  selected: string;
-  setSelected: (key: string) => void;
   busy: boolean;
   changed: () => void;
 }) {
-  const materials = session?.materials ?? [];
   const parts = session?.parts ?? [];
   const studioParts = useMemo<StudioPart[]>(() => {
     const byMaterial = new Map<string, string[]>();
@@ -47,13 +38,21 @@ export function ModelPartsPanel({
       list.push(part.name);
       byMaterial.set(part.materialKey, list);
     }
-    return parts.map((part) => ({
+    const names = partDisplayNames(
+      parts.map((part) => ({
+        name: part.name,
+        node: part.node,
+        mesh: part.mesh,
+        material: part.materialName,
+      })),
+    );
+    return parts.map((part, index) => ({
       id: part.id,
-      name: part.name,
+      name: names[index]!,
       group: part.mesh?.trim() || part.node?.trim() || "模型结构",
       meta: `${part.triangles.toLocaleString("zh-CN")} 面 · ${
         part.materialName || "未命名材质"
-      }`,
+      }${part.primitive >= 0 ? ` · 图元 ${part.primitive + 1}` : ""}`,
       materials: [part.materialName || "未命名材质"],
       materialKey: part.materialKey,
       sharedWith: (byMaterial.get(part.materialKey) ?? []).filter(
@@ -61,24 +60,20 @@ export function ModelPartsPanel({
       ),
     }));
   }, [parts]);
-  const items = materials.map((material) => ({
-    id: material.key,
-    name: material.label ?? (material.name || "未命名"),
-    meta: `${material.triangles.toLocaleString("zh-CN")} 面`,
-    included: !excluded.includes(material.key),
-    weight: 1,
-    selected: material.key === selected,
-  }));
 
   if (!session) {
-    return <div className="empty-list">从模型管理打开模型后检查部件与材质</div>;
+    return <div className="empty-list">从模型管理打开模型后检查部件</div>;
   }
 
   return (
     <div className="model-parts-panel">
       <div className="section-label">
-        01 / 模型部件 <span>{parts.length || materials.length}</span>
+        01 / 模型部件 <span>{parts.length}</span>
       </div>
+      <p className="part-explainer">
+        部件是模型里的网格分组；材质决定这些部件共用哪张贴图和清晰度。
+        材质保留与清晰度调整在「纹理」工作区。
+      </p>
       <PartBrowser
         parts={studioParts}
         includedParts={includedParts}
@@ -107,33 +102,6 @@ export function ModelPartsPanel({
         disabled={busy}
         title="模型部件"
       />
-      <div className="model-material-include">
-        <div className="texture-studio-section-title static">
-          <span>参与转换的材质</span>
-          <small>
-            {materials.filter((material) => !excluded.includes(material.key)).length}/
-            {materials.length}
-          </small>
-        </div>
-        <MaterialList
-          items={items}
-          disabled={busy}
-          showWeight={false}
-          onToggle={(key) => {
-            setExcluded((current) =>
-              current.includes(key)
-                ? current.filter((item) => item !== key)
-                : [...current, key],
-            );
-            changed();
-          }}
-          onSelect={(key) => setSelected(key)}
-          onWeight={() => {}}
-        />
-        <p className="help">
-          清晰度权重、图集诊断与连续微调在「纹理」工作区。
-        </p>
-      </div>
     </div>
   );
 }
