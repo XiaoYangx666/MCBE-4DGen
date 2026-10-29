@@ -33,6 +33,7 @@ export function Viewer({
   height,
   binding,
   onSelect,
+  onSelectCandidates,
   previewUrl,
   parts,
   includedParts,
@@ -52,6 +53,8 @@ export function Viewer({
   height: number;
   binding: string;
   onSelect: (name: string) => void;
+  /** Called with several material names when a click cannot pick one. */
+  onSelectCandidates?: (names: string[]) => void;
   parts?: readonly PartSummary[];
   includedParts: ReadonlySet<string>;
   selectedPart: string | null;
@@ -62,8 +65,8 @@ export function Viewer({
   const host = useRef<HTMLDivElement>(null);
   const poseSettings = useRef({ profile, height, binding });
   poseSettings.current = { profile, height, binding };
-  const settings = useRef({ excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect, parts, includedParts, selectedPart, showKeptParts });
-  settings.current = { excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect, parts, includedParts, selectedPart, showKeptParts };
+  const settings = useRef({ excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect, onSelectCandidates, parts, includedParts, selectedPart, showKeptParts });
+  settings.current = { excluded, wire, unlit, focus, solo, mode, compareOriginal, ...poseSettings.current, onSelect, onSelectCandidates, parts, includedParts, selectedPart, showKeptParts };
   const frameRef = useRef<((part?: string) => void) | null>(null);
   const frontRef = useRef<(() => void) | null>(null);
   const invalidate = useRef<(() => void) | null>(null);
@@ -261,12 +264,30 @@ export function Viewer({
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         (-(event.clientY - rect.top) / rect.height) * 2 + 1,
       ), camera);
-      const hit = ray.intersectObject(group, true).find((intersection) => intersection.object.visible);
-      if (hit) {
-        const names = hit.object.userData.materialNames;
-        const currentMode = settings.current.mode;
-        settings.current.onSelect(currentMode !== "result" ? (names?.[0] ?? hit.object.name) : hit.object.name);
+      const hits = ray
+        .intersectObject(group, true)
+        .filter((intersection) => intersection.object.visible);
+      const hit = hits[0];
+      if (!hit) return;
+      const names: string[] = [];
+      const tolerance = Math.max(0.001, hit.distance * 0.02);
+      for (const intersection of hits) {
+        if (intersection.distance > hit.distance + tolerance) break;
+        const object = intersection.object;
+        const list = object.userData.materialNames as string[] | undefined;
+        if (!list?.length) continue;
+        const index = intersection.face?.materialIndex;
+        const name = index !== undefined ? list[index] ?? list[0] : list[0];
+        if (name && !names.includes(name)) names.push(name);
       }
+      if (!names.length) return;
+      const current = settings.current;
+      const currentMode = current.mode;
+      if (currentMode !== "result" && names.length > 1 && current.onSelectCandidates) {
+        current.onSelectCandidates(names);
+        return;
+      }
+      current.onSelect(currentMode !== "result" ? names[0]! : hit.object.name);
     };
     view.renderer.domElement.addEventListener("pointerdown", pointerDown);
     view.renderer.domElement.addEventListener("pointerup", pointerUp);

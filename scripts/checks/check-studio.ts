@@ -46,6 +46,19 @@ try {
   assert.match(convertedDownload.headers.get('Content-Disposition')??'',/filename="model\.zip"/);
   const convertedZip=await JSZip.loadAsync(await convertedDownload.arrayBuffer());
   assert.equal(JSON.parse(await convertedZip.file('manifest.json')!.async('string')).header.name,'model');
+  // Preview jobs render the atlas/geometry but must not pretend to be a final pack.
+  const previewJob=await post('/api/convert',{session:model.id,excluded:[],binding:'static',ratio:1,maxError:0.03,height:32,profile:null,preview:true});
+  let previewState:any=null;for(let i=0;i<200;i++){previewState=await(await fetch(base+'/api/job/'+previewJob.id)).json();if(previewState.status!=='running')break;await new Promise(r=>setTimeout(r,25));}
+  assert.equal(previewState.status,'done',JSON.stringify(previewState));
+  assert.equal(previewState.result.preview,true);
+  assert.equal((await fetch(base+'/api/job/'+previewJob.id+'/download')).status,409);
+  await post('/api/job/'+previewJob.id+'/finalize',{});
+  const previewFinal:any=await(await fetch(base+'/api/job/'+previewJob.id)).json();
+  assert.equal(previewFinal.result.preview,false);
+  const previewDownload=await fetch(base+'/api/job/'+previewJob.id+'/download');
+  assert.equal(previewDownload.status,200);
+  const previewZip=await JSZip.loadAsync(await previewDownload.arrayBuffer());
+  assert.ok(previewZip.file('geometry.json'));assert.ok(previewZip.file('skin0.png'));
   const settings:any=await(await fetch(base+'/api/settings')).json();assert.equal(settings.dataRoot,storage.root);
   const usage:any=await(await fetch(base+'/api/settings/storage-usage')).json();assert.equal(usage.root,storage.root);assert.ok(usage.bytes>0);assert.ok(usage.categories.skins.bytes>0);assert.ok(usage.categories.sources.bytes>0);
   const gameRoot=join(fixture,'game');await mkdir(join(gameRoot,'custom'),{recursive:true});

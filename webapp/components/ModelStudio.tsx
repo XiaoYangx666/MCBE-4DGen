@@ -141,6 +141,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewQueued = useRef(false);
   const previewRunning = useRef(false);
+  const previewFailedKey = useRef('');
   const convertRef = useRef<((preview: boolean) => Promise<void>) | null>(null);
   const keyRef = useRef('');
   const resultRef = useRef<ConvertResult | null>(null);
@@ -266,6 +267,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     preparedCache.current = null;
     previewQueued.current = false;
     previewRunning.current = false;
+    previewFailedKey.current = '';
     if (previewTimer.current) clearTimeout(previewTimer.current);
     previewTimer.current = null;
     partPreview.current?.restore();
@@ -533,14 +535,17 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       setResult(nextResult);
       resultRef.current = nextResult;
       setResultKey(runKey);
+      previewFailedKey.current = '';
       setWarnings([...new Set([...merged, ...converted.warnings])]);
       if (!previewMode) {
         setViewMode('output');
         setWorkspace('export');
       }
     } catch (cause) {
-      if (run === convertRun.current)
+      if (run === convertRun.current) {
+        if (previewMode) previewFailedKey.current = runKey;
         setError(cause instanceof Error ? cause.message : String(cause));
+      }
     } finally {
       if (run === convertRun.current) {
         setBusy(false);
@@ -566,6 +571,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   useEffect(() => {
     if (workspace !== 'texture' || !source || !model) return;
     if (!included.size || !includedParts.size || loading || busy) return;
+    if (previewFailedKey.current === key) return;
     if (result && resultKey === key) return;
     setPreviewPhase('queued');
     if (previewTimer.current) clearTimeout(previewTimer.current);
@@ -858,7 +864,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const selectedMaterialName = studioMaterialByKey.get(soloKey ?? '')?.name ?? null;
 
   return (
-    <div className={`studio-layout model-layout workspace-shell ${compact ? 'compact' : ''}`}>
+    <div className={`studio-layout model-layout workspace-shell workspace-${workspace} ${compact ? 'compact' : ''}${maximizePreview ? ' preview-max' : ''}`}>
       <input
         ref={modelInput}
         className="mobile-model-input"
@@ -910,10 +916,37 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
         </div>
       </header>
 
-      <div className="workspace-body">
-        {workspace === 'model' && (
-          <div className="model-workspace">
-            <aside className="workspace-panel model-left">
+      <div
+        className="workspace-body"
+        data-mobile-view={mobileTextureView}
+        style={{
+          '--texture-left': leftOpen ? `${leftPanel.width}px` : '0px',
+          '--texture-right': rightOpen ? `${rightPanel.width}px` : '0px',
+        } as CSSProperties}
+      >
+        {workspace === 'texture' && (
+          <div className="texture-mobile-tabs" role="tablist" aria-label="纹理工作区视图">
+            {([
+              ['materials', '材质'],
+              ['preview', '3D 模型'],
+              ['atlas', '图集'],
+            ] as const).map(([key, label]) => (
+              <button
+                type="button"
+                key={key}
+                role="tab"
+                aria-selected={mobileTextureView === key}
+                className={mobileTextureView === key ? 'active' : ''}
+                onClick={() => setMobileTextureView(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <aside className={`workspace-side left${workspace === 'texture' && !leftOpen ? ' closed' : ''}`}>
+          {workspace === 'model' && (
+            <>
               {!compact && (
                 <>
                   <DropZone
@@ -988,90 +1021,208 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
               ) : (
                 <p className="field-help">导入模型后可以在这里筛选部件和材质。</p>
               )}
-            </aside>
+            </>
+          )}
 
-            <section className={`workspace-preview${stageFullscreen ? ' fullscreen' : ''}`}>
-              <div className="workspace-toolbar">
-                <span>
-                  {model
-                    ? viewMode === 'output' && result
-                      ? '4D 输出预览'
-                      : '源模型预览'
-                    : '模型预览'}
+          {workspace === 'texture' && (
+            source ? (
+              <>
+                <MaterialBrowser
+                  materials={studioMaterials}
+                  selectedMaterial={soloKey}
+                  onSelectMaterial={selectMaterial}
+                  onToggleMaterial={(id) => {
+                    const willInclude = !included.has(id);
+                    setIncluded((previous) => {
+                      const next = new Set(previous);
+                      if (willInclude) next.add(id);
+                      else next.delete(id);
+                      return next;
+                    });
+                    if (!willInclude && soloKey === id) setSoloKey(null);
+                  }}
+                  onWeight={(id, value) => {
+                    setWeights((previous) => ({ ...previous, [id]: value }));
+                  }}
+                  onResetWeight={(id) => {
+                    setWeights((previous) => {
+                      const next = { ...previous };
+                      delete next[id];
+                      return next;
+                    });
+                  }}
+                  onResetAllWeights={() => setWeights({})}
+                  disabled={loading || busy}
+                  mode={textureMode}
+                  target={textureTarget}
+                  onMode={setTextureMode}
+                  onTarget={setTextureTarget}
+                  pixelInfo={pixelInfo}
+                  previewState={previewStatus}
+                  previewNote={previewNote}
+                />
+                <PartBrowser
+                  compact
+                  parts={studioParts}
+                  includedParts={includedParts}
+                  onTogglePart={(id) => {
+                    setIncludedParts((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    });
+                    if (selectedPart === id) setSelectedPart(null);
+                  }}
+                  onSetParts={(ids) => {
+                    setIncludedParts(new Set(ids));
+                    if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
+                  }}
+                  selectedPart={selectedPart}
+                  onSelectPart={setSelectedPart}
+                  showKeptOnly={showKeptParts}
+                  onShowKeptOnly={setShowKeptParts}
+                  disabled={loading || busy}
+                  title="关联部件"
+                />
+              </>
+            ) : (
+              <p className="field-help">导入模型后可以在这里搜索材质并调整清晰度。</p>
+            )
+          )}
+        </aside>
+
+        <div
+          className={`workspace-splitter left${workspace === 'texture' && leftOpen && !maximizePreview ? '' : ' hidden'}`}
+          aria-hidden="true"
+          {...leftPanel.handleProps}
+        />
+
+        <section className="workspace-preview">
+          <div className="workspace-toolbar">
+            <span>
+              {viewMode === 'output' && result
+                ? '4D 输出预览'
+                : model
+                  ? '源模型预览'
+                  : '模型预览'}
+            </span>
+            <span className="grow" />
+            {model && (
+              <button
+                type="button"
+                className={viewMode === 'source' ? 'active' : ''}
+                onClick={() => setViewMode('source')}
+              >
+                源模型
+              </button>
+            )}
+            {result && (
+              <button
+                type="button"
+                className={viewMode === 'output' ? 'active' : ''}
+                onClick={() => setViewMode('output')}
+              >
+                4D 输出
+              </button>
+            )}
+            {workspace === 'texture' && (
+              <>
+                <span className={`preview-status ${previewStatus}`} role="status">
+                  {previewStatus === 'running'
+                    ? '正在计算实际分配…'
+                    : previewStatus === 'queued'
+                      ? '预览排队中…'
+                      : previewStatus === 'stale'
+                        ? '显示的是上一次结果'
+                        : result
+                          ? '预览与当前配置一致'
+                          : '等待首次预览'}
                 </span>
-                <span className="grow" />
-                {model && (
-                  <button
-                    type="button"
-                    className={viewMode === 'source' ? 'active' : ''}
-                    onClick={() => setViewMode('source')}
-                  >
-                    源模型
+                {soloKey && (
+                  <button type="button" onClick={() => selectMaterial(null)}>
+                    显示全部材质
                   </button>
                 )}
-                {result && (
-                  <button
-                    type="button"
-                    className={viewMode === 'output' ? 'active' : ''}
-                    onClick={() => setViewMode('output')}
-                  >
-                    4D 输出
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setStageFullscreen((value) => !value)}
-                >
-                  {stageFullscreen ? '退出全屏' : '全屏预览'}
+                {selectedMaterialName && <span className="selected-material">已选：{selectedMaterialName}</span>}
+                <button type="button" onClick={() => setLeftOpen((value) => !value)}>
+                  {leftOpen ? '收起材质' : '展开材质'}
                 </button>
-              </div>
-              <div className="model-stage">
-                {viewObject ? (
-                  <Viewport
-                    object={viewObject}
-                    grid={viewMode === 'output'}
-                    facing={viewMode === 'source' ? 'source' : 'output'}
-                    showFrontCheck={false}
-                    {...(viewMode === 'source' ? { onPick: handlePick } : {})}
-                  />
-                ) : (
-                  <div className="empty-state compact">
-                    {loading ? (
-                      <>
-                        <span className="spinner" />
-                        <h2>{progress?.label || '正在解析模型…'}</h2>
-                        <p>{progress?.detail ? `${progress.detail}，` : ''}大模型需要十几秒，请保持页面打开。</p>
-                      </>
-                    ) : (
-                      <>
-                        <Icon name="cube" size={42} />
-                        <h2>还没有导入模型</h2>
-                        <p>拖入模型或 ZIP，或从「获取模型」页进入站点目录。</p>
-                        <button type="button" className="button-link" onClick={() => modelInput.current?.click()}>
-                          选择模型文件
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-                {(busy || loading) && viewObject && (
-                  <div className="busy-overlay">
+                <button type="button" onClick={() => setRightOpen((value) => !value)}>
+                  {rightOpen ? '收起图集' : '展开图集'}
+                </button>
+                <button type="button" onClick={() => setMaximizePreview((value) => !value)}>
+                  {maximizePreview ? '还原布局' : '最大化预览'}
+                </button>
+              </>
+            )}
+            {workspace !== 'texture' && (
+              <button type="button" onClick={() => setStageFullscreen((value) => !value)}>
+                {stageFullscreen ? '退出全屏' : '全屏预览'}
+              </button>
+            )}
+          </div>
+          <div className={`model-stage${stageFullscreen ? ' fullscreen' : ''}`}>
+            {viewObject ? (
+              <Viewport
+                object={viewObject}
+                grid={viewMode === 'output'}
+                facing={viewMode === 'source' ? 'source' : 'output'}
+                showFrontCheck={false}
+                {...(viewMode === 'source' ? { onPick: handlePick } : {})}
+              />
+            ) : (
+              <div className="empty-state compact">
+                {loading ? (
+                  <>
                     <span className="spinner" />
-                    <b>{progress?.label || (busy ? '正在转换…' : '正在读取文件…')}</b>
-                    <small>{progress?.detail ? `${progress.detail}，` : ''}大模型需要十几秒，请保持页面打开。</small>
-                  </div>
-                )}
-                {candidates && (
-                  <MaterialCandidates
-                    candidates={candidates}
-                    onPick={(id) => selectMaterial(id)}
-                    onClose={() => setCandidates(null)}
-                  />
+                    <h2>{progress?.label || '正在解析模型…'}</h2>
+                    <p>{progress?.detail ? `${progress.detail}，` : ''}大模型需要十几秒，请保持页面打开。</p>
+                  </>
+                ) : (
+                  <>
+                    <Icon name="cube" size={42} />
+                    <h2>还没有导入模型</h2>
+                    <p>拖入模型或 ZIP，或从「获取模型」页进入站点目录。</p>
+                    <button type="button" className="button-link" onClick={() => modelInput.current?.click()}>
+                      选择模型文件
+                    </button>
+                  </>
                 )}
               </div>
-            </section>
+            )}
+            {workspace === 'texture' && soloKey && (
+              <div className="texture-selection-note">
+                正在只看所选材质。
+                <button type="button" onClick={() => selectMaterial(null)}>显示全部材质</button>
+              </div>
+            )}
+            {candidates && (
+              <MaterialCandidates
+                candidates={candidates}
+                onPick={(id) => selectMaterial(id)}
+                onClose={() => setCandidates(null)}
+              />
+            )}
+            {(busy || loading) && viewObject && (
+              <div className="busy-overlay">
+                <span className="spinner" />
+                <b>{progress?.label || (busy ? '正在转换…' : '正在读取文件…')}</b>
+                <small>{progress?.detail ? `${progress.detail}，` : ''}大模型需要十几秒，请保持页面打开。</small>
+              </div>
+            )}
+          </div>
+        </section>
 
-            <aside className="workspace-panel model-right">
+        <div
+          className={`workspace-splitter right${workspace === 'texture' && rightOpen && !maximizePreview ? '' : ' hidden'}`}
+          aria-hidden="true"
+          {...rightPanel.handleProps}
+        />
+
+        <aside className={`workspace-side right${workspace === 'texture' && !rightOpen ? ' closed' : ''}`}>
+          {workspace === 'model' && (
+            <>
               <div className="panel-heading">
                 <div className="template-icon"><Icon name="cube" size={26} /></div>
                 <h2>转换设置</h2>
@@ -1226,268 +1377,34 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                 </button>
                 <p className="field-help">转换参数与纹理微调分开；纹理工作区会持续更新预览。</p>
               </div>
-            </aside>
-          </div>
-        )}
+            </>
+          )}
 
-        {workspace === 'texture' && (
-          <div
-            className={`texture-workspace${maximizePreview ? ' preview-max' : ''}`}
-            data-mobile-view={mobileTextureView}
-            style={{
-              '--texture-left': leftOpen ? `${leftPanel.width}px` : '0px',
-              '--texture-right': rightOpen ? `${rightPanel.width}px` : '0px',
-            } as CSSProperties}
-          >
-            <aside className="texture-side left">
-              {source ? (
-                <>
-                  <MaterialBrowser
-                    materials={studioMaterials}
-                    selectedMaterial={soloKey}
-                    onSelectMaterial={selectMaterial}
-                    onToggleMaterial={(id) => {
-                      const willInclude = !included.has(id);
-                      setIncluded((previous) => {
-                        const next = new Set(previous);
-                        if (willInclude) next.add(id);
-                        else next.delete(id);
-                        return next;
-                      });
-                      if (!willInclude && soloKey === id) setSoloKey(null);
-                    }}
-                    onWeight={(id, value) => {
-                      setWeights((previous) => ({ ...previous, [id]: value }));
-                    }}
-                    onResetWeight={(id) => {
-                      setWeights((previous) => {
-                        const next = { ...previous };
-                        delete next[id];
-                        return next;
-                      });
-                    }}
-                    onResetAllWeights={() => setWeights({})}
-                    disabled={loading || busy}
-                    mode={textureMode}
-                    target={textureTarget}
-                    onMode={setTextureMode}
-                    onTarget={setTextureTarget}
-                    pixelInfo={pixelInfo}
-                    previewState={previewStatus}
-                    previewNote={previewNote}
-                  />
-                  <PartBrowser
-                    compact
-                    parts={studioParts}
-                    includedParts={includedParts}
-                    onTogglePart={(id) => {
-                      setIncludedParts((previous) => {
-                        const next = new Set(previous);
-                        if (next.has(id)) next.delete(id);
-                        else next.add(id);
-                        return next;
-                      });
-                      if (selectedPart === id) setSelectedPart(null);
-                    }}
-                    onSetParts={(ids) => {
-                      setIncludedParts(new Set(ids));
-                      if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
-                    }}
-                    selectedPart={selectedPart}
-                    onSelectPart={setSelectedPart}
-                    showKeptOnly={showKeptParts}
-                    onShowKeptOnly={setShowKeptParts}
-                    disabled={loading || busy}
-                    title="关联部件"
-                  />
-                </>
-              ) : (
-                <p className="field-help">导入模型后可以在这里搜索材质并调整清晰度。</p>
-              )}
-            </aside>
-            {leftOpen && !maximizePreview && (
-              <div className="workspace-splitter" aria-hidden="true" {...leftPanel.handleProps} />
-            )}
-
-            <section className="texture-center">
-              <div className="workspace-toolbar">
-                <div className="texture-mobile-tabs" role="tablist" aria-label="纹理工作区视图">
-                  {([
-                    ['materials', '材质'],
-                    ['preview', '3D 模型'],
-                    ['atlas', '图集'],
-                  ] as const).map(([key, label]) => (
-                    <button
-                      type="button"
-                      key={key}
-                      role="tab"
-                      aria-selected={mobileTextureView === key}
-                      className={mobileTextureView === key ? 'active' : ''}
-                      onClick={() => setMobileTextureView(key)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className={viewMode === 'source' ? 'active' : ''}
-                  onClick={() => setViewMode('source')}
-                >
-                  源模型
-                </button>
-                <button
-                  type="button"
-                  className={viewMode === 'output' ? 'active' : ''}
-                  disabled={!result}
-                  onClick={() => setViewMode('output')}
-                >
-                  最新图集
-                </button>
-                <span className={`preview-status ${previewStatus}`} role="status">
-                  {previewStatus === 'running'
-                    ? '正在计算实际分配…'
-                    : previewStatus === 'queued'
-                      ? '预览排队中…'
-                      : previewStatus === 'stale'
-                        ? '显示的是上一次结果'
-                        : result
-                          ? '预览与当前配置一致'
-                          : '等待首次预览'}
-                </span>
-                <span className="grow" />
-                {selectedMaterialName && <span className="selected-material">已选：{selectedMaterialName}</span>}
-                <button type="button" onClick={() => setLeftOpen((value) => !value)}>
-                  {leftOpen ? '收起材质' : '展开材质'}
-                </button>
-                <button type="button" onClick={() => setRightOpen((value) => !value)}>
-                  {rightOpen ? '收起图集' : '展开图集'}
-                </button>
-                <button type="button" onClick={() => setMaximizePreview((value) => !value)}>
-                  {maximizePreview ? '还原布局' : '最大化预览'}
-                </button>
+          {workspace === 'texture' && (
+            result ? (
+              <AtlasInspector
+                src={result.textureUrl}
+                size={result.textureReport.size}
+                regions={atlasRegionsUi}
+                materials={atlasMaterials}
+                summary={result.textureReport}
+                selected={soloKey}
+                onSelect={selectMaterial}
+                onSelectCandidates={(ids) => setCandidates(candidateItems(ids))}
+                variant="panel"
+                {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
+              />
+            ) : (
+              <div className="workspace-empty">
+                {previewStatus === 'running' || previewStatus === 'queued'
+                  ? '正在生成第一张图集预览…'
+                  : '图集会在纹理工作区自动生成；也可以先在模型工作区转换。'}
               </div>
-              <div className="model-stage">
-                {viewObject ? (
-                  <Viewport
-                    object={viewObject}
-                    grid={viewMode === 'output'}
-                    facing={viewMode === 'source' ? 'source' : 'output'}
-                    showFrontCheck={false}
-                    {...(viewMode === 'source' ? { onPick: handlePick } : {})}
-                  />
-                ) : (
-                  <div className="empty-state compact">
-                    <Icon name="cube" size={42} />
-                    <h2>还没有可预览的模型</h2>
-                    <p>先在模型工作区导入模型。</p>
-                  </div>
-                )}
-                {soloKey && (
-                  <div className="texture-selection-note">
-                    正在只看所选材质。
-                    <button type="button" onClick={() => selectMaterial(null)}>显示全部材质</button>
-                  </div>
-                )}
-                {candidates && (
-                  <MaterialCandidates
-                    candidates={candidates}
-                    onPick={(id) => selectMaterial(id)}
-                    onClose={() => setCandidates(null)}
-                  />
-                )}
-                {(busy || loading) && viewObject && (
-                  <div className="busy-overlay">
-                    <span className="spinner" />
-                    <b>{progress?.label || '正在处理…'}</b>
-                    <small>{progress?.detail ?? ''}</small>
-                  </div>
-                )}
-              </div>
-            </section>
+            )
+          )}
 
-            {rightOpen && !maximizePreview && (
-              <div className="workspace-splitter" aria-hidden="true" {...rightPanel.handleProps} />
-            )}
-            <aside className="texture-side right">
-              {result ? (
-                <AtlasInspector
-                  src={result.textureUrl}
-                  size={result.textureReport.size}
-                  regions={atlasRegionsUi}
-                  materials={atlasMaterials}
-                  summary={result.textureReport}
-                  selected={soloKey}
-                  onSelect={selectMaterial}
-                  onSelectCandidates={(ids) => setCandidates(candidateItems(ids))}
-                  variant="panel"
-                  {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
-                />
-              ) : (
-                <div className="workspace-empty">
-                  {previewStatus === 'running' || previewStatus === 'queued'
-                    ? '正在生成第一张图集预览…'
-                    : '图集会在纹理工作区自动生成；也可以先在模型工作区转换。'}
-                </div>
-              )}
-            </aside>
-          </div>
-        )}
-
-        {workspace === 'export' && (
-          <div className="export-workspace">
-            <section className={`workspace-preview${stageFullscreen ? ' fullscreen' : ''}`}>
-              <div className="workspace-toolbar">
-                <span>{result ? '结果预览' : '模型预览'}</span>
-                <span className="grow" />
-                {model && (
-                  <button
-                    type="button"
-                    className={viewMode === 'source' ? 'active' : ''}
-                    onClick={() => setViewMode('source')}
-                  >
-                    源模型
-                  </button>
-                )}
-                {result && (
-                  <button
-                    type="button"
-                    className={viewMode === 'output' ? 'active' : ''}
-                    onClick={() => setViewMode('output')}
-                  >
-                    4D 输出
-                  </button>
-                )}
-                <button type="button" onClick={() => setStageFullscreen((value) => !value)}>
-                  {stageFullscreen ? '退出全屏' : '全屏预览'}
-                </button>
-              </div>
-              <div className="model-stage">
-                {viewObject ? (
-                  <Viewport
-                    object={viewObject}
-                    grid={viewMode === 'output'}
-                    facing={viewMode === 'source' ? 'source' : 'output'}
-                    showFrontCheck={false}
-                  />
-                ) : (
-                  <div className="empty-state compact">
-                    <Icon name="cube" size={42} />
-                    <h2>还没有生成结果</h2>
-                    <p>在模型工作区完成转换后，这里会显示最终结果。</p>
-                  </div>
-                )}
-                {(busy || loading) && viewObject && (
-                  <div className="busy-overlay">
-                    <span className="spinner" />
-                    <b>{progress?.label || '正在处理…'}</b>
-                    <small>{progress?.detail ?? ''}</small>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <aside className="export-side">
+          {workspace === 'export' && (
+            <div className="export-side-inner">
               <div className="export-status-card">
                 <h2>结果与导出</h2>
                 <p>
@@ -1599,9 +1516,9 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                   />
                 </details>
               )}
-            </aside>
-          </div>
-        )}
+            </div>
+          )}
+        </aside>
       </div>
 
       {(busy || loading || previewStatus === 'running' || previewStatus === 'queued' || error) && (

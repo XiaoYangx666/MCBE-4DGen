@@ -36,6 +36,8 @@ export interface PackMeta {
   excluded?: string[];
   profile?: HumanoidProfile | null;
   note?: string;
+  /** True for atlas-only preview jobs; never installed as a pack. */
+  preview?: boolean;
 }
 
 /** One immutable library revision plus the UI-facing summary. */
