@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { MaterialBrowser, type MaterialPixelInfo } from "../shared/MaterialBrowser";
 import { PartBrowser } from "../shared/PartBrowser";
+import { partDisplayNames } from "../shared/part-labels";
 import type {
   StudioMaterial,
   StudioPart,
@@ -99,9 +100,17 @@ export function TexturePanel({
     list.push(part.name);
     materialParts.set(part.materialKey, list);
   }
-  const studioParts: StudioPart[] = parts.map((part) => ({
+  const names = partDisplayNames(
+    parts.map((part) => ({
+      name: part.name,
+      node: part.node,
+      mesh: part.mesh,
+      material: labels.get(part.materialKey) ?? part.materialName,
+    })),
+  );
+  const studioParts: StudioPart[] = parts.map((part, index) => ({
     id: part.id,
-    name: part.name,
+    name: names[index]!,
     group: part.mesh?.trim() || part.node?.trim() || "模型结构",
     meta: `${part.triangles.toLocaleString("zh-CN")} 面 · ${labels.get(part.materialKey) ?? part.materialName}`,
     materials: [labels.get(part.materialKey) ?? part.materialName],

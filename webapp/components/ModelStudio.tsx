@@ -48,8 +48,8 @@ import { formatBytes } from '../../web/shared/format';
 import { useCompactViewport } from '../lib/use-compact-viewport';
 import { PoseControls } from '../../web/shared/PoseControls';
 import { MaterialBrowser, type MaterialPixelInfo } from '../../web/shared/MaterialBrowser';
-import { MaterialList } from '../../web/shared/MaterialList';
 import { PartBrowser } from '../../web/shared/PartBrowser';
+import { partDisplayNames } from '../../web/shared/part-labels';
 import { AtlasInspector } from '../../web/shared/AtlasInspector';
 import { MaterialCandidates, type MaterialCandidate } from '../../web/shared/MaterialCandidates';
 import { WorkspaceTabs, STUDIO_WORKSPACES, type StudioWorkspace } from '../../web/shared/WorkspaceTabs';
@@ -652,11 +652,18 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       list.push({ id: part.id, name: part.name });
       byMaterial.set(part.materialKey, list);
     }
-    return parts.map((part) => {
+    const names = partDisplayNames(
+      parts.map((part) => ({
+        name: part.name,
+        mesh: part.mesh,
+        material: materialLabels.get(part.materialKey) ?? part.materialName,
+      })),
+    );
+    return parts.map((part, index) => {
       const label = materialLabels.get(part.materialKey) ?? part.materialName;
       return {
         id: part.id,
-        name: part.name,
+        name: names[index]!,
         group: part.mesh?.trim() || '模型结构',
         meta: `${part.triangles.toLocaleString('zh-CN')} 面 · ${label}`,
         materials: [label],
@@ -821,19 +828,6 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     };
   };
 
-  const modelMaterialItems = studioMaterials.map((material) => ({
-    id: material.id,
-    name: material.name,
-    meta: material.meta,
-    thumbnail: material.thumbnail ?? null,
-    ...(material.color ? { color: material.color } : {}),
-    included: material.included,
-    weight: material.weight,
-    selected: material.id === soloKey,
-    ...(material.status ? { status: material.status } : {}),
-    ...(material.limited ? { limited: true } : {}),
-  }));
-
   const tabs = [
     {
       ...STUDIO_WORKSPACES[0]!,
@@ -862,6 +856,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     : undefined;
 
   const selectedMaterialName = studioMaterialByKey.get(soloKey ?? '')?.name ?? null;
+  const selectedPartName = studioParts.find((part) => part.id === selectedPart)?.name ?? null;
 
   return (
     <div className={`studio-layout model-layout workspace-shell workspace-${workspace} ${compact ? 'compact' : ''}${maximizePreview ? ' preview-max' : ''}`}>
@@ -991,35 +986,13 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                     disabled={loading || busy}
                     title="模型部件"
                   />
-                  <div className="model-material-include">
-                    <div className="texture-studio-section-title static">
-                      <span>参与转换的材质</span>
-                      <small>{included.size}/{studioMaterials.length}</small>
-                    </div>
-                    <MaterialList
-                      items={modelMaterialItems}
-                      disabled={loading || busy}
-                      showWeight={false}
-                      onToggle={(id) => {
-                        const willInclude = !included.has(id);
-                        setIncluded((previous) => {
-                          const next = new Set(previous);
-                          if (willInclude) next.add(id);
-                          else next.delete(id);
-                          return next;
-                        });
-                        if (!willInclude && soloKey === id) setSoloKey(null);
-                      }}
-                      onSelect={selectMaterial}
-                      onWeight={() => {}}
-                    />
-                    <p className="field-help">
-                      清晰度权重与图集诊断在「纹理」工作区；这里只控制材质是否参与转换。
-                    </p>
-                  </div>
+                  <p className="part-explainer">
+                    部件是模型里的网格分组；材质决定这些部件共用哪张贴图和清晰度。
+                    材质保留与清晰度调整在「纹理」工作区。
+                  </p>
                 </>
               ) : (
-                <p className="field-help">导入模型后可以在这里筛选部件和材质。</p>
+                <p className="field-help">导入模型后可以在这里筛选部件。</p>
               )}
             </>
           )}
@@ -1195,6 +1168,12 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
               <div className="texture-selection-note">
                 正在只看所选材质。
                 <button type="button" onClick={() => selectMaterial(null)}>显示全部材质</button>
+              </div>
+            )}
+            {selectedPart && (
+              <div className="part-selection-note">
+                正在只看部件「{selectedPartName ?? selectedPart}」。
+                <button type="button" onClick={() => setSelectedPart(null)}>显示全部部件</button>
               </div>
             )}
             {candidates && (
