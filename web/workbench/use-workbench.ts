@@ -149,7 +149,10 @@ export function useWorkbench() {
       return;
     }
     if (!previewMode && (busy || previewRunning.current)) {
-      if (previewRunning.current) finalQueued.current = true;
+      if (previewRunning.current) {
+        finalQueued.current = true;
+        setMessage("预览完成后开始生成最终皮肤包…");
+      }
       return;
     }
     const token = ++run.current;

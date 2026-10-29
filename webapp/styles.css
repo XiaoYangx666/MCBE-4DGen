@@ -2056,6 +2056,11 @@ footer a { color: var(--accent); }
 .workspace-side.right .panel-scroll { flex: 1 1 auto; }
 .workspace-side.right .settings-footer { flex: 0 0 auto; }
 .workspace-splitter.hidden { display: none; }
+.studio-layout.workspace-shell .workspace-side.left { grid-column: 1; }
+.studio-layout.workspace-shell .workspace-splitter.left { grid-column: 2; }
+.studio-layout.workspace-shell .workspace-preview { grid-column: 3; }
+.studio-layout.workspace-shell .workspace-splitter.right { grid-column: 4; }
+.studio-layout.workspace-shell .workspace-side.right { grid-column: 5; }
 .studio-layout.preview-max .workspace-body { grid-template-columns: minmax(0, 1fr); }
 .studio-layout.preview-max .workspace-side,
 .studio-layout.preview-max .workspace-splitter { display: none; }
