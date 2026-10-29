@@ -22,7 +22,7 @@ npm run desktop            # Electron 开发模式
 npm run desktop:package    # 打包 Windows 便携版到 release/
 ```
 
-桌面版打包、目录结构和验证说明见 [桌面版使用与打包](desktop.md)。
+桌面版打包、目录结构和验证说明见 [桌面版使用与打包](desktop.md)。在受限会话（`%APPDATA%` 不可写、Chromium 沙箱无法初始化）中启动开发版需要额外设置两个环境变量，见 [受限会话下的开发启动](desktop.md#受限会话下的开发启动)。
 
 ### Windows 安装包
 
