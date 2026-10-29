@@ -223,6 +223,11 @@
 .workbench-export .workspace-side.right { border-left: 1px solid var(--line); }
 .workspace-splitter.hidden { display: none; }
 .workspace-side.closed { display: none; }
+.workbench-shell .workspace-side.left { grid-column: 1; }
+.workbench-shell .workspace-splitter.left { grid-column: 2; }
+.workbench-shell .workspace-preview { grid-column: 3; }
+.workbench-shell .workspace-splitter.right { grid-column: 4; }
+.workbench-shell .workspace-side.right { grid-column: 5; }
 .workbench-shell.preview-max .workspace-body { grid-template-columns: 0 0 minmax(0, 1fr) 0 0 !important; }
 .workbench-shell.preview-max .workspace-side,
 .workbench-shell.preview-max .workspace-splitter { display: none; }
