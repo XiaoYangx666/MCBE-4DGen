@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import {
   createPreviewViewport,
   type PreviewViewport,
@@ -28,6 +28,8 @@ interface ViewportProps {
   facing?: 'source' | 'output';
   /** The compact workbench drops the front check to keep controls minimal. */
   showFrontCheck?: boolean;
+  /** Called with every material under the pointer on a click (not a drag). */
+  onPick?: (materials: THREE.Material[]) => void;
 }
 
 export function Viewport({
@@ -37,6 +39,7 @@ export function Viewport({
   autoRotate = false,
   facing = 'output',
   showFrontCheck = true,
+  onPick,
 }: ViewportProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<PreviewViewport | null>(null);
@@ -44,8 +47,10 @@ export function Viewport({
   const [lit, setLit] = useState(initialLighting);
   const objectRef = useRef(object);
   const litRef = useRef(lit);
+  const onPickRef = useRef(onPick);
   objectRef.current = object;
   litRef.current = lit;
+  onPickRef.current = onPick;
 
   useEffect(() => {
     const element = host.current;
@@ -84,7 +89,51 @@ export function Viewport({
     }
     view.current = created;
     created.setObject(objectRef.current);
+
+    const canvas = created.renderer.domElement;
+    const ray = new THREE.Raycaster();
+    let down: [number, number] | null = null;
+    const pointerDown = (event: PointerEvent) => {
+      down = [event.clientX, event.clientY];
+    };
+    const pointerUp = (event: PointerEvent) => {
+      const pick = onPickRef.current;
+      if (!pick || !down) return;
+      const moved = Math.hypot(event.clientX - down[0], event.clientY - down[1]);
+      down = null;
+      if (moved > 4) return;
+      const rect = canvas.getBoundingClientRect();
+      ray.setFromCamera(
+        new THREE.Vector2(
+          ((event.clientX - rect.left) / rect.width) * 2 - 1,
+          (-(event.clientY - rect.top) / rect.height) * 2 + 1,
+        ),
+        created.camera,
+      );
+      const hits = ray
+        .intersectObject(created.content, true)
+        .filter((hit) => hit.object.visible && (hit.object as THREE.Mesh).isMesh);
+      if (!hits.length) return;
+      const first = hits[0]!;
+      const tolerance = Math.max(0.001, first.distance * 0.02);
+      const materials: THREE.Material[] = [];
+      for (const hit of hits) {
+        if (hit.distance > first.distance + tolerance) break;
+        const mesh = hit.object as THREE.Mesh;
+        const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        const index = hit.face?.materialIndex;
+        const material =
+          index !== undefined && list[index] ? list[index] : list[0];
+        if (material && !materials.includes(material)) materials.push(material);
+      }
+      if (materials.length) pick(materials);
+    };
+    canvas.addEventListener('pointerdown', pointerDown);
+    canvas.addEventListener('pointerup', pointerUp);
+
     return () => {
+      canvas.removeEventListener('pointerdown', pointerDown);
+      canvas.removeEventListener('pointerup', pointerUp);
       view.current = null;
       created.dispose();
     };

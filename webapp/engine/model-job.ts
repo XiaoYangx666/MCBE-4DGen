@@ -228,6 +228,10 @@ export interface ConvertExtractedOptions {
   textureMode?: 'legacy' | 'budget';
   textureTarget?: 'density' | 'retention';
   atlasSharing?: boolean;
+  /** Stop before assembling the skin-pack ZIP. */
+  preview?: boolean;
+  /** Humanoid rig from the extraction, required for humanoid binding. */
+  rig?: ExtractedModel['rig'] | null;
   onProgress?: ProgressHandler;
 }
 
@@ -239,11 +243,33 @@ export interface ConvertExtractedResult {
   excludedMaterialKeys: string[];
 }
 
-/** Filter, reduce, weight and atlas an already extracted model. */
-export async function convertExtractedModel(
+export interface PrepareConvertedOptions {
+  included: ReadonlySet<string>;
+  /** Part ids to keep; omitted means every part of the included materials. */
+  includedParts?: ReadonlySet<string>;
+  ratio: number;
+  maxError: number;
+  onProgress?: ProgressHandler;
+}
+
+export interface PreparedConvertedBatches {
+  batches: SourceBatch[];
+  sourceTriangles: number;
+  keptMaterialKeys: ReadonlySet<string>;
+  excludedMaterials: string[];
+  excludedMaterialKeys: string[];
+  warnings: string[];
+}
+
+/**
+ * Filter and reduce an extracted model without touching texture allocation.
+ * Hosts can cache this by geometry-affecting settings so changing only material
+ * quality does not re-run the reducer.
+ */
+export async function prepareConvertedBatches(
   extracted: ExtractedModel,
-  options: ConvertExtractedOptions,
-): Promise<ConvertExtractedResult> {
+  options: PrepareConvertedOptions,
+): Promise<PreparedConvertedBatches> {
   const report = reporter(options.onProgress);
   let batches = extracted.batches.filter((batch) => options.included.has(batch.key));
   if (options.includedParts) {
@@ -274,17 +300,38 @@ export async function convertExtractedModel(
     reductionWarnings = reduced.warnings;
   }
 
-  // Legacy allocation reads demand from `area`; the budget planner receives the
-  // relative multipliers directly and must not apply them twice.
-  if (options.textureMode !== 'budget')
-    batches = batches.map((batch) => {
-      const weight = options.weights[batch.key] ?? 1;
-      return weight === 1
-        ? batch
-        : { ...batch, area: batch.area * Math.max(0, weight) };
-    });
+  const excludedBatches = extracted.batches.filter(
+    (batch) => !options.included.has(batch.key) || !keptMaterialKeys.has(batch.key),
+  );
+  return {
+    batches,
+    sourceTriangles,
+    keptMaterialKeys,
+    excludedMaterials: excludedBatches.map((batch) => batch.name),
+    excludedMaterialKeys: excludedBatches.map((batch) => batch.key),
+    warnings: reductionWarnings,
+  };
+}
 
-  const humanoid = options.binding === 'humanoid' ? extracted.rig : null;
+/** Render the atlas and geometry for already filtered/reduced batches. */
+export async function renderConvertedBatches(
+  prepared: PreparedConvertedBatches,
+  options: ConvertExtractedOptions,
+): Promise<ConvertExtractedResult> {
+  // Legacy allocation reads demand from `area`; the budget planner receives the
+  // relative multipliers directly and must not apply them twice. Weight changes
+  // must not mutate the cached prepared batches.
+  const batches =
+    options.textureMode !== 'budget'
+      ? prepared.batches.map((batch) => {
+          const weight = options.weights[batch.key] ?? 1;
+          return weight === 1
+            ? batch
+            : { ...batch, area: batch.area * Math.max(0, weight) };
+        })
+      : prepared.batches;
+
+  const humanoid = options.binding === 'humanoid' ? options.rig ?? null : null;
   if (options.binding === 'humanoid' && !humanoid)
     throw new Error('没有识别到完整的六部位人形骨骼，无法按人形绑定导出');
   const converted = await convertBatches(batches, {
@@ -292,24 +339,38 @@ export async function convertExtractedModel(
     height: options.height,
     doubleSided: options.doubleSided,
     ...(humanoid ? { rig: humanoid } : {}),
-    sourceTriangles,
+    sourceTriangles: prepared.sourceTriangles,
     ...(options.textureMode ? { textureMode: options.textureMode } : {}),
     ...(options.textureTarget ? { textureTarget: options.textureTarget } : {}),
     ...(options.weights ? { materialWeights: options.weights } : {}),
     ...(options.atlasSharing ? { atlasSharing: true } : {}),
+    ...(options.preview ? { preview: true } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });
-  const excludedBatches = extracted.batches.filter(
-    (batch) => !options.included.has(batch.key) || !keptMaterialKeys.has(batch.key),
-  );
-  const excludedMaterials = excludedBatches.map((batch) => batch.name);
-  const excludedMaterialKeys = excludedBatches.map((batch) => batch.key);
   return {
     result: converted,
-    warnings: [...reductionWarnings, ...converted.report.warnings],
-    excludedMaterials,
-    excludedMaterialKeys,
+    warnings: [...prepared.warnings, ...converted.report.warnings],
+    excludedMaterials: prepared.excludedMaterials,
+    excludedMaterialKeys: prepared.excludedMaterialKeys,
   };
+}
+
+/** Filter, reduce, weight and atlas an already extracted model. */
+export async function convertExtractedModel(
+  extracted: ExtractedModel,
+  options: ConvertExtractedOptions,
+): Promise<ConvertExtractedResult> {
+  const prepared = await prepareConvertedBatches(extracted, {
+    included: options.included,
+    ...(options.includedParts ? { includedParts: options.includedParts } : {}),
+    ratio: options.ratio,
+    maxError: options.maxError,
+    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
+  });
+  return renderConvertedBatches(prepared, {
+    ...options,
+    rig: options.binding === 'humanoid' ? extracted.rig : null,
+  });
 }
 
 /** Final face multiplier for the current double-sided policy. */

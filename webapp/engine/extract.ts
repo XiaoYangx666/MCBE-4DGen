@@ -334,7 +334,7 @@ export function extractModel(
  * appear several times; the occurrence suffix keeps each sampler distinct.
  * Runtime `uuid`s are only used inside one extraction.
  */
-function stableMaterialKeyMap(root: THREE.Object3D): Map<string, string> {
+export function stableMaterialKeyMap(root: THREE.Object3D): Map<string, string> {
   const keys = new Map<string, string>();
   const seen = new Map<string, number>();
   root.traverse((object) => {
