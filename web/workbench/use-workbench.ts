@@ -5,10 +5,7 @@ import { estimateTriangles } from "./estimate";
 import type { Result, Session } from "./types";
 import type { TextureMode, TextureTarget } from "../shared/texture-types";
 import type { StudioWorkspace } from "../shared/WorkspaceTabs";
-import {
-  fromServerTextureTarget,
-  toServerTextureTarget,
-} from "../shared/texture-target";
+import { toServerTextureTarget } from "../shared/texture-target";
 
 export type Workbench = ReturnType<typeof useWorkbench>;
 
@@ -25,10 +22,9 @@ export function useWorkbench() {
   const [mode, setMode] = useState("pose");
   const [excluded, setExcluded] = useState<string[]>([]);
   const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
-  const [textureMode, setTextureMode] = useState<TextureMode>("legacy");
-  const [textureTarget, setTextureTarget] = useState<TextureTarget>("retention");
+  const [textureMode, setTextureMode] = useState<TextureMode>("budget");
+  const [textureTarget, setTextureTarget] = useState<TextureTarget>("density");
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
-  const [showKeptParts, setShowKeptParts] = useState(true);
   const [materialDeltas, setMaterialDeltas] = useState<Map<string, number>>(new Map());
   const [materialWeights, setMaterialWeights] = useState<
     Record<string, number>
@@ -91,18 +87,26 @@ export function useWorkbench() {
         : { rotationYDegrees: 0, shoulderOutset: 0, armSpreadDegrees: 0 });
     setSession(next);
     setResult(null);
-    setExcluded(saved?.excluded ?? []);
+    // Material-level exclusion was removed: geometry is now decided by parts
+    // only. Convert saved exclusions into dropped parts so old projects keep
+    // their intent instead of silently applying a hidden filter.
+    const legacyExcluded = new Set(saved?.excluded ?? []);
+    setExcluded([]);
     const availableParts = (next.parts ?? []).map((part) => part.id);
     const savedParts = saved?.includedParts
       ? saved.includedParts.filter((id) => availableParts.includes(id))
       : [];
-    setIncludedParts(
-      new Set(savedParts.length ? savedParts : availableParts),
-    );
-    setTextureMode(saved?.textureMode ?? "legacy");
-    setTextureTarget(fromServerTextureTarget(saved?.textureTarget));
+    const included = new Set(savedParts.length ? savedParts : availableParts);
+    if (legacyExcluded.size) {
+      for (const part of next.parts ?? []) {
+        if (legacyExcluded.has(part.materialKey)) included.delete(part.id);
+      }
+    }
+    setIncludedParts(included);
+    // Allocation is density-only now: legacy/retention saves are migrated.
+    setTextureMode("budget");
+    setTextureTarget("density");
     setSelectedPart(null);
-    setShowKeptParts(true);
     setMaterialDeltas(new Map());
     setMaterialWeights(saved?.materialWeights ?? {});
     setRatio(saved?.ratio ?? 0.2);
@@ -373,8 +377,6 @@ export function useWorkbench() {
     setTextureTarget,
     selectedPart,
     setSelectedPart,
-    showKeptParts,
-    setShowKeptParts,
     materialDeltas,
     materialWeights,
     setMaterialWeights,

@@ -6,7 +6,6 @@ export interface MaterialListItem {
   meta: string;
   thumbnail?: string | null;
   color?: string;
-  included: boolean;
   weight: number;
   soloed?: boolean;
   selected?: boolean;
@@ -19,7 +18,6 @@ export interface MaterialListItem {
 export interface MaterialListProps {
   items: MaterialListItem[];
   disabled?: boolean;
-  onToggle: (id: string) => void;
   onSelect?: (id: string) => void;
   onSolo?: (id: string) => void;
   onWeight: (id: string, value: number) => void;
@@ -71,6 +69,7 @@ function WeightInput({
       title={title ?? "相对像素权重，默认 1；0 表示最低像素预算，材质仍会保留"}
       disabled={disabled}
       value={draft}
+      onClick={(event) => event.stopPropagation()}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
@@ -92,7 +91,6 @@ function WeightInput({
 export function MaterialList({
   items,
   disabled = false,
-  onToggle,
   onSelect,
   onSolo,
   onWeight,
@@ -108,16 +106,11 @@ export function MaterialList({
             'shared-material-item',
             item.selected ? 'selected' : '',
             item.soloed ? 'solo' : '',
+            onSelect ? 'selectable' : '',
           ].filter(Boolean).join(' ')}
           key={item.id}
+          onClick={onSelect && !disabled ? () => onSelect(item.id) : undefined}
         >
-          <input
-            type="checkbox"
-            checked={item.included}
-            disabled={disabled}
-            aria-label={`保留 ${item.name}`}
-            onChange={() => onToggle(item.id)}
-          />
           {item.thumbnail ? (
             <img className="shared-material-thumb" src={item.thumbnail} alt="" />
           ) : (
@@ -131,7 +124,10 @@ export function MaterialList({
             className="shared-material-name"
             disabled={disabled || !onSelect}
             title={onSelect ? `${item.name} · 点击选择` : item.name}
-            onClick={() => onSelect?.(item.id)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect?.(item.id);
+            }}
           >
             {item.name}
           </button>
@@ -145,7 +141,7 @@ export function MaterialList({
             <WeightInput
               value={item.weight}
               label={weightLabel ? `${item.name} ${weightLabel}` : item.name}
-              disabled={disabled || !item.included}
+              disabled={disabled}
               onCommit={(value) => onWeight(item.id, value)}
               {...(weightTitle ? { title: weightTitle } : {})}
             />

@@ -123,11 +123,10 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const compact = useCompactViewport();
   const [previewRoot, setPreviewRoot] = useState<THREE.Group | null>(null);
   const [weights, setWeights] = useState<Record<string, number>>({});
-  const [textureMode, setTextureMode] = useState<TextureMode>('legacy');
-  const [textureTarget, setTextureTarget] = useState<TextureTarget>('retention');
+  const [textureMode, setTextureMode] = useState<TextureMode>('budget');
+  const [textureTarget, setTextureTarget] = useState<TextureTarget>('density');
   const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
-  const [showKeptParts, setShowKeptParts] = useState(true);
   /** Pixel difference versus the previous conversion of the same model. */
   const [materialDeltas, setMaterialDeltas] = useState<Map<string, number>>(new Map());
   const [soloKey, setSoloKey] = useState<string | null>(null);
@@ -180,6 +179,16 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     if (!compact) setStageFullscreen(false);
   }, [compact]);
   useEffect(() => () => setStageFullscreen(false), []);
+  // The floating stage button is the only fullscreen control on mobile; the
+  // Escape key has to leave the same way it entered.
+  useEffect(() => {
+    if (!stageFullscreen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setStageFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [stageFullscreen]);
 
   useEffect(() => () => {
     modelRef.current?.dispose();
@@ -221,8 +230,8 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   useEffect(() => {
     const preview = partPreview.current;
     if (!preview) return;
-    preview.apply(showKeptParts ? includedParts : null, selectedPart);
-  }, [previewRoot, includedParts, selectedPart, showKeptParts]);
+    preview.apply(includedParts, selectedPart);
+  }, [previewRoot, includedParts, selectedPart]);
 
   useEffect(() => () => {
     partPreview.current?.restore();
@@ -251,11 +260,10 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     setRigAvailable(false);
     setBinding('static');
     setWeights({});
-    setTextureMode('legacy');
-    setTextureTarget('retention');
+    setTextureMode('budget');
+    setTextureTarget('density');
     setIncludedParts(new Set());
     setSelectedPart(null);
-    setShowKeptParts(true);
     setMaterialDeltas(new Map());
     setSoloKey(null);
     setCandidates(null);
@@ -463,7 +471,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
             applyMaterialVisibility(root, soloKey, included, originalVisibility.current);
             root.updateMatrixWorld(true);
           }
-          partPreview.current?.apply(showKeptParts ? includedParts : null, selectedPart);
+          partPreview.current?.apply(includedParts, selectedPart);
         }
         sourcePose.current = poseKey;
         preparedCache.current = null;
@@ -665,15 +673,18 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
         id: part.id,
         name: names[index]!,
         group: part.mesh?.trim() || '模型结构',
-        meta: `${part.triangles.toLocaleString('zh-CN')} 面 · ${label}`,
+        meta: `${part.triangles.toLocaleString('zh-CN')} 面${
+          names[index] === label ? '' : ` · ${label}`
+        }`,
         materials: [label],
+        thumbnail: materialThumbs.get(part.materialKey) ?? null,
         materialKey: part.materialKey,
         sharedWith: (byMaterial.get(part.materialKey) ?? [])
           .filter((entry) => entry.id !== part.id)
           .map((entry) => entry.name),
       };
     });
-  }, [source, materialLabels]);
+  }, [source, materialLabels, materialThumbs]);
   const studioMaterials = useMemo<StudioMaterial[]>(() => {
     if (!source) return [];
     const measured = new Map(
@@ -698,7 +709,6 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
         }${related.length > 0 && kept === 0 ? ' · 无保留部件' : ''}`,
         thumbnail: materialThumbs.get(batch.key) ?? null,
         color: `rgb(${batch.color.map((value) => Math.round(value * 255)).join(' ')})`,
-        included: included.has(batch.key),
         weight: weights[batch.key] ?? 1,
         quality: weights[batch.key] ?? 1,
         selected: soloKey === batch.key,
@@ -884,16 +894,18 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
               : '导入模型后开始编辑；切换工作区不会丢失配置。'}
           </small>
         </div>
-        <WorkspaceTabs
-          value={workspace}
-          tabs={tabs}
-          onChange={(next) => {
-            setWorkspace(next);
-            setCandidates(null);
-            if (next === 'export' && result) setViewMode('output');
-            if (next === 'model') setViewMode('source');
-          }}
-        />
+        {compact ? null : (
+          <WorkspaceTabs
+            value={workspace}
+            tabs={tabs}
+            onChange={(next) => {
+              setWorkspace(next);
+              setCandidates(null);
+              if (next === 'export' && result) setViewMode('output');
+              if (next === 'model') setViewMode('source');
+            }}
+          />
+        )}
         <div className="workspace-global">
           {stale && <span className="workspace-stale">结果已过期</span>}
           {previewStatus === 'running' && <span className="workspace-working">正在更新预览…</span>}
@@ -910,6 +922,21 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
           )}
         </div>
       </header>
+
+      {compact && (
+        <div className="workspace-tabs-panel" role="group" aria-label="编辑工作区">
+          <WorkspaceTabs
+            value={workspace}
+            tabs={tabs}
+            onChange={(next) => {
+              setWorkspace(next);
+              setCandidates(null);
+              if (next === 'export' && result) setViewMode('output');
+              if (next === 'model') setViewMode('source');
+            }}
+          />
+        </div>
+      )}
 
       <div
         className="workspace-body"
@@ -942,25 +969,21 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
         <aside className={`workspace-side left${workspace === 'texture' && !leftOpen ? ' closed' : ''}`}>
           {workspace === 'model' && (
             <>
-              {!compact && (
-                <>
-                  <DropZone
-                    accept={MODEL_ACCEPT}
-                    multiple
-                    compact={!!model}
-                    title={model ? '重新选择模型' : '拖入模型或 ZIP，或点击选择'}
-                    hint={model ? `${model.name} · ${formatBytes(totalBytes)}` : 'GLB / glTF / VRM / PMX / FBX / OBJ / DAE / STL / PLY，或含贴图的 ZIP'}
-                    icon="cube"
-                    onFiles={(next) => void choose(next)}
-                    disabled={loading || busy}
-                  />
-                  <div className="model-source-entry">
-                    <button type="button" className="button-link" onClick={() => gotoSources()}>
-                      获取模型 <Icon name="arrow" size={13} />
-                    </button>
-                  </div>
-                </>
-              )}
+              <DropZone
+                accept={MODEL_ACCEPT}
+                multiple
+                compact={!!model}
+                title={model ? '重新选择模型' : '拖入模型或 ZIP，或点击选择'}
+                hint={model ? `${model.name} · ${formatBytes(totalBytes)}` : 'GLB / glTF / VRM / PMX / FBX / OBJ / DAE / STL / PLY，或含贴图的 ZIP'}
+                icon="cube"
+                onFiles={(next) => void choose(next)}
+                disabled={loading || busy}
+              />
+              <div className="model-source-entry">
+                <button type="button" className="button-link" onClick={() => gotoSources()}>
+                  获取模型 <Icon name="arrow" size={13} />
+                </button>
+              </div>
               {source ? (
                 <>
                   <PartBrowser
@@ -981,15 +1004,8 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                     }}
                     selectedPart={selectedPart}
                     onSelectPart={setSelectedPart}
-                    showKeptOnly={showKeptParts}
-                    onShowKeptOnly={setShowKeptParts}
                     disabled={loading || busy}
-                    title="模型部件"
                   />
-                  <p className="part-explainer">
-                    部件是模型里的网格分组；材质决定这些部件共用哪张贴图和清晰度。
-                    材质保留与清晰度调整在「纹理」工作区。
-                  </p>
                 </>
               ) : (
                 <p className="field-help">导入模型后可以在这里筛选部件。</p>
@@ -1004,16 +1020,6 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                   materials={studioMaterials}
                   selectedMaterial={soloKey}
                   onSelectMaterial={selectMaterial}
-                  onToggleMaterial={(id) => {
-                    const willInclude = !included.has(id);
-                    setIncluded((previous) => {
-                      const next = new Set(previous);
-                      if (willInclude) next.add(id);
-                      else next.delete(id);
-                      return next;
-                    });
-                    if (!willInclude && soloKey === id) setSoloKey(null);
-                  }}
                   onWeight={(id, value) => {
                     setWeights((previous) => ({ ...previous, [id]: value }));
                   }}
@@ -1033,30 +1039,6 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                   pixelInfo={pixelInfo}
                   previewState={previewStatus}
                   previewNote={previewNote}
-                />
-                <PartBrowser
-                  compact
-                  parts={studioParts}
-                  includedParts={includedParts}
-                  onTogglePart={(id) => {
-                    setIncludedParts((previous) => {
-                      const next = new Set(previous);
-                      if (next.has(id)) next.delete(id);
-                      else next.add(id);
-                      return next;
-                    });
-                    if (selectedPart === id) setSelectedPart(null);
-                  }}
-                  onSetParts={(ids) => {
-                    setIncludedParts(new Set(ids));
-                    if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
-                  }}
-                  selectedPart={selectedPart}
-                  onSelectPart={setSelectedPart}
-                  showKeptOnly={showKeptParts}
-                  onShowKeptOnly={setShowKeptParts}
-                  disabled={loading || busy}
-                  title="关联部件"
                 />
               </>
             ) : (
@@ -1135,13 +1117,60 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
               </button>
             )}
           </div>
+          {compact && (
+            <div className="stage-floating-controls" role="group" aria-label="模型预览浮层控制">
+              <div className="stage-side-buttons">
+                <button
+                  type="button"
+                  className="stage-menu-button"
+                  aria-label="打开菜单"
+                  onClick={() => onOpenMenu?.()}
+                >
+                  <Icon name="menu" size={16} />
+                </button>
+              </div>
+              <div className="stage-topbar">
+                <button
+                  type="button"
+                  className="stage-icon-button"
+                  aria-pressed={stageFullscreen}
+                  title={stageFullscreen ? '退出全屏' : '全屏预览'}
+                  onClick={() => setStageFullscreen((value) => !value)}
+                >
+                  <Icon name={stageFullscreen ? 'shrink' : 'expand'} size={16} />
+                </button>
+              </div>
+              <div className="stage-viewswitch" role="tablist" aria-label="预览对象">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={viewMode === 'source'}
+                  className={viewMode === 'source' ? 'active' : ''}
+                  onClick={() => setViewMode('source')}
+                >
+                  原模型
+                </button>
+                {result && (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={viewMode === 'output'}
+                    className={viewMode === 'output' ? 'active' : ''}
+                    onClick={() => setViewMode('output')}
+                  >
+                    4D 输出
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <div className={`model-stage${stageFullscreen ? ' fullscreen' : ''}`}>
             {viewObject ? (
               <Viewport
                 object={viewObject}
                 grid={viewMode === 'output'}
                 facing={viewMode === 'source' ? 'source' : 'output'}
-                showFrontCheck={false}
+                showFrontCheck
                 {...(viewMode === 'source' ? { onPick: handlePick } : {})}
               />
             ) : (
@@ -1386,6 +1415,24 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
             <div className="export-side-inner">
               <div className="export-status-card">
                 <h2>结果与导出</h2>
+                {result && (
+                  <div className="export-actions export-actions-top">
+                    {result && !result.preview && !stale && (
+                      <DownloadButtons files={result.files} name={name.trim()} compact disabled={busy} />
+                    )}
+                    {result && !stale && (
+                      <button
+                        type="button"
+                        className="button-link"
+                        disabled={packBusy || busy}
+                        onClick={() => void addToPack()}
+                      >
+                        <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
+                        {packBusy ? '正在加入…' : '加入皮肤包'}
+                      </button>
+                    )}
+                  </div>
+                )}
                 <p>
                   {model
                     ? `当前配置：${height}px 高 · ${binding === 'humanoid' ? '六部位人形' : '静态整体'} · ${
@@ -1433,20 +1480,6 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                           ? '生成最终皮肤包'
                           : '重新生成'}
                   </button>
-                  {result && !result.preview && !stale && (
-                    <DownloadButtons files={result.files} name={name.trim()} compact disabled={busy} />
-                  )}
-                  {result && !stale && (
-                    <button
-                      type="button"
-                      className="button-link"
-                      disabled={packBusy || busy}
-                      onClick={() => void addToPack()}
-                    >
-                      <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
-                      {packBusy ? '正在加入…' : '加入皮肤包'}
-                    </button>
-                  )}
                 </div>
                 {result && result.preview && !stale && (
                   <p className="field-help">下载按钮在打包完成后出现；当前预览不会冒充最终皮肤包。</p>
@@ -1462,14 +1495,22 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
 
               <div className="export-report">
                 {result ? (
-                  <ConversionReport
-                    result={result}
-                    warnings={warnings}
-                    stale={stale}
-                    selectedMaterial={soloKey}
-                    materialLabels={materialLabels}
-                    onSelectMaterial={(materialKey) => selectMaterial(materialKey)}
-                  />
+                  <>
+                    {compact && result.textureUrl && (
+                      <figure className="result-png-preview">
+                        <img src={result.textureUrl} alt="输出贴图预览" />
+                        <figcaption>输出贴图</figcaption>
+                      </figure>
+                    )}
+                    <ConversionReport
+                      result={result}
+                      warnings={warnings}
+                      stale={stale}
+                      selectedMaterial={soloKey}
+                      materialLabels={materialLabels}
+                      onSelectMaterial={(materialKey) => selectMaterial(materialKey)}
+                    />
+                  </>
                 ) : (
                   <>
                     <WarningList warnings={warnings} />

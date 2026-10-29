@@ -15,8 +15,6 @@ export function ModelPartsPanel({
   setIncludedParts,
   selectedPart,
   setSelectedPart,
-  showKeptParts,
-  setShowKeptParts,
   busy,
   changed,
 }: {
@@ -25,8 +23,6 @@ export function ModelPartsPanel({
   setIncludedParts: (update: (parts: Set<string>) => Set<string>) => void;
   selectedPart: string | null;
   setSelectedPart: (part: string | null) => void;
-  showKeptParts: boolean;
-  setShowKeptParts: (value: boolean) => void;
   busy: boolean;
   changed: () => void;
 }) {
@@ -38,6 +34,9 @@ export function ModelPartsPanel({
       list.push(part.name);
       byMaterial.set(part.materialKey, list);
     }
+    const thumbs = new Map(
+      (session?.materials ?? []).map((material) => [material.key, material.thumbnail ?? null]),
+    );
     const names = partDisplayNames(
       parts.map((part) => ({
         name: part.name,
@@ -50,16 +49,18 @@ export function ModelPartsPanel({
       id: part.id,
       name: names[index]!,
       group: part.mesh?.trim() || part.node?.trim() || "模型结构",
-      meta: `${part.triangles.toLocaleString("zh-CN")} 面 · ${
-        part.materialName || "未命名材质"
-      }${part.primitive >= 0 ? ` · 图元 ${part.primitive + 1}` : ""}`,
-      materials: [part.materialName || "未命名材质"],
+      meta: `${part.triangles.toLocaleString("zh-CN")} 面${
+        names[index] === (part.materialName || "未命名材质")
+          ? ""
+          : ` · ${part.materialName || "未命名材质"}`
+      }`,      materials: [part.materialName || "未命名材质"],
+      thumbnail: thumbs.get(part.materialKey) ?? null,
       materialKey: part.materialKey,
       sharedWith: (byMaterial.get(part.materialKey) ?? []).filter(
         (name) => name !== part.name,
       ),
     }));
-  }, [parts]);
+  }, [parts, session?.materials]);
 
   if (!session) {
     return <div className="empty-list">从模型管理打开模型后检查部件</div>;
@@ -70,10 +71,6 @@ export function ModelPartsPanel({
       <div className="section-label">
         01 / 模型部件 <span>{parts.length}</span>
       </div>
-      <p className="part-explainer">
-        部件是模型里的网格分组；材质决定这些部件共用哪张贴图和清晰度。
-        材质保留与清晰度调整在「纹理」工作区。
-      </p>
       <PartBrowser
         parts={studioParts}
         includedParts={includedParts}
@@ -94,13 +91,7 @@ export function ModelPartsPanel({
         }}
         selectedPart={selectedPart}
         onSelectPart={setSelectedPart}
-        showKeptOnly={showKeptParts}
-        onShowKeptOnly={(value) => {
-          setShowKeptParts(value);
-          changed();
-        }}
         disabled={busy}
-        title="模型部件"
       />
     </div>
   );

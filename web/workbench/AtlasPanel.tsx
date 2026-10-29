@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { AtlasInspector } from "../shared/AtlasInspector";
+import type { AtlasInspectorMaterial } from "../shared/AtlasInspector";
 import type { Result, Session } from "./types";
 
 /**
@@ -47,21 +48,14 @@ export function AtlasPanel({
       })),
     [texture],
   );
-  const materials = useMemo(
+  const materials = useMemo<AtlasInspectorMaterial[]>(
     () =>
       (texture?.materials ?? []).map((measurement) => {
         const key = measurement.key ?? measurement.name;
         return {
           id: key,
           name: materialByKey.get(key)?.label ?? measurement.name,
-          allocated: regions
-            .filter((region) =>
-              region.materialKeys?.length
-                ? region.materialKeys.includes(key)
-                : region.materials?.includes(measurement.name) ||
-                  region.material === measurement.name,
-            )
-            .reduce((sum, region) => sum + region.contentPixels, 0),
+          allocated: measurement.rectPixels ?? measurement.pixels,
           used: measurement.pixels,
           uv: measurement.uvPixels ?? null,
           shared: measurement.sharedPixels ?? null,
@@ -72,7 +66,7 @@ export function AtlasPanel({
           mode:
             texture?.allocation === "texel-density" ||
             texture?.allocation === "texel-retention"
-              ? texture.allocation
+              ? "budget"
               : "legacy",
         };
       }),

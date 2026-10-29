@@ -328,6 +328,8 @@ export function LibraryPage({
                           }
                           height={32}
                           binding="static"
+                          includedParts={new Set()}
+                          selectedPart={null}
                           onSelect={() => {}}
                         />
                       ) : (
