@@ -34,6 +34,12 @@ export interface ConvertOptions {
   atlasSharing?: boolean;
   /** Charge retention demand for sampled UV area. */
   coverageAware?: boolean;
+  /**
+   * Preview mode still plans/renders the atlas and exports geometry, but skips
+   * assembling the final skin-pack ZIP. The result can be finalised later
+   * without recomputing the texture.
+   */
+  preview?: boolean;
 }
 
 export interface AtlasRegion {
@@ -144,6 +150,10 @@ export interface ConvertResult {
   excludedMaterials?: string[];
   /** Stable keys matching `excludedMaterials`. */
   excludedMaterialKeys?: string[];
+  /** True when this result stopped before assembling the skin-pack ZIP. */
+  preview?: boolean;
+  /** Weights used to produce this result, for honest preview estimates. */
+  materialWeights?: Record<string, number>;
 }
 
 export async function convertBatches(
@@ -383,12 +393,14 @@ export async function convertBatches(
   });
   report('打包皮肤包…', `${geometryReport.triangles.toLocaleString('zh-CN')} 面`);
   await nextFrame();
-  const files = buildSkinPack({
-    geometry: file,
-    png,
-    identifier: 'geometry.skin0',
-    packName: options.name.trim(),
-  });
+  const files = options.preview
+    ? {}
+    : buildSkinPack({
+        geometry: file,
+        png,
+        identifier: 'geometry.skin0',
+        packName: options.name.trim(),
+      });
   return {
     files,
     geometry: file,
@@ -401,6 +413,29 @@ export async function convertBatches(
     triangles: geometryReport.triangles,
     binding,
     ...(geometryReport.parts ? { parts: geometryReport.parts } : {}),
+    ...(options.preview ? { preview: true } : {}),
+  };
+}
+
+/**
+ * Build the final skin-pack files from a completed preview. This is deliberately
+ * cheap: it reuses the exact geometry and PNG that the preview showed, so the
+ * download can never drift from the visible result.
+ */
+export function finalizeConvertResult(
+  result: ConvertResult,
+  name: string,
+): ConvertResult {
+  if (!result.preview && Object.keys(result.files).length) return result;
+  return {
+    ...result,
+    files: buildSkinPack({
+      geometry: result.geometry,
+      png: result.png,
+      identifier: 'geometry.skin0',
+      packName: name.trim(),
+    }),
+    preview: false,
   };
 }
 

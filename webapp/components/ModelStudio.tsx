@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import * as THREE from 'three';
 import { DropZone } from './DropZone';
 import { DownloadButtons, WarningList } from './Common';
@@ -9,33 +10,35 @@ import { SKIN_NAME_MAX_LENGTH } from '../../src/skin-pack-files.ts';
 import { applyArmPose, armRigFromHumanoid, type ArmRig } from '../engine/pose';
 import type { HumanoidRig } from '../engine/humanoid';
 import type { BindingMode, ConvertResult } from '../engine/convert';
+import { finalizeConvertResult } from '../engine/convert';
 import {
   applyMaterialVisibility,
   collectMaterialVisibility,
   restoreMaterialVisibility,
 } from '../lib/material-visibility';
-import { extractModel, type ExtractedModel } from '../engine/extract';
+import { extractModel, stableMaterialKeyMap, type ExtractedModel } from '../engine/extract';
 import type { DoubleSidedPolicy } from '../engine/bedrock';
 import { nextFrame } from '../engine/frame';
 import { preparePreviewMaterials } from '../engine/preview-materials';
 import type { TaskProgress } from '../engine/progress';
 import {
-  convertExtractedModel,
   loadModelJob,
   materialLabels as buildMaterialLabels,
   modelResultKey,
   ModelJobCancelled,
+  prepareConvertedBatches,
   prepareModelInput,
+  renderConvertedBatches,
   sourceTriangleCount,
+  type PreparedConvertedBatches,
   type PreparedModelInput,
 } from '../engine/model-job';
 import {
   defaultModelCandidate,
   type ModelFormat,
 } from '../../src/model-candidates.ts';
-import { Dialog } from '../../web/shared/Dialog';
-import { AtlasInspector } from '../../web/shared/AtlasInspector';
 import { ModelCandidateList } from '../../web/shared/ModelCandidateList';
+import { Dialog } from '../../web/shared/Dialog';
 import { buildGeometryPreview } from '../lib/output-preview';
 import { useSkinPack } from '../lib/pack-context';
 import type { TextureSource } from '../engine/types';
@@ -44,13 +47,19 @@ import { ConversionReport } from './ConversionReport';
 import { formatBytes } from '../../web/shared/format';
 import { useCompactViewport } from '../lib/use-compact-viewport';
 import { PoseControls } from '../../web/shared/PoseControls';
-import {
-  TextureStudio,
-  type StudioMaterial,
-  type StudioPart,
-  type TextureMode,
-  type TextureTarget,
-} from '../../web/shared/TextureStudio';
+import { MaterialBrowser, type MaterialPixelInfo } from '../../web/shared/MaterialBrowser';
+import { MaterialList } from '../../web/shared/MaterialList';
+import { PartBrowser } from '../../web/shared/PartBrowser';
+import { AtlasInspector } from '../../web/shared/AtlasInspector';
+import { MaterialCandidates, type MaterialCandidate } from '../../web/shared/MaterialCandidates';
+import { WorkspaceTabs, STUDIO_WORKSPACES, type StudioWorkspace } from '../../web/shared/WorkspaceTabs';
+import { useResizableWidth } from '../../web/shared/use-resizable';
+import type {
+  StudioMaterial,
+  StudioPart,
+  TextureMode,
+  TextureTarget,
+} from '../../web/shared/texture-types';
 import { createPartPreview } from '../lib/part-visibility';
 import { extractedParts } from '../engine/parts';
 
@@ -99,7 +108,16 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const [rigAvailable, setRigAvailable] = useState(false);
   const [source, setSource] = useState<ExtractedModel | null>(null);
   const [included, setIncluded] = useState<Set<string>>(new Set());
-  const [mobileTab, setMobileTab] = useState<'basic' | 'pose' | 'material' | 'result'>('basic');
+  /** One editing session, three task-specific workspaces. */
+  const [workspace, setWorkspace] = useState<StudioWorkspace>('model');
+  const [mobileTextureView, setMobileTextureView] = useState<'materials' | 'preview' | 'atlas'>('materials');
+  const [previewPhase, setPreviewPhase] = useState<'idle' | 'queued' | 'running'>('idle');
+  const [candidates, setCandidates] = useState<MaterialCandidate[] | null>(null);
+  const [maximizePreview, setMaximizePreview] = useState(false);
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
+  const leftPanel = useResizableWidth(300, 240, 440, 'left');
+  const rightPanel = useResizableWidth(360, 280, 520, 'right');
   /** CSS fullscreen for the 3D stage: keeps the floating buttons visible. */
   const [stageFullscreen, setStageFullscreen] = useState(false);
   const compact = useCompactViewport();
@@ -112,7 +130,6 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const [showKeptParts, setShowKeptParts] = useState(true);
   /** Pixel difference versus the previous conversion of the same model. */
   const [materialDeltas, setMaterialDeltas] = useState<Map<string, number>>(new Map());
-  const [atlasOpen, setAtlasOpen] = useState(false);
   const [soloKey, setSoloKey] = useState<string | null>(null);
   const sourcePose = useRef('0|0');
   const armRig = useRef<ArmRig | null>(null);
@@ -120,6 +137,13 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const previewRootRef = useRef<THREE.Group | null>(null);
   const partPreview = useRef<ReturnType<typeof createPartPreview> | null>(null);
   const convertRun = useRef(0);
+  const preparedCache = useRef<{ key: string; prepared: PreparedConvertedBatches } | null>(null);
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewQueued = useRef(false);
+  const previewRunning = useRef(false);
+  const convertRef = useRef<((preview: boolean) => Promise<void>) | null>(null);
+  const keyRef = useRef('');
+  const resultRef = useRef<ConvertResult | null>(null);
   const originalVisibility = useRef(new Map<THREE.Material, boolean>());
   const [result, setResult] = useState<ConvertResult | null>(null);
   const [resultKey, setResultKey] = useState('');
@@ -232,9 +256,20 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
     setSelectedPart(null);
     setShowKeptParts(true);
     setMaterialDeltas(new Map());
+    setSoloKey(null);
+    setCandidates(null);
+    setWorkspace('model');
+    setPreviewPhase('idle');
+    setMaximizePreview(false);
+    setLeftOpen(true);
+    setRightOpen(true);
+    preparedCache.current = null;
+    previewQueued.current = false;
+    previewRunning.current = false;
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    previewTimer.current = null;
     partPreview.current?.restore();
     partPreview.current = null;
-    setSoloKey(null);
     originalVisibility.current = new Map();
     armRig.current = null;
     humanoidRig.current = null;
@@ -356,14 +391,43 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       modelTriangles: model?.stats.triangles ?? 0,
     }),
   ].join('|'), [binding, name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, includedParts, weights, textureMode, textureTarget, model?.stats.triangles]);
+  keyRef.current = key;
+  resultRef.current = result;
 
-  const convert = async () => {
-    if (!model || busy) return;
+  /** Geometry-affecting settings; changing only weights keeps this stable. */
+  const geometryKey = useMemo(() => JSON.stringify({
+    binding,
+    height,
+    doubleSided,
+    ratio,
+    maxError,
+    rotationY,
+    armSpread,
+    included: [...included].sort(),
+    includedParts: [...includedParts].sort(),
+    triangles: model?.stats.triangles ?? 0,
+  }), [binding, height, doubleSided, ratio, maxError, rotationY, armSpread, included, includedParts, model?.stats.triangles]);
+
+  const runConversion = async (previewMode: boolean) => {
+    if (!model) return;
+    if (loading) return;
+    if (previewMode && busy) {
+      previewQueued.current = true;
+      setPreviewPhase('queued');
+      return;
+    }
+    if (!previewMode && busy) return;
     const run = ++convertRun.current;
-    const before = result;
-    setBusy(true);
+    const runKey = keyRef.current;
+    const before = resultRef.current;
+    if (previewMode) {
+      previewRunning.current = true;
+      setPreviewPhase('running');
+    } else {
+      setBusy(true);
+    }
     setError(null);
-    setProgress({ label: '提取网格…' });
+    setProgress({ label: previewMode ? '更新纹理预览…' : '提取网格…' });
     const startedAt = performance.now();
     try {
       await nextFrame();
@@ -400,6 +464,7 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
           partPreview.current?.apply(showKeptParts ? includedParts : null, selectedPart);
         }
         sourcePose.current = poseKey;
+        preparedCache.current = null;
         setSource(extracted);
         // New extraction keeps the same stable part ids; never let a stale
         // selection from another model survive.
@@ -410,11 +475,26 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
           return kept.size ? kept : ids;
         });
       }
+      if (run !== convertRun.current) return;
       const merged = [...new Set([...model.warnings, ...extracted.warnings])];
       if (armSpread !== 0) merged.push(`已按 ${armSpread}° 调整手臂，并烘焙到静态网格。`);
       setWarnings(merged);
 
-      const converted = await convertExtractedModel(extracted, {
+      let prepared = preparedCache.current?.key === geometryKey
+        ? preparedCache.current.prepared
+        : null;
+      if (!prepared) {
+        prepared = await prepareConvertedBatches(extracted, {
+          included,
+          includedParts,
+          ratio,
+          maxError,
+          onProgress: setProgress,
+        });
+        if (run !== convertRun.current) return;
+        preparedCache.current = { key: geometryKey, prepared };
+      }
+      const converted = await renderConvertedBatches(prepared, {
         name: name.trim(),
         height,
         doubleSided,
@@ -427,6 +507,8 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
         textureMode,
         textureTarget,
         atlasSharing: textureMode === 'budget',
+        preview: previewMode,
+        rig: extracted.rig,
         onProgress: setProgress,
       });
       if (run !== convertRun.current) return;
@@ -441,16 +523,21 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
         if (previous.has(material.key))
           nextDeltas.set(material.key, material.pixels - previous.get(material.key)!);
       setMaterialDeltas(nextDeltas);
-      setResult({
+      const nextResult: ConvertResult = {
         ...converted.result,
         elapsedMs: performance.now() - startedAt,
         excludedMaterials: converted.excludedMaterials,
         excludedMaterialKeys: converted.excludedMaterialKeys,
-      });
-      setResultKey(key);
+        materialWeights: { ...weights },
+      };
+      setResult(nextResult);
+      resultRef.current = nextResult;
+      setResultKey(runKey);
       setWarnings([...new Set([...merged, ...converted.warnings])]);
-      setViewMode('output');
-      if (compact) setMobileTab('result');
+      if (!previewMode) {
+        setViewMode('output');
+        setWorkspace('export');
+      }
     } catch (cause) {
       if (run === convertRun.current)
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -458,11 +545,60 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       if (run === convertRun.current) {
         setBusy(false);
         setProgress(null);
+        setPreviewPhase('idle');
+      }
+      previewRunning.current = false;
+      if (previewMode && previewQueued.current) {
+        previewQueued.current = false;
+        if (run === convertRun.current)
+          window.setTimeout(() => void convertRef.current?.(true), 0);
       }
     }
   };
+  convertRef.current = runConversion;
 
   const stale = !!result && resultKey !== key;
+  const previewStatus: 'idle' | 'queued' | 'running' | 'stale' =
+    previewPhase !== 'idle' ? previewPhase : stale ? 'stale' : 'idle';
+
+  // Continuous texture tuning: debounce, latest-wins. A running preview never
+  // blocks the sliders; changes queue one follow-up run with the newest state.
+  useEffect(() => {
+    if (workspace !== 'texture' || !source || !model) return;
+    if (!included.size || !includedParts.size || loading || busy) return;
+    if (result && resultKey === key) return;
+    setPreviewPhase('queued');
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    previewTimer.current = setTimeout(() => {
+      previewTimer.current = null;
+      if (previewRunning.current) {
+        previewQueued.current = true;
+        return;
+      }
+      void convertRef.current?.(true);
+    }, 550);
+    return () => {
+      if (previewTimer.current) {
+        clearTimeout(previewTimer.current);
+        previewTimer.current = null;
+      }
+    };
+  }, [workspace, key, source, model, included.size, includedParts.size, loading, busy, result, resultKey]);
+
+  /** Build the final pack from the exact preview, or recompute when stale. */
+  const exportFinal = async () => {
+    if (!model) return;
+    if (result?.preview && resultKey === key) {
+      const final = finalizeConvertResult(result, name.trim() || DEFAULT_NAME);
+      setResult(final);
+      resultRef.current = final;
+      setResultKey(key);
+      setViewMode('output');
+      setWorkspace('export');
+      return;
+    }
+    await runConversion(false);
+  };
 
   const addToPack = async () => {
     if (!result || packBusy) return;
@@ -568,22 +704,22 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       };
     });
   }, [source, result, weights, included, includedParts, soloKey, materialDeltas, materialLabels, studioParts, materialThumbs]);
-  const atlasRegions = result?.textureReport.regions ?? [];
   const atlasMaterials = useMemo(() => {
     if (!result) return [];
+    const regions = result.textureReport.regions ?? [];
     const weightsByKey = new Map(
       (source?.batches ?? []).map((batch) => [batch.key, weights[batch.key] ?? 1]),
     );
     return (result.textureReport.materials ?? []).map((material) => ({
       id: material.key,
       name: materialLabels.get(material.key) ?? material.name,
-      allocated: atlasRegions
+      allocated: regions
         .filter((region) => region.materialKeys?.includes(material.key))
         .reduce((sum, region) => sum + region.contentPixels, 0),
       used: material.pixels,
       uv: material.uvPixels ?? null,
       weight: weightsByKey.get(material.key),
-      flat: atlasRegions
+      flat: regions
         .filter((region) => region.materialKeys?.includes(material.key))
         .every((region) => region.flat),
       shared: material.sharedPixels ?? null,
@@ -592,10 +728,137 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
       wastePixels: material.wastePixels,
       mode: result.textureReport.mode,
     }));
-  }, [result, source, weights, atlasRegions, materialLabels]);
+  }, [result, source, weights, materialLabels]);
+  const atlasRegionsUi = useMemo(
+    () =>
+      (result?.textureReport.regions ?? []).map((region) => ({
+        id: region.key,
+        material: region.name,
+        ...(region.materialKey ? { materialKey: region.materialKey } : {}),
+        ...(region.materialKeys ? { materialKeys: region.materialKeys } : {}),
+        ...(region.materials ? { materials: region.materials } : {}),
+        x: region.x,
+        y: region.y,
+        width: region.width,
+        height: region.height,
+        contentPixels: region.contentPixels,
+        shared: (region.materialKeys?.length ?? 0) > 1,
+        ...(region.sourceWidth
+          ? { source: `${region.sourceWidth}×${region.sourceHeight}` }
+          : {}),
+      })),
+    [result],
+  );
+  const materialKeyByUuid = useMemo(
+    () => (model ? stableMaterialKeyMap(model.scene) : new Map<string, string>()),
+    [model],
+  );
+  const studioMaterialByKey = useMemo(
+    () => new Map(studioMaterials.map((material) => [material.id, material])),
+    [studioMaterials],
+  );
+  const candidateItems = (ids: readonly string[]): MaterialCandidate[] =>
+    ids.map((id) => {
+      const material = studioMaterialByKey.get(id);
+      return {
+        id,
+        name: material?.name ?? id,
+        ...(material?.meta ? { meta: material.meta } : {}),
+        ...(material?.color ? { color: material.color } : {}),
+      };
+    });
+
+  const selectMaterial = (id: string | null) => {
+    setSoloKey(id);
+    setCandidates(null);
+  };
+
+  const handlePick = (materials: THREE.Material[]) => {
+    const keys = [
+      ...new Set(
+        materials
+          .map((material) => materialKeyByUuid.get(material.uuid))
+          .filter((key): key is string => !!key),
+      ),
+    ];
+    if (!keys.length) return;
+    if (keys.length === 1) {
+      selectMaterial(keys[0]!);
+      return;
+    }
+    // Several visible surfaces share the click point: never guess.
+    setCandidates(candidateItems(keys));
+  };
+
+  const pixelInfo = (material: StudioMaterial): MaterialPixelInfo => {
+    const pixels = material.lastPixels ?? null;
+    if (pixels == null) return { pixels: null, state: 'none' };
+    const actual = !!result && resultKey === key;
+    if (actual) {
+      return {
+        pixels,
+        state: 'actual',
+        delta: material.deltaPixels ?? null,
+        floorCharts: material.floorCharts ?? 0,
+        flat: material.flat === true,
+      };
+    }
+    const previousWeight = result?.materialWeights?.[material.id] ?? 1;
+    const currentWeight = weights[material.id] ?? 1;
+    const ratio = previousWeight > 0 ? currentWeight / previousWeight : 1;
+    return {
+      pixels: Math.max(0, Math.round(pixels * Math.max(0.05, ratio))),
+      state: previewStatus === 'running' || previewStatus === 'queued' ? 'pending' : 'estimate',
+      delta: material.deltaPixels ?? null,
+      floorCharts: material.floorCharts ?? 0,
+      flat: material.flat === true,
+    };
+  };
+
+  const modelMaterialItems = studioMaterials.map((material) => ({
+    id: material.id,
+    name: material.name,
+    meta: material.meta,
+    thumbnail: material.thumbnail ?? null,
+    ...(material.color ? { color: material.color } : {}),
+    included: material.included,
+    weight: material.weight,
+    selected: material.id === soloKey,
+    ...(material.status ? { status: material.status } : {}),
+    ...(material.limited ? { limited: true } : {}),
+  }));
+
+  const tabs = [
+    {
+      ...STUDIO_WORKSPACES[0]!,
+      badge: studioParts.length || null,
+    },
+    {
+      ...STUDIO_WORKSPACES[1]!,
+      badge: studioMaterials.length || null,
+      attention: previewStatus !== 'idle',
+    },
+    {
+      ...STUDIO_WORKSPACES[2]!,
+      badge: stale ? '过期' : result ? (result.preview ? '预览' : '已生成') : null,
+      attention: stale,
+    },
+  ];
+
+  const previewNote = result
+    ? `上次计算：${
+        result.textureReport.mode === 'budget'
+          ? result.textureReport.target === 'density'
+            ? '预算·密度'
+            : '预算·细节保留'
+          : '旧版算法'
+      }${result.preview ? ' · 预览结果' : ' · 最终结果'}`
+    : undefined;
+
+  const selectedMaterialName = studioMaterialByKey.get(soloKey ?? '')?.name ?? null;
 
   return (
-    <div className={`studio-layout model-layout ${compact ? 'compact' : ''} ${stageFullscreen ? 'stage-hidden' : ''}`}>
+    <div className={`studio-layout model-layout workspace-shell ${compact ? 'compact' : ''}`}>
       <input
         ref={modelInput}
         className="mobile-model-input"
@@ -609,221 +872,48 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
           if (next.length) void choose(next);
         }}
       />
-      <div className="studio-sheet">
-        {compact && (
-          <div className="mobile-settings-tabs" role="tablist" aria-label="模型设置">
-            {([
-              ['basic', '基础'],
-              ['pose', '姿势'],
-              ['material', '材质'],
-              ['result', '结果'],
-            ] as const).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={mobileTab === key}
-                className={mobileTab === key ? 'active' : ''}
-                onClick={() => setMobileTab(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="sheet-body" data-tab={mobileTab}>
-          <aside className="studio-inspector">
-            <div className="panel-heading">
-              <div className="template-icon"><Icon name="cube" size={26} /></div>
-              <h2>转换设置</h2>
-            </div>
-            <div className="panel-scroll">
-        <fieldset disabled={loading || busy}>
-          <div className="settings-section" data-section="basic">
-            <div className="settings-section-title">基础配置</div>
 
-          <label className="field-label">
-            皮肤名称
-            <input
-              value={name}
-              maxLength={SKIN_NAME_MAX_LENGTH}
-              onChange={(event) => {
-                customName.current = true;
-                setName(event.target.value);
-              }}
-              placeholder="输入皮肤名称"
-            />
-          </label>
-
-          <label className="field-label">
-            绑定方式
-            <select
-              value={binding}
-              disabled={!rigAvailable}
-              onChange={(event) => setBinding(event.target.value as BindingMode)}
-            >
-              <option value="humanoid" disabled={!rigAvailable}>六部位人形（随动作摆动）</option>
-              <option value="static">静态整体（不与动作联动）</option>
-            </select>
-          </label>
-          <p className="field-help">
-            {rigAvailable
-              ? binding === 'humanoid'
-                ? '已识别完整人形骨骼：头、躯干、双臂、双腿会跟随玩家动作。'
-                : '当前按静态整体导出；切换为六部位后需要重新转换。'
-              : '未识别到完整的 VRM / 常见 MMD 人形骨骼，只能按静态整体导出。'}
-          </p>
-
-          <label className="field-label">
-            模型高度
-            <input
-              type="number"
-              min={1}
-              max={128}
-              value={heightText}
-              aria-invalid={!heightValid}
-              onChange={(event) => {
-                const next = event.target.value;
-                setHeightText(next);
-                const value = Number(next);
-                if (next.trim() !== '' && Number.isFinite(value) && value >= 1 && value <= 128)
-                  setHeight(value);
-              }}
-            />
-          </label>
-          <input
-            className="height-range"
-            type="range"
-            min={1}
-            max={128}
-            step={1}
-            value={height}
-            aria-label="模型高度"
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              setHeight(value);
-              setHeightText(String(value));
-            }}
-          />
-          {!heightValid && <p className="field-help error-text">模型高度需为 1–128</p>}
-
-          <div className="settings-group">
-            <RatioField
-              ratio={ratio}
-              onChange={setRatio}
-              sourceTriangles={sourceTriangles}
-              targetFaces={targetFaces}
-              actualFaces={actualFaces}
+      <header className="workspace-header">
+        <div className="workspace-project">
+          <span className="eyebrow">4DGen / 模型编辑</span>
+          <h2>{model?.name ?? '模型工作台'}</h2>
+          <small>
+            {model
+              ? `${model.stats.triangles.toLocaleString('zh-CN')} 三角面 · ${model.stats.materials} 材质 · ${formatBytes(totalBytes)}`
+              : '导入模型后开始编辑；切换工作区不会丢失配置。'}
+          </small>
+        </div>
+        <WorkspaceTabs
+          value={workspace}
+          tabs={tabs}
+          onChange={(next) => {
+            setWorkspace(next);
+            setCandidates(null);
+            if (next === 'export' && result) setViewMode('output');
+            if (next === 'model') setViewMode('source');
+          }}
+        />
+        <div className="workspace-global">
+          {stale && <span className="workspace-stale">结果已过期</span>}
+          {previewStatus === 'running' && <span className="workspace-working">正在更新预览…</span>}
+          {previewStatus === 'queued' && <span className="workspace-working">预览排队中…</span>}
+          {model && (
+            <button
+              type="button"
+              className="button-link"
               disabled={loading || busy}
-              showBudget={!!model}
-            />
-            <details className="advanced-settings">
-              <summary>高级减面</summary>
-              <label className="field-label">
-                形状变化容限
-                <input
-                  type="number"
-                  min={0}
-                  max={1}
-                  step={0.005}
-                  value={maxError}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    if (Number.isFinite(value) && value >= 0 && value <= 1) setMaxError(value);
-                  }}
-                />
-              </label>
-              <p className="field-help">默认 0.03。调小更保形，可能减不到目标；调大减得更多，但更容易丢轮廓。</p>
-            </details>
-          </div>
-
-          <label className="field-label">
-            双面渲染
-            <select
-              value={doubleSided}
-              onChange={(event) => setDoubleSided(event.target.value as DoubleSidedPolicy)}
+              onClick={() => modelInput.current?.click()}
             >
-              <option value="source">跟随源材质</option>
-              <option value="all">全部双面</option>
-              <option value="front">全部单面</option>
-            </select>
-          </label>
-          </div>
+              <Icon name="upload" size={14} /> 更换模型
+            </button>
+          )}
+        </div>
+      </header>
 
-          <div className="settings-section" data-section="pose">
-            <div className="settings-section-title">姿势与朝向</div>
-            <PoseControls
-              rotationY={rotationY}
-              onRotationY={(value) => {
-                customRotation.current = true;
-                setRotationY(value);
-              }}
-              armSpread={armSpread}
-              onArmSpread={setArmSpread}
-              showArm={!!model}
-              armAvailable={armAvailable}
-              disabled={loading || busy}
-              rotationHelp="源模型实时旋转，转换时按这个朝向导出；用「正面检查」确认角色朝向绿色箭头。"
-            />
-          </div>
-        </fieldset>
-        {compact && (
-          <div className="settings-section result-section" data-section="result">
-            {result ? (
-              <>
-                <div className="mobile-result-actions">
-                  <button
-                    type="button"
-                    className="button-link"
-                    disabled={packBusy || stale}
-                    onClick={() => void addToPack()}
-                  >
-                    <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
-                    {packBusy ? '正在加入…' : '加入皮肤包'}
-                  </button>
-                  <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
-                  <button type="button" className="button-link" onClick={() => setAtlasOpen(true)}>
-                    <Icon name="image" size={14} /> 贴图分区
-                  </button>
-                </div>
-                {packMessage && (
-                  <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
-                )}
-                {packError && (
-                  <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
-                )}
-                {result.textureUrl && (
-                  <figure className="result-png-preview">
-                    <figcaption>输出贴图 {result.textureReport.size} × {result.textureReport.size} PNG</figcaption>
-                    <img src={result.textureUrl} alt="输出贴图预览" loading="lazy" />
-                  </figure>
-                )}
-                <ConversionReport
-                  result={result}
-                  warnings={warnings}
-                  stale={stale}
-                  selectedMaterial={selectedMaterial}
-                  materialLabels={materialLabels}
-                  onSelectMaterial={(materialKey) => {
-                    const batch = source?.batches.find((item) => item.key === materialKey);
-                    if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
-                  }}
-                />
-              </>
-            ) : (
-              <>
-                <WarningList warnings={warnings} />
-                <p className="field-help">转换后这里显示转换报告、材质像素覆盖和保存按钮。</p>
-              </>
-            )}
-          </div>
-        )}
-            </div>
-          </aside>
-
-          <aside className="studio-materials">
-            <div className="panel-heading">模型 / 材质</div>
-            <div className="panel-scroll">
+      <div className="workspace-body">
+        {workspace === 'model' && (
+          <div className="model-workspace">
+            <aside className="workspace-panel model-left">
               {!compact && (
                 <>
                   <DropZone
@@ -843,311 +933,690 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                   </div>
                 </>
               )}
-
-          <div className="settings-section" data-section="material">
-            <div className="settings-section-title">纹理与部件</div>
-          {source ? (
-            <TextureStudio
-              mode={textureMode}
-              target={textureTarget}
-              onMode={setTextureMode}
-              onTarget={setTextureTarget}
-              materials={studioMaterials}
-              selectedMaterial={soloKey}
-              onSelectMaterial={(id) => setSoloKey(id)}
-              onToggleMaterial={(id) => {
-                const willInclude = !included.has(id);
-                setIncluded((previous) => {
-                  const next = new Set(previous);
-                  if (willInclude) next.add(id);
-                  else next.delete(id);
-                  return next;
-                });
-                if (!willInclude && soloKey === id) setSoloKey(null);
-              }}
-              onWeight={(id, value) => {
-                setWeights((previous) => ({ ...previous, [id]: value }));
-              }}
-              onResetWeight={(id) => {
-                setWeights((previous) => {
-                  const next = { ...previous };
-                  delete next[id];
-                  return next;
-                });
-              }}
-              onResetAllWeights={() => setWeights({})}
-              parts={studioParts}
-              includedParts={includedParts}
-              onTogglePart={(id) => {
-                setIncludedParts((previous) => {
-                  const next = new Set(previous);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  return next;
-                });
-                if (selectedPart === id) setSelectedPart(null);
-              }}
-              onSetParts={(ids) => {
-                setIncludedParts(new Set(ids));
-                if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
-              }}
-              selectedPart={selectedPart}
-              onSelectPart={setSelectedPart}
-              showKeptOnly={showKeptParts}
-              onShowKeptOnly={setShowKeptParts}
-              disabled={loading || busy}
-              note={
-                result
-                  ? `上次转换：${
-                      result.textureReport.mode === 'budget'
-                        ? result.textureReport.target === 'density'
-                          ? '预算·密度'
-                          : '预算·细节保留'
-                        : '旧版算法'
-                    }`
-                  : undefined
-              }
-            />
-          ) : (
-            <p className="field-help">导入模型后可以在这里选择部件、调整材质清晰度。</p>
-          )}
-          </div>
-            </div>
-          </aside>
-        </div>
-
-        <div className="settings-footer">
-          {compact && stale && (
-            <p className="stale-note" role="status"><Icon name="alert" size={14} /> 参数已修改，请重新转换。</p>
-          )}
-          {error && <p className="error-message" role="alert"><Icon name="alert" size={15} />{error}</p>}
-          {!included.size && source && (
-            <p className="field-help error-text">至少保留一个材质</p>
-          )}
-          {!includedParts.size && source && studioParts.length > 0 && (
-            <p className="field-help error-text">至少保留一个部件，或点「全部保留」。</p>
-          )}
-          {(busy || loading) && (
-            <p className="task-step" role="status">
-              {progress?.label ?? (busy ? '正在转换…' : '正在读取文件…')}
-              {progress?.detail ? ` · ${progress.detail}` : ''}
-            </p>
-          )}
-          <button type="button" className="primary" disabled={!model || busy || loading || !name.trim() || !heightValid || !included.size || !includedParts.size} onClick={() => void convert()}>
-            <Icon name={busy ? 'reset' : 'spark'} size={15} className={busy ? 'spin' : undefined} />
-            {busy ? '正在转换…' : result ? '重新转换' : '转换为 4D 皮肤'}
-          </button>
-        </div>
-      </div>
-
-      <section className="studio-result model-result">
-        {!compact && (
-          <div className="result-header">
-            <div>
-              <h2>{result && viewMode === 'output' ? '输出预览' : model ? '源模型预览' : '模型预览'}</h2>
-              <p>
-                {result && viewMode === 'output'
-                  ? '实际导出的 poly_mesh 与 128 × 128 贴图。'
-                  : model
-                    ? `${model.stats.triangles.toLocaleString('zh-CN')} 三角面 · ${model.stats.materials} 材质 · ${model.stats.textures} 贴图`
-                    : '导入模型后在这里预览。'}
-              </p>
-            </div>
-            <div className="tabs">
-              {model && (
-                <button type="button" className={viewMode === 'source' ? 'active' : ''} onClick={() => setViewMode('source')}>
-                  源模型
-                </button>
+              {source ? (
+                <>
+                  <PartBrowser
+                    parts={studioParts}
+                    includedParts={includedParts}
+                    onTogglePart={(id) => {
+                      setIncludedParts((previous) => {
+                        const next = new Set(previous);
+                        if (next.has(id)) next.delete(id);
+                        else next.add(id);
+                        return next;
+                      });
+                      if (selectedPart === id) setSelectedPart(null);
+                    }}
+                    onSetParts={(ids) => {
+                      setIncludedParts(new Set(ids));
+                      if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
+                    }}
+                    selectedPart={selectedPart}
+                    onSelectPart={setSelectedPart}
+                    showKeptOnly={showKeptParts}
+                    onShowKeptOnly={setShowKeptParts}
+                    disabled={loading || busy}
+                    title="模型部件"
+                  />
+                  <div className="model-material-include">
+                    <div className="texture-studio-section-title static">
+                      <span>参与转换的材质</span>
+                      <small>{included.size}/{studioMaterials.length}</small>
+                    </div>
+                    <MaterialList
+                      items={modelMaterialItems}
+                      disabled={loading || busy}
+                      showWeight={false}
+                      onToggle={(id) => {
+                        const willInclude = !included.has(id);
+                        setIncluded((previous) => {
+                          const next = new Set(previous);
+                          if (willInclude) next.add(id);
+                          else next.delete(id);
+                          return next;
+                        });
+                        if (!willInclude && soloKey === id) setSoloKey(null);
+                      }}
+                      onSelect={selectMaterial}
+                      onWeight={() => {}}
+                    />
+                    <p className="field-help">
+                      清晰度权重与图集诊断在「纹理」工作区；这里只控制材质是否参与转换。
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <p className="field-help">导入模型后可以在这里筛选部件和材质。</p>
               )}
-              {result && (
-                <button type="button" className={viewMode === 'output' ? 'active' : ''} onClick={() => setViewMode('output')}>
-                  4D 输出
+            </aside>
+
+            <section className={`workspace-preview${stageFullscreen ? ' fullscreen' : ''}`}>
+              <div className="workspace-toolbar">
+                <span>
+                  {model
+                    ? viewMode === 'output' && result
+                      ? '4D 输出预览'
+                      : '源模型预览'
+                    : '模型预览'}
+                </span>
+                <span className="grow" />
+                {model && (
+                  <button
+                    type="button"
+                    className={viewMode === 'source' ? 'active' : ''}
+                    onClick={() => setViewMode('source')}
+                  >
+                    源模型
+                  </button>
+                )}
+                {result && (
+                  <button
+                    type="button"
+                    className={viewMode === 'output' ? 'active' : ''}
+                    onClick={() => setViewMode('output')}
+                  >
+                    4D 输出
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setStageFullscreen((value) => !value)}
+                >
+                  {stageFullscreen ? '退出全屏' : '全屏预览'}
                 </button>
-              )}
-            </div>
+              </div>
+              <div className="model-stage">
+                {viewObject ? (
+                  <Viewport
+                    object={viewObject}
+                    grid={viewMode === 'output'}
+                    facing={viewMode === 'source' ? 'source' : 'output'}
+                    showFrontCheck={false}
+                    {...(viewMode === 'source' ? { onPick: handlePick } : {})}
+                  />
+                ) : (
+                  <div className="empty-state compact">
+                    {loading ? (
+                      <>
+                        <span className="spinner" />
+                        <h2>{progress?.label || '正在解析模型…'}</h2>
+                        <p>{progress?.detail ? `${progress.detail}，` : ''}大模型需要十几秒，请保持页面打开。</p>
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="cube" size={42} />
+                        <h2>还没有导入模型</h2>
+                        <p>拖入模型或 ZIP，或从「获取模型」页进入站点目录。</p>
+                        <button type="button" className="button-link" onClick={() => modelInput.current?.click()}>
+                          选择模型文件
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {(busy || loading) && viewObject && (
+                  <div className="busy-overlay">
+                    <span className="spinner" />
+                    <b>{progress?.label || (busy ? '正在转换…' : '正在读取文件…')}</b>
+                    <small>{progress?.detail ? `${progress.detail}，` : ''}大模型需要十几秒，请保持页面打开。</small>
+                  </div>
+                )}
+                {candidates && (
+                  <MaterialCandidates
+                    candidates={candidates}
+                    onPick={(id) => selectMaterial(id)}
+                    onClose={() => setCandidates(null)}
+                  />
+                )}
+              </div>
+            </section>
+
+            <aside className="workspace-panel model-right">
+              <div className="panel-heading">
+                <div className="template-icon"><Icon name="cube" size={26} /></div>
+                <h2>转换设置</h2>
+              </div>
+              <div className="panel-scroll">
+                <fieldset disabled={loading || busy}>
+                  <div className="settings-section" data-section="basic">
+                    <div className="settings-section-title">基础配置</div>
+                    <label className="field-label">
+                      皮肤名称
+                      <input
+                        value={name}
+                        maxLength={SKIN_NAME_MAX_LENGTH}
+                        onChange={(event) => {
+                          customName.current = true;
+                          setName(event.target.value);
+                        }}
+                        placeholder="输入皮肤名称"
+                      />
+                    </label>
+                    <label className="field-label">
+                      绑定方式
+                      <select
+                        value={binding}
+                        disabled={!rigAvailable}
+                        onChange={(event) => setBinding(event.target.value as BindingMode)}
+                      >
+                        <option value="humanoid" disabled={!rigAvailable}>六部位人形（随动作摆动）</option>
+                        <option value="static">静态整体（不与动作联动）</option>
+                      </select>
+                    </label>
+                    <p className="field-help">
+                      {rigAvailable
+                        ? binding === 'humanoid'
+                          ? '已识别完整人形骨骼：头、躯干、双臂、双腿会跟随玩家动作。'
+                          : '当前按静态整体导出；切换为六部位后需要重新转换。'
+                        : '未识别到完整的 VRM / 常见 MMD 人形骨骼，只能按静态整体导出。'}
+                    </p>
+                    <label className="field-label">
+                      模型高度
+                      <input
+                        type="number"
+                        min={1}
+                        max={128}
+                        value={heightText}
+                        aria-invalid={!heightValid}
+                        onChange={(event) => {
+                          const next = event.target.value;
+                          setHeightText(next);
+                          const value = Number(next);
+                          if (next.trim() !== '' && Number.isFinite(value) && value >= 1 && value <= 128)
+                            setHeight(value);
+                        }}
+                      />
+                    </label>
+                    <input
+                      className="height-range"
+                      type="range"
+                      min={1}
+                      max={128}
+                      step={1}
+                      value={height}
+                      aria-label="模型高度"
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        setHeight(value);
+                        setHeightText(String(value));
+                      }}
+                    />
+                    {!heightValid && <p className="field-help error-text">模型高度需为 1–128</p>}
+                    <div className="settings-group">
+                      <RatioField
+                        ratio={ratio}
+                        onChange={setRatio}
+                        sourceTriangles={sourceTriangles}
+                        targetFaces={targetFaces}
+                        actualFaces={actualFaces}
+                        disabled={loading || busy}
+                        showBudget={!!model}
+                      />
+                      <details className="advanced-settings">
+                        <summary>高级减面</summary>
+                        <label className="field-label">
+                          形状变化容限
+                          <input
+                            type="number"
+                            min={0}
+                            max={1}
+                            step={0.005}
+                            value={maxError}
+                            onChange={(event) => {
+                              const value = Number(event.target.value);
+                              if (Number.isFinite(value) && value >= 0 && value <= 1) setMaxError(value);
+                            }}
+                          />
+                        </label>
+                        <p className="field-help">默认 0.03。调小更保形，可能减不到目标；调大减得更多，但更容易丢轮廓。</p>
+                      </details>
+                    </div>
+                    <label className="field-label">
+                      双面渲染
+                      <select
+                        value={doubleSided}
+                        onChange={(event) => setDoubleSided(event.target.value as DoubleSidedPolicy)}
+                      >
+                        <option value="source">跟随源材质</option>
+                        <option value="all">全部双面</option>
+                        <option value="front">全部单面</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="settings-section" data-section="pose">
+                    <div className="settings-section-title">姿势与朝向</div>
+                    <PoseControls
+                      rotationY={rotationY}
+                      onRotationY={(value) => {
+                        customRotation.current = true;
+                        setRotationY(value);
+                      }}
+                      armSpread={armSpread}
+                      onArmSpread={setArmSpread}
+                      showArm={!!model}
+                      armAvailable={armAvailable}
+                      disabled={loading || busy}
+                      rotationHelp="源模型实时旋转，转换时按这个朝向导出；用「正面检查」确认角色朝向绿色箭头。"
+                    />
+                  </div>
+                </fieldset>
+                {error && <p className="error-message" role="alert"><Icon name="alert" size={15} />{error}</p>}
+                {!included.size && source && (
+                  <p className="field-help error-text">至少保留一个材质</p>
+                )}
+                {!includedParts.size && source && studioParts.length > 0 && (
+                  <p className="field-help error-text">至少保留一个部件，或点「全部保留」。</p>
+                )}
+                {(busy || loading) && (
+                  <p className="task-step" role="status">
+                    {progress?.label ?? (busy ? '正在转换…' : '正在读取文件…')}
+                    {progress?.detail ? ` · ${progress.detail}` : ''}
+                  </p>
+                )}
+              </div>
+              <div className="settings-footer">
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={!model || busy || loading || !name.trim() || !heightValid || !included.size || !includedParts.size}
+                  onClick={() => void exportFinal()}
+                >
+                  <Icon name={busy ? 'reset' : 'spark'} size={15} className={busy ? 'spin' : undefined} />
+                  {busy ? '正在转换…' : result ? '生成 / 更新 4D 皮肤' : '转换为 4D 皮肤'}
+                </button>
+                <p className="field-help">转换参数与纹理微调分开；纹理工作区会持续更新预览。</p>
+              </div>
+            </aside>
           </div>
         )}
 
-        <div className="model-stage">
-          {compact && (
-            <div className="stage-side-buttons">
-              <button
-                type="button"
-                className="stage-menu-button"
-                aria-label="打开菜单"
-                onClick={onOpenMenu}
-              >
-                <Icon name="menu" size={18} />
-              </button>
-              {model && (
-                <button
-                  type="button"
-                  className="stage-icon-button"
-                  aria-label="更换模型"
-                  title="更换模型"
-                  disabled={loading || busy}
-                  onClick={() => modelInput.current?.click()}
-                >
-                  <Icon name="upload" size={16} />
-                </button>
-              )}
-            </div>
-          )}
-          {compact && (
-            <div className="stage-topbar">
-              <div className="stage-topbar-right">
-                <button
-                  type="button"
-                  className="stage-icon-button"
-                  aria-label={stageFullscreen ? '显示设置面板' : '全屏预览'}
-                  aria-pressed={stageFullscreen}
-                  title={stageFullscreen ? '显示设置面板' : '全屏预览'}
-                  onClick={() => setStageFullscreen((value) => !value)}
-                >
-                  <Icon name={stageFullscreen ? 'shrink' : 'expand'} size={16} />
-                </button>
-              </div>
-            </div>
-          )}
-          {compact && (model || result) && (
-            <div className="stage-viewswitch" role="tablist" aria-label="预览切换">
-              {model && (
-                <button type="button" className={viewMode === 'source' ? 'active' : ''} onClick={() => setViewMode('source')}>
-                  源
-                </button>
-              )}
-              {result && (
-                <button type="button" className={viewMode === 'output' ? 'active' : ''} onClick={() => setViewMode('output')}>
-                  4D
-                </button>
-              )}
-            </div>
-          )}
-          {viewObject ? (
-            <Viewport
-              object={viewObject}
-              grid={viewMode === 'output'}
-              facing={viewMode === 'source' ? 'source' : 'output'}
-              showFrontCheck={false}
-            />
-          ) : (
-            <div className="empty-state compact">
-              {loading ? (
+        {workspace === 'texture' && (
+          <div
+            className={`texture-workspace${maximizePreview ? ' preview-max' : ''}`}
+            data-mobile-view={mobileTextureView}
+            style={{
+              '--texture-left': leftOpen ? `${leftPanel.width}px` : '0px',
+              '--texture-right': rightOpen ? `${rightPanel.width}px` : '0px',
+            } as CSSProperties}
+          >
+            <aside className="texture-side left">
+              {source ? (
                 <>
-                  <span className="spinner" />
-                  <h2>{progress?.label || '正在解析模型…'}</h2>
-                  <p>{progress?.detail ? `${progress.detail}，` : ''}大模型需要十几秒，请保持页面打开。</p>
+                  <MaterialBrowser
+                    materials={studioMaterials}
+                    selectedMaterial={soloKey}
+                    onSelectMaterial={selectMaterial}
+                    onToggleMaterial={(id) => {
+                      const willInclude = !included.has(id);
+                      setIncluded((previous) => {
+                        const next = new Set(previous);
+                        if (willInclude) next.add(id);
+                        else next.delete(id);
+                        return next;
+                      });
+                      if (!willInclude && soloKey === id) setSoloKey(null);
+                    }}
+                    onWeight={(id, value) => {
+                      setWeights((previous) => ({ ...previous, [id]: value }));
+                    }}
+                    onResetWeight={(id) => {
+                      setWeights((previous) => {
+                        const next = { ...previous };
+                        delete next[id];
+                        return next;
+                      });
+                    }}
+                    onResetAllWeights={() => setWeights({})}
+                    disabled={loading || busy}
+                    mode={textureMode}
+                    target={textureTarget}
+                    onMode={setTextureMode}
+                    onTarget={setTextureTarget}
+                    pixelInfo={pixelInfo}
+                    previewState={previewStatus}
+                    previewNote={previewNote}
+                  />
+                  <PartBrowser
+                    compact
+                    parts={studioParts}
+                    includedParts={includedParts}
+                    onTogglePart={(id) => {
+                      setIncludedParts((previous) => {
+                        const next = new Set(previous);
+                        if (next.has(id)) next.delete(id);
+                        else next.add(id);
+                        return next;
+                      });
+                      if (selectedPart === id) setSelectedPart(null);
+                    }}
+                    onSetParts={(ids) => {
+                      setIncludedParts(new Set(ids));
+                      if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
+                    }}
+                    selectedPart={selectedPart}
+                    onSelectPart={setSelectedPart}
+                    showKeptOnly={showKeptParts}
+                    onShowKeptOnly={setShowKeptParts}
+                    disabled={loading || busy}
+                    title="关联部件"
+                  />
                 </>
               ) : (
-                <>
-                  <Icon name="cube" size={42} />
-                  <h2>还没有导入模型</h2>
-                  <p>{compact ? '选择模型文件，或从侧边栏「获取模型」进入站点目录。' : '拖入模型或 ZIP，或从「获取模型」页进入站点目录。'}</p>
-                  {compact ? (
-                    <div className="empty-actions">
-                      <button type="button" className="button-link" onClick={() => modelInput.current?.click()}>
-                        选择模型文件
-                      </button>
+                <p className="field-help">导入模型后可以在这里搜索材质并调整清晰度。</p>
+              )}
+            </aside>
+            {leftOpen && !maximizePreview && (
+              <div className="workspace-splitter" aria-hidden="true" {...leftPanel.handleProps} />
+            )}
+
+            <section className="texture-center">
+              <div className="workspace-toolbar">
+                <div className="texture-mobile-tabs" role="tablist" aria-label="纹理工作区视图">
+                  {([
+                    ['materials', '材质'],
+                    ['preview', '3D 模型'],
+                    ['atlas', '图集'],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      type="button"
+                      key={key}
+                      role="tab"
+                      aria-selected={mobileTextureView === key}
+                      className={mobileTextureView === key ? 'active' : ''}
+                      onClick={() => setMobileTextureView(key)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className={viewMode === 'source' ? 'active' : ''}
+                  onClick={() => setViewMode('source')}
+                >
+                  源模型
+                </button>
+                <button
+                  type="button"
+                  className={viewMode === 'output' ? 'active' : ''}
+                  disabled={!result}
+                  onClick={() => setViewMode('output')}
+                >
+                  最新图集
+                </button>
+                <span className={`preview-status ${previewStatus}`} role="status">
+                  {previewStatus === 'running'
+                    ? '正在计算实际分配…'
+                    : previewStatus === 'queued'
+                      ? '预览排队中…'
+                      : previewStatus === 'stale'
+                        ? '显示的是上一次结果'
+                        : result
+                          ? '预览与当前配置一致'
+                          : '等待首次预览'}
+                </span>
+                <span className="grow" />
+                {selectedMaterialName && <span className="selected-material">已选：{selectedMaterialName}</span>}
+                <button type="button" onClick={() => setLeftOpen((value) => !value)}>
+                  {leftOpen ? '收起材质' : '展开材质'}
+                </button>
+                <button type="button" onClick={() => setRightOpen((value) => !value)}>
+                  {rightOpen ? '收起图集' : '展开图集'}
+                </button>
+                <button type="button" onClick={() => setMaximizePreview((value) => !value)}>
+                  {maximizePreview ? '还原布局' : '最大化预览'}
+                </button>
+              </div>
+              <div className="model-stage">
+                {viewObject ? (
+                  <Viewport
+                    object={viewObject}
+                    grid={viewMode === 'output'}
+                    facing={viewMode === 'source' ? 'source' : 'output'}
+                    showFrontCheck={false}
+                    {...(viewMode === 'source' ? { onPick: handlePick } : {})}
+                  />
+                ) : (
+                  <div className="empty-state compact">
+                    <Icon name="cube" size={42} />
+                    <h2>还没有可预览的模型</h2>
+                    <p>先在模型工作区导入模型。</p>
+                  </div>
+                )}
+                {soloKey && (
+                  <div className="texture-selection-note">
+                    正在只看所选材质。
+                    <button type="button" onClick={() => selectMaterial(null)}>显示全部材质</button>
+                  </div>
+                )}
+                {candidates && (
+                  <MaterialCandidates
+                    candidates={candidates}
+                    onPick={(id) => selectMaterial(id)}
+                    onClose={() => setCandidates(null)}
+                  />
+                )}
+                {(busy || loading) && viewObject && (
+                  <div className="busy-overlay">
+                    <span className="spinner" />
+                    <b>{progress?.label || '正在处理…'}</b>
+                    <small>{progress?.detail ?? ''}</small>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {rightOpen && !maximizePreview && (
+              <div className="workspace-splitter" aria-hidden="true" {...rightPanel.handleProps} />
+            )}
+            <aside className="texture-side right">
+              {result ? (
+                <AtlasInspector
+                  src={result.textureUrl}
+                  size={result.textureReport.size}
+                  regions={atlasRegionsUi}
+                  materials={atlasMaterials}
+                  summary={result.textureReport}
+                  selected={soloKey}
+                  onSelect={selectMaterial}
+                  onSelectCandidates={(ids) => setCandidates(candidateItems(ids))}
+                  variant="panel"
+                  {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
+                />
+              ) : (
+                <div className="workspace-empty">
+                  {previewStatus === 'running' || previewStatus === 'queued'
+                    ? '正在生成第一张图集预览…'
+                    : '图集会在纹理工作区自动生成；也可以先在模型工作区转换。'}
+                </div>
+              )}
+            </aside>
+          </div>
+        )}
+
+        {workspace === 'export' && (
+          <div className="export-workspace">
+            <section className={`workspace-preview${stageFullscreen ? ' fullscreen' : ''}`}>
+              <div className="workspace-toolbar">
+                <span>{result ? '结果预览' : '模型预览'}</span>
+                <span className="grow" />
+                {model && (
+                  <button
+                    type="button"
+                    className={viewMode === 'source' ? 'active' : ''}
+                    onClick={() => setViewMode('source')}
+                  >
+                    源模型
+                  </button>
+                )}
+                {result && (
+                  <button
+                    type="button"
+                    className={viewMode === 'output' ? 'active' : ''}
+                    onClick={() => setViewMode('output')}
+                  >
+                    4D 输出
+                  </button>
+                )}
+                <button type="button" onClick={() => setStageFullscreen((value) => !value)}>
+                  {stageFullscreen ? '退出全屏' : '全屏预览'}
+                </button>
+              </div>
+              <div className="model-stage">
+                {viewObject ? (
+                  <Viewport
+                    object={viewObject}
+                    grid={viewMode === 'output'}
+                    facing={viewMode === 'source' ? 'source' : 'output'}
+                    showFrontCheck={false}
+                  />
+                ) : (
+                  <div className="empty-state compact">
+                    <Icon name="cube" size={42} />
+                    <h2>还没有生成结果</h2>
+                    <p>在模型工作区完成转换后，这里会显示最终结果。</p>
+                  </div>
+                )}
+                {(busy || loading) && viewObject && (
+                  <div className="busy-overlay">
+                    <span className="spinner" />
+                    <b>{progress?.label || '正在处理…'}</b>
+                    <small>{progress?.detail ?? ''}</small>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <aside className="export-side">
+              <div className="export-status-card">
+                <h2>结果与导出</h2>
+                <p>
+                  {model
+                    ? `当前配置：${height}px 高 · ${binding === 'humanoid' ? '六部位人形' : '静态整体'} · ${
+                        textureMode === 'budget'
+                          ? textureTarget === 'density'
+                            ? '预算·密度'
+                            : '预算·细节保留'
+                          : '旧版算法'
+                      } · ${Object.keys(weights).length} 项权重调整`
+                    : '导入模型后开始。'}
+                </p>
+                {result ? (
+                  <>
+                    <div className={`result-kind ${result.preview ? 'preview' : 'final'}`}>
+                      {result.preview ? '预览结果' : '最终结果'}
+                      {stale ? ' · 配置已改变' : ' · 与当前配置一致'}
                     </div>
-                  ) : (
-                    <button type="button" className="button-link" onClick={() => gotoSources()}>
-                      获取模型 <Icon name="arrow" size={13} />
+                    {stale && (
+                      <p className="stale-note" role="status">
+                        <Icon name="alert" size={14} /> 当前配置已改变，下面的图集和报告来自上一次计算。请重新生成后再导出。
+                      </p>
+                    )}
+                    {result.preview && !stale && (
+                      <p className="inline-note">
+                        模型与图集预览已经更新，但还没有打包。生成最终皮肤包会直接复用这张图集，不会重新计算。
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="inline-note">还没有生成结果。先在模型工作区转换，或在纹理工作区调整后回来导出。</p>
+                )}
+                <div className="export-actions">
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={!model || busy || loading || !included.size || !includedParts.size}
+                    onClick={() => void exportFinal()}
+                  >
+                    <Icon name={busy ? 'reset' : 'spark'} size={15} className={busy ? 'spin' : undefined} />
+                    {busy
+                      ? '正在生成…'
+                      : result?.preview && !stale
+                        ? '打包并生成下载'
+                        : stale || !result
+                          ? '生成最终皮肤包'
+                          : '重新生成'}
+                  </button>
+                  {result && !result.preview && !stale && (
+                    <DownloadButtons files={result.files} name={name.trim()} compact disabled={busy} />
+                  )}
+                  {result && !stale && (
+                    <button
+                      type="button"
+                      className="button-link"
+                      disabled={packBusy || busy}
+                      onClick={() => void addToPack()}
+                    >
+                      <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
+                      {packBusy ? '正在加入…' : '加入皮肤包'}
                     </button>
                   )}
-                </>
-              )}
-            </div>
-          )}
-          {(busy || loading) && viewObject && (
-            <div className="busy-overlay">
-              <span className="spinner" />
-              <b>{progress?.label || (busy ? '正在转换…' : '正在读取文件…')}</b>
-              <small>
-                {progress?.detail ? `${progress.detail}，` : ''}
-                大模型需要十几秒，请保持页面打开。
-              </small>
-            </div>
-          )}
-        </div>
+                </div>
+                {result && result.preview && !stale && (
+                  <p className="field-help">下载按钮在打包完成后出现；当前预览不会冒充最终皮肤包。</p>
+                )}
+                {packMessage && (
+                  <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
+                )}
+                {packError && (
+                  <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
+                )}
+                {error && <p className="error-message" role="alert"><Icon name="alert" size={15} />{error}</p>}
+              </div>
 
-        <div className="result-body model-details">
-          {result ? (
-            <ConversionReport
-              result={result}
-              warnings={warnings}
-              stale={stale}
-              selectedMaterial={selectedMaterial}
-              materialLabels={materialLabels}
-              onSelectMaterial={(materialKey) => {
-                const batch = source?.batches.find((item) => item.key === materialKey);
-                if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
-              }}
-            />
+              <div className="export-report">
+                {result ? (
+                  <ConversionReport
+                    result={result}
+                    warnings={warnings}
+                    stale={stale}
+                    selectedMaterial={soloKey}
+                    materialLabels={materialLabels}
+                    onSelectMaterial={(materialKey) => selectMaterial(materialKey)}
+                  />
+                ) : (
+                  <>
+                    <WarningList warnings={warnings} />
+                    <p className="field-help">转换后这里显示转换报告、材质像素覆盖和贴图利用率。</p>
+                  </>
+                )}
+              </div>
+
+              {result && (
+                <details className="export-atlas">
+                  <summary>图集诊断与区域明细</summary>
+                  <AtlasInspector
+                    src={result.textureUrl}
+                    size={result.textureReport.size}
+                    regions={atlasRegionsUi}
+                    materials={atlasMaterials}
+                    summary={result.textureReport}
+                    selected={soloKey}
+                    onSelect={selectMaterial}
+                    onSelectCandidates={(ids) => setCandidates(candidateItems(ids))}
+                    variant="panel"
+                    {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
+                  />
+                </details>
+              )}
+            </aside>
+          </div>
+        )}
+      </div>
+
+      {(busy || loading || previewStatus === 'running' || previewStatus === 'queued' || error) && (
+        <div className="workspace-statusbar" role="status">
+          {error ? (
+            <span className="error-text">{error}</span>
           ) : (
             <>
-              <WarningList warnings={warnings} />
-              <div className="inline-note">转换后显示转换报告、材质像素覆盖和贴图利用率。</div>
+              <span>{progress?.label ?? (busy ? '正在转换…' : loading ? '正在读取文件…' : '正在更新纹理预览…')}</span>
+              {progress?.detail && <small>{progress.detail}</small>}
+              {(busy || previewStatus === 'running') && <span className="spinner" />}
             </>
           )}
         </div>
-        {result && (
-          <div className="result-footer">
-            {stale && (
-              <p className="stale-note" role="status"><Icon name="alert" size={14} /> 参数已修改，请重新转换。</p>
-            )}
-            <div className="pack-add-row">
-              <button type="button" className="button-link" disabled={packBusy || stale} onClick={() => void addToPack()}>
-                <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
-                {packBusy ? '正在加入…' : '加入皮肤包'}
-              </button>
-              {packMessage && (
-                <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
-              )}
-            </div>
-            <button type="button" className="button-link" onClick={() => setAtlasOpen(true)}>
-              <Icon name="image" size={14} /> 查看贴图分区
-            </button>
-            {packError && <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>}
-            <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
-          </div>
-        )}
-      </section>
-
-      {atlasOpen && result?.textureReport.regions?.length ? (
-        <Dialog
-          title="贴图分区"
-          label="贴图分区"
-          className="atlas-inspector-dialog"
-          closeLabel="关闭贴图分区"
-          onClose={() => setAtlasOpen(false)}
-        >
-          <AtlasInspector
-            src={result.textureUrl}
-            size={result.textureReport.size}
-            regions={result.textureReport.regions.map((region) => ({
-              id: region.key,
-              material: region.name,
-              ...(region.materialKey ? { materialKey: region.materialKey } : {}),
-              ...(region.materialKeys ? { materialKeys: region.materialKeys } : {}),
-              ...(region.materials ? { materials: region.materials } : {}),
-              x: region.x,
-              y: region.y,
-              width: region.width,
-              height: region.height,
-              contentPixels: region.contentPixels,
-              shared: (region.materialKeys?.length ?? 0) > 1,
-              ...(region.sourceWidth
-                ? { source: `${region.sourceWidth}×${region.sourceHeight}` }
-                : {}),
-            }))}
-            materials={atlasMaterials}
-            summary={result.textureReport}
-            selected={soloKey}
-            onSelect={(id) => setSoloKey(id)}
-            {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
-          />
-        </Dialog>
-      ) : null}
+      )}
 
       {pending && (
         <Dialog
