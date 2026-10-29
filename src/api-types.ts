@@ -196,5 +196,7 @@ export interface ConversionResult {
   excluded: string[];
   conversionMs?: number;
   textureOnly?: boolean;
+  /** True when this job stopped before assembling a skin pack. */
+  preview?: boolean;
   settings?: Partial<EditSettings>;
 }

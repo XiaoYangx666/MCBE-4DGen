@@ -30,6 +30,8 @@ export const convertRoutes = [
       textureMode?: 'legacy' | 'budget';
       textureTarget?: 'texel-density' | 'texel-retention';
       atlasSharing?: boolean;
+      /** Recompute the atlas/preview only; do not assemble the skin-pack ZIP. */
+      preview?: boolean;
     };
     const session = studio.sessions.get(body.session);
     if (!session) throw new HttpError('模型会话不存在', 404);
@@ -71,6 +73,7 @@ export const convertRoutes = [
     if (!keepParts.length) throw Error('请至少保留一个模型部件');
     const textureMode = body.textureMode ?? 'legacy';
     const textureTarget = body.textureTarget ?? 'texel-retention';
+    const preview = body.preview === true;
 
     const key = stableJson({
       session: body.session,
@@ -97,25 +100,28 @@ export const convertRoutes = [
       profile: body.profile,
     });
     const preparedModel = studio.preparedModels.get(geometryKey);
-    const cached = [...studio.jobs].find(
-      ([, job]) => job.key === key && job.status === 'done',
-    );
-    await updateModel(session.modelId, {
-      settings: {
-        binding: body.binding,
-        ratio: body.ratio,
-        maxError: body.maxError,
-        height: body.height,
-        excluded,
-        materialWeights,
-        profile: body.profile,
-        includedParts: keepParts,
-        textureMode,
-        textureTarget,
-        atlasSharing: !!body.atlasSharing,
-        fingerprint: session.fingerprint,
-      },
-    });
+    const cached = preview
+      ? undefined
+      : [...studio.jobs].find(
+          ([, job]) => job.key === key && job.status === 'done' && !(job.result as { preview?: boolean } | undefined)?.preview,
+        );
+    if (!preview)
+      await updateModel(session.modelId, {
+        settings: {
+          binding: body.binding,
+          ratio: body.ratio,
+          maxError: body.maxError,
+          height: body.height,
+          excluded,
+          materialWeights,
+          profile: body.profile,
+          includedParts: keepParts,
+          textureMode,
+          textureTarget,
+          atlasSharing: !!body.atlasSharing,
+          fingerprint: session.fingerprint,
+        },
+      });
     if (cached) return json({ id: cached[0], cached: true });
 
     const id = crypto.randomUUID();
@@ -123,8 +129,12 @@ export const convertRoutes = [
       key,
       status: 'running',
       message: preparedModel
-        ? '复用模型，仅更新纹理与 UV…'
-        : '正在绑定、减面并生成 128×128 图集…',
+        ? preview
+          ? '复用模型，更新纹理预览…'
+          : '复用模型，仅更新纹理与 UV…'
+        : preview
+          ? '正在绑定、减面并生成纹理预览…'
+          : '正在绑定、减面并生成 128×128 图集…',
       meta: {
         source: session.name,
         modelId: session.modelId,
@@ -135,6 +145,7 @@ export const convertRoutes = [
         height: body.height,
         excluded,
         profile: body.profile,
+        preview,
       },
     };
     studio.addJob(id, job);
@@ -221,12 +232,14 @@ export const convertRoutes = [
           details = result.report;
         }
         job.message = '正在校验皮肤包…';
-        const files = buildSkinPack({
-          geometry: exported.file,
-          png: exported.png,
-          identifier: 'geometry.skin0',
-          packName: packNameFromModel(session.name),
-        });
+        const files = preview
+          ? undefined
+          : buildSkinPack({
+              geometry: exported.file,
+              png: exported.png,
+              identifier: 'geometry.skin0',
+              packName: packNameFromModel(session.name),
+            });
         job.files = files;
         job.texture = exported.png;
         job.geometry = exported.file;
@@ -236,6 +249,7 @@ export const convertRoutes = [
           excluded,
           conversionMs: Math.round(performance.now() - started),
           textureOnly: !!preparedModel,
+          preview,
           settings: {
             ratio: body.ratio,
             maxError: body.maxError,
@@ -244,7 +258,7 @@ export const convertRoutes = [
           },
         };
         job.status = 'done';
-        job.message = '转换完成';
+        job.message = preview ? '纹理预览已更新' : '转换完成';
       } catch (error) {
         job.status = 'error';
         job.message = error instanceof Error ? error.message : String(error);
@@ -257,6 +271,25 @@ export const convertRoutes = [
 
   route('GET', '/api/job/:id', jobState),
   route('GET', '/api/job/:id/:asset', jobState),
+
+  /** Turn a completed preview job into a downloadable pack without recomputing. */
+  route('POST', '/api/job/:id/finalize', async ({ studio, params }) => {
+    const job = studio.jobs.get(params.id!);
+    if (!job) throw new HttpError('任务不存在', 404);
+    if (job.status !== 'done') throw new HttpError('任务尚未完成', 409);
+    if (job.files) return json({ id: params.id });
+    if (!job.texture || !job.geometry)
+      throw new HttpError('预览缺少几何或纹理，请重新生成', 409);
+    job.files = buildSkinPack({
+      geometry: job.geometry as Parameters<typeof buildSkinPack>[0]['geometry'],
+      png: job.texture,
+      identifier: 'geometry.skin0',
+      packName: packNameFromModel(job.meta?.source ?? '4D 皮肤'),
+    });
+    job.result = { ...(job.result as object), preview: false };
+    job.message = '皮肤包已生成';
+    return json({ id: params.id });
+  }),
 ];
 
 const MODEL_EXTENSION = /\.(pmx|pmd|glb|gltf|vrm|fbx|obj|dae|stl|ply)$/i;
@@ -301,10 +334,12 @@ async function jobState({ studio, params }: RouteContext) {
       skins: 1,
       texture: `/api/job/${params.id}/texture`,
     });
-  if (asset === 'download')
-    return new Response((await zipSkinPack(job.files!)) as BodyInit, {
+  if (asset === 'download') {
+    if (!job.files) throw new HttpError('这是预览结果，尚未打包皮肤包', 409);
+    return new Response((await zipSkinPack(job.files)) as BodyInit, {
       headers: zipHeaders(job.meta?.source ?? ''),
     });
+  }
   if (asset === 'geometry') return json(job.geometry);
   if (asset === 'texture')
     return new Response(job.texture as BodyInit, {

@@ -1,28 +1,33 @@
-import { useState } from "react";
-import type { TextureMaterialUsage } from "../../src/api-types";
 import type { Result, Session } from "./types";
 import { ConversionSummary } from "../shared/ConversionSummary";
-import { Dialog } from "../shared/Dialog";
-import { AtlasInspector } from "../shared/AtlasInspector";
+import { AtlasPanel } from "./AtlasPanel";
 
+/**
+ * Result workspace: conversion report, atlas diagnostics and download links.
+ * The atlas is inline (no blocking dialog) so users can inspect the exact
+ * result without leaving the workspace.
+ */
 export function OutputPanels({
   result,
   stale,
   session,
   selected,
   onSelect,
+  onSelectCandidates,
+  previewBusy,
 }: {
   result: Result | null;
   stale: boolean;
   session: Session | null;
   selected: string | null;
-  onSelect: (name: string) => void;
+  onSelect: (id: string) => void;
+  onSelectCandidates?: (ids: readonly string[]) => void;
+  previewBusy?: boolean;
 }) {
-  const [atlasOpen, setAtlasOpen] = useState(false);
   const texture = result?.details?.texture;
   const total =
     (texture?.atlas?.width ?? 128) * (texture?.atlas?.height ?? 128);
-  const measurements = new Map<string, TextureMaterialUsage>(
+  const measurements = new Map(
     (texture?.materials ?? []).map((measurement) => [
       measurement.key ?? measurement.name,
       measurement,
@@ -38,76 +43,39 @@ export function OutputPanels({
     .sort(
       (a, b) => (b.measurement?.pixels ?? 0) - (a.measurement?.pixels ?? 0),
     );
-  const atlasRegions = (texture?.regions ?? []).map((region) => ({
-    id: String(region.id),
-    material: region.material,
-    ...(region.materialKey ? { materialKey: region.materialKey } : {}),
-    ...(region.materialKeys ? { materialKeys: region.materialKeys } : {}),
-    ...(region.materials ? { materials: region.materials } : {}),
-    x: region.x,
-    y: region.y,
-    width: region.width,
-    height: region.height,
-    contentPixels: region.width * region.height,
-    shared: (region.materialKeys?.length ?? 0) > 1,
-    source: `${region.resized.width}×${region.resized.height}`,
-  }));
-  const materialByKey = new Map((session?.materials ?? []).map((material) => [material.key, material]));
-  const atlasMaterials = (texture?.materials ?? []).map((measurement) => {
-    const key = measurement.key ?? measurement.name;
-    return {
-      id: key,
-      name: materialByKey.get(key)?.label ?? measurement.name,
-      allocated: atlasRegions
-        .filter((region) =>
-          region.materialKeys?.length
-            ? region.materialKeys.includes(key)
-            : region.materials?.includes(measurement.name) ||
-              region.material === measurement.name,
-        )
-        .reduce((sum, region) => sum + region.contentPixels, 0),
-      used: measurement.pixels,
-      uv: measurement.uvPixels ?? null,
-      shared: measurement.sharedPixels ?? null,
-      weight: texture?.materialWeights?.[key],
-      floorCharts: measurement.floorCharts,
-      rectPixels: measurement.rectPixels,
-      wastePixels: measurement.wastePixels,
-      mode: texture?.allocation === 'texel-density' || texture?.allocation === 'texel-retention'
-        ? texture.allocation
-        : 'legacy',
-    };
-  });
   return (
-    <div className="bottom-panels">
+    <div className="bottom-panels export-panels">
       <section className="atlas-panel">
         <div className="panel-title">
           纹理图集 <span>ATLAS</span>
         </div>
         {result ? (
-          <div className="atlas-body">
-            <img
-              src={`/api/job/${result.id}/texture`}
-              alt="最终 128×128 纹理图集"
+          <div className="atlas-body inline">
+            <AtlasPanel
+              result={result}
+              session={session}
+              selected={selected}
+              onSelect={(key) => onSelect(key ?? "")}
+              {...(onSelectCandidates ? { onSelectCandidates } : {})}
+              previewBusy={previewBusy}
             />
-            <div>
-              <strong>128 × 128</strong>
-              <p>最终输出纹理</p>
-              <small>
-                放大检查像素分配。
-                <br />
-                矩形占用率不代表视觉质量。
-              </small>
-              <a href={`/api/job/${result.id}/texture`} download="skin0.png">
-                下载贴图 ↗
-              </a>
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => setAtlasOpen(true)}
-              >
-                分区查看
-              </button>
+            <div className="atlas-actions">
+              {stale ? (
+                <small>结果已过期，重新生成后可下载当前配置的图集与皮肤包。</small>
+              ) : (
+                <>
+                  <a href={`/api/job/${result.id}/texture`} download="skin0.png">
+                    下载贴图 ↗
+                  </a>
+                  {result.preview ? (
+                    <small>这是纹理预览；生成最终皮肤包后可下载完整 ZIP。</small>
+                  ) : (
+                    <a href={`/api/job/${result.id}/download`} download>
+                      下载皮肤包 ZIP ↗
+                    </a>
+                  )}
+                </>
+              )}
             </div>
           </div>
         ) : (
@@ -123,16 +91,23 @@ export function OutputPanels({
             timing={`${
               result.cached
                 ? "复用上次结果；原转换用时"
-                : result.textureOnly
-                  ? "复用模型，纹理更新用时"
-                  : "完整生成用时"
+                : result.preview
+                  ? "纹理预览用时"
+                  : result.textureOnly
+                    ? "复用模型，纹理更新用时"
+                    : "完整生成用时"
             } ${((result.conversionMs ?? 0) / 1000).toFixed(1)} 秒`}
             atlas={result.details?.texture?.atlas}
             notice={
               <>
+                {result.preview && (
+                  <p className="inline-note">
+                    这是纹理预览，尚未打包；在导出工作区生成最终皮肤包。
+                  </p>
+                )}
                 {stale && (
                   <p className="inline-note">
-                    以下为上次转换结果，重新转换后更新。
+                    以下为上次转换结果，重新生成后更新。
                   </p>
                 )}
                 {!texture?.materials?.length && (
@@ -144,7 +119,7 @@ export function OutputPanels({
             }
             materials={materials.map((m) => ({
               id: m.key,
-              name: m.label ?? (m.name || '未命名'),
+              name: m.label ?? (m.name || "未命名"),
               pixels: m.measurement?.pixels ?? null,
               excluded: m.excluded,
             }))}
@@ -202,26 +177,6 @@ export function OutputPanels({
           </>
         )}
       </section>
-
-      {atlasOpen && result && atlasRegions.length > 0 ? (
-        <Dialog
-          title="贴图分区"
-          label="贴图分区"
-          className="atlas-inspector-dialog"
-          closeLabel="关闭贴图分区"
-          onClose={() => setAtlasOpen(false)}
-        >
-          <AtlasInspector
-            src={`/api/job/${result.id}/texture`}
-            size={texture?.atlas?.width ?? 128}
-            regions={atlasRegions}
-            materials={atlasMaterials}
-            {...(texture?.atlas ? { summary: texture.atlas } : {})}
-            selected={selected}
-            onSelect={(id) => onSelect(id ?? '')}
-          />
-        </Dialog>
-      ) : null}
     </div>
   );
 }

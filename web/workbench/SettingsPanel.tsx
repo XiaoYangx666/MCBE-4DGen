@@ -211,8 +211,12 @@ export function SettingsPanel(props: SettingsPanelProps) {
         <>
           <span className="spinner" /> 处理中…
         </>
+          ) : stale || !result ? (
+        "生成皮肤"
+          ) : result.preview ? (
+        "生成最终皮肤包"
           ) : (
-        stale ? "重新生成皮肤" : "生成皮肤"
+        "重新生成皮肤"
           )}
         </button>
         <p>权重微调后再次生成会复用模型；姿势、减面或材质保留变化时重新处理模型。</p>
@@ -221,9 +225,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
             type="button"
             className="download"
             onClick={openPacks}
-            disabled={busy || stale}
+            disabled={busy || stale || result.preview}
           >
-            {stale ? "参数已修改，请重新生成" : "保存皮肤…"}
+            {stale
+              ? "参数已修改，请重新生成"
+              : result.preview
+                ? "预览尚未打包"
+                : "保存皮肤…"}
           </button>
         )}
       </div>

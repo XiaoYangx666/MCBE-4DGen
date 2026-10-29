@@ -2036,3 +2036,68 @@ footer a { color: var(--accent); }
 .studio-layout.compact .export-workspace .workspace-preview { min-height: 44dvh; }
 .studio-layout.compact .export-side { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
 .studio-layout.compact .workspace-statusbar { padding: 3px 8px; }
+
+/* ---------- persistent three-region workspace body ---------- */
+.studio-layout.workspace-shell .workspace-body { display: grid; min-height: 0; }
+.studio-layout.workspace-model .workspace-body { grid-template-columns: 280px 0 minmax(0, 1fr) 0 300px; }
+.studio-layout.workspace-texture .workspace-body { grid-template-columns: var(--texture-left, 300px) 6px minmax(0, 1fr) 6px var(--texture-right, 360px); }
+.studio-layout.workspace-export .workspace-body { grid-template-columns: 0 0 minmax(0, 1fr) 0 430px; }
+.workspace-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--surface);
+}
+.workspace-side.left { border-right: 1px solid var(--line); padding: 10px 12px 16px; }
+.workspace-side.right { border-left: 1px solid var(--line); }
+.workspace-side.closed { display: none; }
+.workspace-side.right .panel-scroll { flex: 1 1 auto; }
+.workspace-side.right .settings-footer { flex: 0 0 auto; }
+.workspace-splitter.hidden { display: none; }
+.studio-layout.preview-max .workspace-body { grid-template-columns: minmax(0, 1fr); }
+.studio-layout.preview-max .workspace-side,
+.studio-layout.preview-max .workspace-splitter { display: none; }
+.studio-layout.workspace-export .workspace-side.left { display: none; }
+.model-stage.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  border-radius: 0;
+  background: var(--canvas);
+}
+.export-side-inner { display: flex; flex-direction: column; min-height: 0; width: 100%; }
+.export-side-inner .export-report { padding: 10px 14px; }
+.export-side-inner .export-atlas { padding: 10px 14px 16px; border-top: 1px solid var(--line); }
+.export-side-inner .export-atlas summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.export-side-inner .export-atlas[open] summary { margin-bottom: 10px; }
+
+@media (max-width: 1100px) {
+  .studio-layout.workspace-model .workspace-body { grid-template-columns: 240px 0 minmax(0, 1fr) 0 270px; }
+  .studio-layout.workspace-export .workspace-body { grid-template-columns: 0 0 minmax(0, 1fr) 0 380px; }
+}
+
+@media (max-width: 860px) {
+  .studio-layout.workspace-shell .workspace-body { display: flex; flex-direction: column; overflow: auto; }
+  .studio-layout.workspace-shell .workspace-side,
+  .studio-layout.workspace-shell .workspace-preview {
+    flex: 0 0 auto;
+    overflow: visible;
+    border: 0 !important;
+  }
+  .studio-layout.workspace-shell .workspace-preview { order: 1; min-height: 42dvh; }
+  .studio-layout.workspace-model .workspace-side.left { order: 2; border-top: 1px solid var(--line) !important; }
+  .studio-layout.workspace-model .workspace-side.right { order: 3; border-top: 1px solid var(--line) !important; }
+  .studio-layout.workspace-texture .workspace-side,
+  .studio-layout.workspace-texture .workspace-preview { display: none; }
+  .studio-layout.workspace-texture .workspace-body[data-mobile-view="materials"] .workspace-side.left { display: flex; order: 1; }
+  .studio-layout.workspace-texture .workspace-body[data-mobile-view="preview"] .workspace-preview { display: flex; order: 1; }
+  .studio-layout.workspace-texture .workspace-body[data-mobile-view="atlas"] .workspace-side.right { display: flex; order: 1; }
+  .studio-layout.workspace-export .workspace-side.right { order: 2; border-top: 1px solid var(--line) !important; }
+  .workspace-splitter { display: none; }
+  .texture-mobile-tabs { display: flex; gap: 3px; order: 0; padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .texture-mobile-tabs button { flex: 1; min-height: 34px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); font: inherit; font-size: 11px; }
+  .texture-mobile-tabs button.active { border-color: var(--accent); color: var(--accent); background: var(--selected); }
+  .studio-layout.workspace-texture .workspace-preview { min-height: calc(100dvh - 150px); }
+}

@@ -3,7 +3,8 @@ import type { HumanoidProfile } from "../../src/humanoid";
 import { api, post } from "../lib/api";
 import { estimateTriangles } from "./estimate";
 import type { Result, Session } from "./types";
-import type { TextureMode, TextureTarget } from "../shared/TextureStudio";
+import type { TextureMode, TextureTarget } from "../shared/texture-types";
+import type { StudioWorkspace } from "../shared/WorkspaceTabs";
 import {
   fromServerTextureTarget,
   toServerTextureTarget,
@@ -20,6 +21,7 @@ export function useWorkbench() {
   const [savedRevision, setSavedRevision] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+  const [workspace, setWorkspace] = useState<StudioWorkspace>("model");
   const [mode, setMode] = useState("pose");
   const [excluded, setExcluded] = useState<string[]>([]);
   const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
@@ -53,6 +55,17 @@ export function useWorkbench() {
   const [revision, setRevision] = useState(0);
   const [resultRevision, setResultRevision] = useState(0);
   const run = useRef(0);
+  const revisionRef = useRef(0);
+  const resultRef = useRef<Result | null>(null);
+  const convertRef = useRef<((preview: boolean) => Promise<void>) | null>(null);
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewQueued = useRef(false);
+  const previewRunning = useRef(false);
+  const previewFailedRevision = useRef(-1);
+  const finalQueued = useRef(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  revisionRef.current = revision;
+  resultRef.current = result;
 
   useEffect(() => {
     if (!busy) return;
@@ -99,6 +112,14 @@ export function useWorkbench() {
     setFocus("all");
     setSelected("");
     setSolo(null);
+    setWorkspace("model");
+    setPreviewBusy(false);
+    previewQueued.current = false;
+    previewRunning.current = false;
+    previewFailedRevision.current = -1;
+    finalQueued.current = false;
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    previewTimer.current = null;
     setProfile(loadedProfile);
     setProfileText(JSON.stringify(loadedProfile, null, 2));
     setBinding(saved?.binding ?? (next.profile ? "humanoid" : "static"));
@@ -121,12 +142,28 @@ export function useWorkbench() {
     }
   }
 
-  function convert() {
-    void action(async () => {
-      if (!session) return;
-      const token = ++run.current;
-      const before = result;
-      setMessage("提交转换任务…");
+  async function runConvert(previewMode: boolean) {
+    if (!session) return;
+    if (previewMode && (busy || previewRunning.current)) {
+      previewQueued.current = true;
+      return;
+    }
+    if (!previewMode && (busy || previewRunning.current)) {
+      if (previewRunning.current) finalQueued.current = true;
+      return;
+    }
+    const token = ++run.current;
+    const before = resultRef.current;
+    const runRevision = revisionRef.current;
+    if (previewMode) {
+      previewRunning.current = true;
+      setPreviewBusy(true);
+    } else {
+      setBusy(true);
+    }
+    setError("");
+    setMessage(previewMode ? "更新纹理预览…" : "提交转换任务…");
+    try {
       const job = await post("/api/convert", {
         session: session.id,
         excluded,
@@ -140,6 +177,7 @@ export function useWorkbench() {
         maxError,
         height,
         profile,
+        preview: previewMode,
       });
       for (;;) {
         const state = await api("/api/job/" + job.id);
@@ -160,16 +198,86 @@ export function useWorkbench() {
               nextDeltas.set(key, material.pixels - previous.get(key)!);
           }
           setMaterialDeltas(nextDeltas);
-          setResult({ id: job.id, ...state.result, cached: !!job.cached });
-          setResultRevision(revision);
-          setSavedRevision(revision);
-          setMode("result");
-          setFocus("all");
+          const nextResult = { id: job.id, ...state.result, cached: !!job.cached };
+          setResult(nextResult);
+          resultRef.current = nextResult;
+          setResultRevision(runRevision);
+          previewFailedRevision.current = -1;
+          if (!previewMode) {
+            setSavedRevision(runRevision);
+            setMode("result");
+            setFocus("all");
+            setWorkspace("export");
+          }
           break;
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
-    });
+    } catch (reason) {
+      if (token === run.current) {
+        if (previewMode) previewFailedRevision.current = runRevision;
+        setError(reason instanceof Error ? reason.message : String(reason));
+        setMessage(previewMode ? "预览更新未完成" : "操作未完成");
+      }
+    } finally {
+      if (token === run.current) {
+        setBusy(false);
+        setPreviewBusy(false);
+      }
+      previewRunning.current = false;
+      if (!previewMode) finalQueued.current = false;
+      if (previewMode && finalQueued.current) {
+        finalQueued.current = false;
+        previewQueued.current = false;
+        if (token === run.current)
+          window.setTimeout(() => void convertRef.current?.(false), 0);
+      } else if (previewMode && previewQueued.current) {
+        previewQueued.current = false;
+        if (token === run.current)
+          window.setTimeout(() => void convertRef.current?.(true), 0);
+      }
+    }
+  }
+
+  convertRef.current = runConvert;
+
+  function convert() {
+    void runConvert(false);
+  }
+
+  function preview() {
+    void runConvert(true);
+  }
+
+  /** Reuse a completed preview's exact atlas/geometry for the final pack. */
+  async function finalizeResult() {
+    if (!result?.preview || stale) {
+      void runConvert(false);
+      return;
+    }
+    const token = ++run.current;
+    setBusy(true);
+    setError("");
+    setMessage("正在打包预览结果…");
+    try {
+      await post(`/api/job/${result.id}/finalize`, {});
+      const state = await api("/api/job/" + result.id);
+      if (token !== run.current) return;
+      const nextResult = { id: result.id, ...state.result, cached: false };
+      setResult(nextResult);
+      resultRef.current = nextResult;
+      setResultRevision(revisionRef.current);
+      setSavedRevision(revisionRef.current);
+      setWorkspace("export");
+      setMessage("皮肤包已生成");
+    } catch (reason) {
+      if (token === run.current) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+        setMessage("打包未完成");
+      }
+    } finally {
+      if (token === run.current) setBusy(false);
+    }
   }
 
   function updateProfile(key: string, value: number) {
@@ -202,6 +310,30 @@ export function useWorkbench() {
   const dirty = !!session && revision !== savedRevision;
   const stale = !!result && revision !== resultRevision;
 
+  // Texture workspace: keep the atlas in sync with the latest settings without
+  // making the user press "generate" for every slider movement. The debounce is
+  // followed by a latest-wins queue; old jobs cannot overwrite newer results.
+  useEffect(() => {
+    if (workspace !== "texture" || !session) return;
+    if (busy || previewBusy) return;
+    if (previewFailedRevision.current === revision) return;
+    if (result && revision === resultRevision) return;
+    if (!includedParts.size) return;
+    if (!session.materials.some((material) => !excluded.includes(material.key)))
+      return;
+    if (previewTimer.current) clearTimeout(previewTimer.current);
+    previewTimer.current = setTimeout(() => {
+      previewTimer.current = null;
+      void convertRef.current?.(true);
+    }, 650);
+    return () => {
+      if (previewTimer.current) {
+        clearTimeout(previewTimer.current);
+        previewTimer.current = null;
+      }
+    };
+  }, [workspace, session, busy, previewBusy, result, revision, resultRevision, includedParts, excluded]);
+
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -224,6 +356,8 @@ export function useWorkbench() {
   return {
     session,
     result,
+    workspace,
+    setWorkspace,
     mode,
     setMode,
     excluded,
@@ -272,6 +406,9 @@ export function useWorkbench() {
     changed,
     accept,
     convert,
+    preview,
+    finalizeResult,
+    previewBusy,
     saveSettings,
     estimate,
     dirty,
