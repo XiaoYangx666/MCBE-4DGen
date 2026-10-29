@@ -51,7 +51,12 @@ node scripts/desktop/package-desktop.ts --out C:\path\to\4DGen-portable
 
 ### 受限会话下的开发启动
 
-如果 `%APPDATA%` 本身不可写（例如受限的本地会话或 CI 沙箱），Electron 会在创建 Chromium 单实例锁时直接退出，日志里出现 `Lock file can not be created: 拒绝访问 (0x5)`。可以把桌面配置放到仓库内可写目录，并仅对受限开发会话关闭 Chromium 沙箱：
+受限会话里有两个独立的失败点，通常需要同时处理，否则表现为“命令秒退、没有窗口”：
+
+1. **配置目录不可写**：`%APPDATA%` 或其它非工作区目录被拒绝写入时，Electron 创建 Chromium 单实例锁失败，日志出现 `Lock file can not be created: 拒绝访问 (0x5)`；`requestSingleInstanceLock()` 返回 false 后应用直接 `app.quit()`。
+2. **Chromium 沙箱无法初始化**：进程以 `0x80000003`（STATUS_BREAKPOINT）退出且没有任何输出。用 `node_modules/electron/dist/electron.exe --version` 可以复现，加 `--no-sandbox` 后正常输出版本号。
+
+把桌面配置放到仓库内可写目录，并仅对受限开发会话关闭 Chromium 沙箱：
 
 ```powershell
 $env:FOURDGEN_DESKTOP_USER_DATA = "$PWD\.cache\desktop-profile"
@@ -59,7 +64,7 @@ $env:FOURDGEN_DESKTOP_NO_SANDBOX = '1'
 npm run desktop
 ```
 
-`FOURDGEN_DESKTOP_NO_SANDBOX` 只用于本地受限环境或 CI，正常分发和日常桌面使用不要设置。`FOURDGEN_DESKTOP_USER_DATA` 只改变桌面配置与 Chromium profile 的位置，模型、皮肤包和游戏目录仍由 `storage.local.json`、`skin-manager.local.json` 决定。
+`FOURDGEN_DESKTOP_NO_SANDBOX` 只用于本地受限环境或 CI，正常分发和日常桌面使用不要设置。`FOURDGEN_DESKTOP_USER_DATA` 只改变桌面配置与 Chromium profile 的位置，模型、皮肤包和游戏目录仍由 `storage.local.json`、`skin-manager.local.json` 决定。这两个变量只影响 `npm run desktop`；直接调用 `electron.exe` 时需自行传 `--no-sandbox` 与 `--user-data-dir`。在普通桌面会话中直接 `npm run desktop` 即可，不需要任何额外参数。
 
 ### 体积与裁剪
 
@@ -83,6 +88,7 @@ node scripts/checks/check-desktop.ts C:\path\to\4DGen-portable\4DGen-win32-x64\4
 
 ## Windows 验证记录
 
+- 2026-10-29：在受限自动化会话中用 `FOURDGEN_DESKTOP_USER_DATA=$PWD\.cache\4dgen-desktop` + `FOURDGEN_DESKTOP_NO_SANDBOX=1` 成功启动开发版窗口；同一会话中直接 `npm run desktop` 会因单实例锁写入失败和沙箱初始化崩溃（`0x80000003`）退出，确认这两个变量缺一不可。
 - 2026-10-28：v0.2.0 便携版（373.0 MB）与安装包构建成功，版本号与网页资源已写入产物；本次自动化会话无法启动 Electron 图形进程（退出码 0x80000003），未重跑完整冒烟检查，发布前请在普通桌面会话运行 `npm run test:desktop`。
 - 2026-10-19：开发版冒烟检查通过；便携版打包后通过完整冒烟检查；不带测试参数直接启动时后台服务正常就绪，窗口保持运行。
 - 仓库所在目录被标记为 Low 完整性时，仓库内 `release/` 的构建可能因无法写 `%APPDATA%` 而静默退出。此时使用 `--out` 输出到普通目录即可。
