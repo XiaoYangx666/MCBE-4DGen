@@ -5,6 +5,7 @@
 ## 使用与流程
 
 - [完整工作流程](workflow.md)：转换、校验、预览、皮肤包入库、备份与恢复。
+- [模型编辑工作区](workspace-separation.md)：模型 / 纹理 / 导出的职责边界，自动预览与外部改动写回。
 - [本地网页工作台](local-web.md)：`npm run dev`（Node 服务端）、材质筛选、姿势预览、减面与图集参数。
 - [网页版（纯浏览器）](web-app.md)：`npm run webapp:dev`、图片皮肤、模型转换、静态部署与浏览器端限制。
 - [桌面版使用与打包](desktop.md)：Electron 开发版、Windows 便携版、安装包与验证限制。

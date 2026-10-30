@@ -935,6 +935,87 @@ export class PackManager {
       return this.apply(slot, state, await this.compose(slot, state, active), active);
     });
   }
+  /**
+   * Fail before writing anything when the game directory rejects new files
+   * (game still running, sync tool or antivirus holding the slot). Otherwise a
+   * half-started deployment leaves a pending state the user has to clean up.
+   */
+  private async assertWritable(path: string) {
+    const probe = join(path, '.4dgen-write-' + randomUUID() + '.tmp');
+    try {
+      await writeFile(probe, '');
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      const reason =
+        code === 'EPERM' || code === 'EACCES' || code === 'EBUSY'
+          ? '可能有 Minecraft、同步盘或杀毒软件正在占用文件；请完全退出游戏后重试。'
+          : String(error);
+      throw new Error('游戏目录当前不可写：' + reason);
+    } finally {
+      await rm(probe, { force: true }).catch(() => {});
+    }
+  }
+  /**
+   * Take ownership of a slot whose files changed outside the manager (game
+   * updates, reinstalls, manual edits). The current tree is snapshotted first,
+   * then the recorded packs are rebuilt from the local library. With nothing
+   * recorded, the current directory simply becomes the new baseline.
+   */
+  async reattach(slot: string): Promise<{
+    slot: string;
+    changed: boolean;
+    backup?: string;
+    active?: number;
+  }> {
+    this.requireGame();
+    return this.locked(async () => {
+      const state = await this.state(slot);
+      if (!state) throw new Error('Slot is not managed');
+      const target = this.target(slot);
+      const current = await tree(target);
+      const currentHashes = hashes(current.files);
+      // A pending entry means an earlier write was interrupted; taking
+      // ownership supersedes it because the tree on disk is snapshotted below.
+      if (same(currentHashes, state.installed) && !state.pending)
+        return { slot, changed: false };
+      await this.assertWritable(target);
+      const backup = await this.snapshot(slot, current, state.active, state.edits);
+      if (!state.active.length) {
+        state.installed = currentHashes;
+        state.installedSignature = (await treeSignature(target)).files;
+        state.presetSources = [];
+        state.generation++;
+        delete state.pending;
+        await atomicJSON(this.statePath(slot), state);
+        return { slot, changed: true, backup: backup.id, active: 0 };
+      }
+      let next: Tree;
+      try {
+        next = await this.compose(slot, state, state.active);
+      } catch (error) {
+        throw new Error('本地库缺少已启用的皮肤包，无法重新写回：' + String(error));
+      }
+      const nextHashes = hashes(next.files);
+      state.pending = { backup: backup.id, planned: nextHashes };
+      await atomicJSON(this.statePath(slot), state);
+      try {
+        await replaceTree(target, next, current, nextHashes);
+        state.installed = nextHashes;
+        state.installedSignature = (await treeSignature(target)).files;
+        state.generation++;
+        delete state.pending;
+        await atomicJSON(this.statePath(slot), state);
+      } catch (error) {
+        throw new Error(`重新写回未完成，可直接重试。${String(error)}`);
+      }
+      return {
+        slot,
+        changed: true,
+        backup: backup.id,
+        active: state.active.length,
+      };
+    });
+  }
   async restore(slot: string, backupID?: string) {
     this.requireGame();
     return this.locked(async () => {

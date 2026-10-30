@@ -4,6 +4,7 @@ import type {
   WheelEvent as ReactWheelEvent,
 } from 'react';
 import { Icon } from './Icons';
+import { atlasColor } from './atlas-colors';
 
 export interface AtlasInspectorRegion {
   id: string;
@@ -47,20 +48,6 @@ export interface AtlasInspectorMaterial {
   mode?: 'legacy' | 'budget';
 }
 
-export interface AtlasInspectorSummary {
-  contentPixels?: number;
-  allocatedPixels?: number;
-  uvPixels?: number;
-  sharedContentPixels?: number;
-  unusedContentPixels?: number;
-  overlapPixels?: number;
-}
-
-const COLORS = [
-  '#e06c75', '#61afef', '#98c379', '#e5c07b', '#c678dd',
-  '#56b6c2', '#d19a66', '#7f9cf5', '#f78fb3', '#4db6ac',
-];
-
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 12;
 
@@ -74,7 +61,6 @@ export function AtlasInspector({
   regions,
   materials,
   coverageSrc,
-  summary,
   selected: selectedProp,
   onSelect,
   onSelectCandidates,
@@ -90,7 +76,6 @@ export function AtlasInspector({
   materials: readonly AtlasInspectorMaterial[];
   /** Optional atlas preview with unused rectangle pixels tinted. */
   coverageSrc?: string;
-  summary?: AtlasInspectorSummary;
   /** Controlled material selection; omit for internal state. */
   selected?: string | null;
   onSelect?: (id: string | null) => void;
@@ -118,8 +103,8 @@ export function AtlasInspector({
 
   const colorOf = useMemo(() => {
     const map = new Map<string, string>();
-    materials.forEach((item, index) =>
-      map.set(item.id ?? item.name, COLORS[index % COLORS.length]!),
+    materials.forEach((item) =>
+      map.set(item.id ?? item.name, atlasColor(item.id ?? item.name)),
     );
     return map;
   }, [materials]);
@@ -128,18 +113,7 @@ export function AtlasInspector({
     [materials],
   );
   const totalPixels = Math.max(1, size * size);
-  const allocated = summary?.allocatedPixels ?? rows.reduce((sum, row) => sum + row.allocated, 0);
-  const content = summary?.contentPixels ?? allocated;
-  const uv = summary?.uvPixels ?? rows.reduce((sum, row) => sum + (row.uv ?? row.used ?? 0), 0);
   const selectedMaterial = rows.find((row) => (row.id ?? row.name) === selected);
-  const selectedRegions = selected
-    ? regions.filter((region) =>
-        region.materialKeys
-          ? region.materialKeys.includes(selected)
-          : (region.materialKey ?? region.material) === selected ||
-            region.material === selectedMaterial?.name,
-      )
-    : [];
 
   const zoomBy = (factor: number) => {
     setZoom((current) => clamp(current * factor, ZOOM_MIN, ZOOM_MAX));
@@ -221,17 +195,6 @@ export function AtlasInspector({
       <header className="atlas-inspector-head">
         <div>
           <b>最终贴图</b>
-          <small>
-            {size} × {size} · 内容 {((content / totalPixels) * 100).toFixed(1)}% ·
-            三角采样 {((uv / totalPixels) * 100).toFixed(1)}%
-            {summary?.sharedContentPixels
-              ? ` · 共享 ${((summary.sharedContentPixels / totalPixels) * 100).toFixed(1)}%`
-              : ''}
-            {summary?.unusedContentPixels
-              ? ` · 矩形内未采样 ${((summary.unusedContentPixels / totalPixels) * 100).toFixed(1)}%`
-              : ''}
-            {' · 点色块定位材质'}
-          </small>
         </div>
         <div className="atlas-inspector-actions">
           <div className="atlas-zoom" role="group" aria-label="图集缩放">
@@ -385,47 +348,6 @@ export function AtlasInspector({
                   </button>
                 );
               })}
-            </div>
-          )}
-          {selectedMaterial && (
-            <div className="atlas-inspector-detail">
-              <b style={{ color: colorOf.get(selectedMaterial.id ?? selectedMaterial.name) }}>
-                {selectedMaterial.name}
-              </b>
-              <span>
-                分配 {selectedMaterial.allocated.toLocaleString('zh-CN')} px · 占整图{' '}
-                {((selectedMaterial.allocated / totalPixels) * 100).toFixed(1)}%
-              </span>
-              {selectedMaterial.uv != null && (
-                <span>
-                  实际用到 {(selectedMaterial.uv ?? 0).toLocaleString('zh-CN')} px（其余{' '}
-                  {Math.max(0, selectedMaterial.allocated - (selectedMaterial.uv ?? 0)).toLocaleString('zh-CN')} px 为留边/空隙）
-                </span>
-              )}
-              {selectedMaterial.shared ? (
-                <span>其中 {selectedMaterial.shared.toLocaleString('zh-CN')} px 与其他材质重叠</span>
-              ) : (
-                <span>无跨材质重叠采样</span>
-              )}
-              <span>
-                {selectedMaterial.flat
-                  ? '纯色采样'
-                  : selectedMaterial.floorCharts
-                    ? `受最小尺寸限制的 UV 岛：${selectedMaterial.floorCharts}`
-                    : '未触发最小尺寸限制'}
-              </span>
-              {selectedMaterial.weight !== undefined && (
-                <span>当前质量 {selectedMaterial.weight.toFixed(2)}×</span>
-              )}
-              {selectedRegions.map((region) => (
-                <span key={region.id}>
-                  {region.width}×{region.height} @ {region.x},{region.y}
-                  {region.materialKeys && region.materialKeys.length > 1
-                    ? ` · 共享 ×${region.materialKeys.length}`
-                    : ''}
-                  {region.source ? ` · ${region.source}` : ''}
-                </span>
-              ))}
             </div>
           )}
         </div>

@@ -8,6 +8,7 @@ import {
   createPreviewViewport,
   type PreviewViewport,
 } from "../shared/preview-viewport";
+import { ViewLightingButton } from "../shared/ViewLightingButton";
 import type { Scene } from "./pack-types";
 
 /** Full-size rotatable preview of a library pack's first skin. */
@@ -23,8 +24,12 @@ export function PackPreview({
   baseUrl?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<PreviewViewport | null>(null);
   const fitRef = useRef<{ front: () => void; reset: () => void } | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
+  const [unlit, setUnlit] = useState(false);
+  const unlitRef = useRef(unlit);
+  unlitRef.current = unlit;
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -67,13 +72,14 @@ export function PackPreview({
           centerColor: 0x282f36,
           y: -0.01,
         },
-        lit: true,
+        lit: !unlitRef.current,
         renderMode: "demand",
-        controls: { enablePan: false },
+        controls: { enablePan: true },
         orientation: { direction: -1, label: "玩家正前方（−Z）" },
         // Pack previews stay framed until the user starts orbiting.
         refitOnResize: "until-user-moves",
       });
+      viewRef.current = view;
       preview = buildPolyMeshPreview(scene.geometry, scene.texture, {
         identifier: scene.identifier as `geometry.${string}`,
         groupByBone: true,
@@ -94,6 +100,7 @@ export function PackPreview({
     } catch (cause) {
       preview?.dispose();
       view?.dispose();
+      viewRef.current = null;
       fitRef.current = null;
       setError(
         cause instanceof Error ? cause.message : "三维预览不可用",
@@ -101,6 +108,7 @@ export function PackPreview({
       return;
     }
     return () => {
+      viewRef.current = null;
       fitRef.current = null;
       view?.dispose();
       preview?.dispose();
@@ -108,6 +116,11 @@ export function PackPreview({
       preview = null;
     };
   }, [scene]);
+
+  const toggleLighting = (next: boolean) => {
+    setUnlit(next);
+    viewRef.current?.setLit(!next);
+  };
 
   return (
     <div className="packs-preview" ref={host}>
@@ -124,8 +137,9 @@ export function PackPreview({
       {scene?.geometry && !error && (
         <>
           <div className="packs-preview-hint">
-            初始视角：游戏正前方（−Z）· 拖动旋转 · 滚轮缩放
+            初始视角：游戏正前方（−Z）· 拖动旋转 · 右键平移 · 滚轮缩放
           </div>
+          <ViewLightingButton unlit={unlit} onChange={toggleLighting} />
           <div className="packs-preview-actions">
             <button type="button" onClick={() => fitRef.current?.front()}>
               正面

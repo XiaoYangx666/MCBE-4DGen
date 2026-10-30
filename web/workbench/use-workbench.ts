@@ -31,9 +31,7 @@ export function useWorkbench() {
   >({});
   const [selected, setSelected] = useState("");
   const [solo, setSolo] = useState<string | null>(null);
-  const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("从模型管理打开模型，开始调整。");
   const [error, setError] = useState("");
   const [wire, setWire] = useState(false);
   const [unlit, setUnlit] = useState(true);
@@ -62,17 +60,6 @@ export function useWorkbench() {
   const [previewBusy, setPreviewBusy] = useState(false);
   revisionRef.current = revision;
   resultRef.current = result;
-
-  useEffect(() => {
-    if (!busy) return;
-    const started = Date.now();
-    setElapsed(0);
-    const timer = setInterval(
-      () => setElapsed((Date.now() - started) / 1000),
-      250,
-    );
-    return () => clearInterval(timer);
-  }, [busy]);
 
   function changed() {
     setRevision((value) => value + 1);
@@ -127,7 +114,6 @@ export function useWorkbench() {
     setProfile(loadedProfile);
     setProfileText(JSON.stringify(loadedProfile, null, 2));
     setBinding(saved?.binding ?? (next.profile ? "humanoid" : "static"));
-    setMessage("模型已加载，先检查材质和姿势。");
     setRevision(0);
     setSavedRevision(fromVersion ? -1 : 0);
     location.hash = "#/workbench";
@@ -140,7 +126,6 @@ export function useWorkbench() {
       await run();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
-      setMessage("操作未完成");
     } finally {
       setBusy(false);
     }
@@ -155,7 +140,6 @@ export function useWorkbench() {
     if (!previewMode && (busy || previewRunning.current)) {
       if (previewRunning.current) {
         finalQueued.current = true;
-        setMessage("预览完成后开始生成最终皮肤包…");
       }
       return;
     }
@@ -169,7 +153,6 @@ export function useWorkbench() {
       setBusy(true);
     }
     setError("");
-    setMessage(previewMode ? "更新纹理预览…" : "提交转换任务…");
     try {
       const job = await post("/api/convert", {
         session: session.id,
@@ -189,7 +172,6 @@ export function useWorkbench() {
       for (;;) {
         const state = await api("/api/job/" + job.id);
         if (token !== run.current) return;
-        setMessage(state.message);
         if (state.status === "error") throw Error(state.message);
         if (state.status === "done") {
           const previous = new Map(
@@ -214,7 +196,6 @@ export function useWorkbench() {
             setSavedRevision(runRevision);
             setMode("result");
             setFocus("all");
-            setWorkspace("export");
           }
           break;
         }
@@ -224,7 +205,6 @@ export function useWorkbench() {
       if (token === run.current) {
         if (previewMode) previewFailedRevision.current = runRevision;
         setError(reason instanceof Error ? reason.message : String(reason));
-        setMessage(previewMode ? "预览更新未完成" : "操作未完成");
       }
     } finally {
       if (token === run.current) {
@@ -248,10 +228,6 @@ export function useWorkbench() {
 
   convertRef.current = runConvert;
 
-  function convert() {
-    void runConvert(false);
-  }
-
   function preview() {
     void runConvert(true);
   }
@@ -265,7 +241,6 @@ export function useWorkbench() {
     const token = ++run.current;
     setBusy(true);
     setError("");
-    setMessage("正在打包预览结果…");
     try {
       await post(`/api/job/${result.id}/finalize`, {});
       const state = await api("/api/job/" + result.id);
@@ -275,12 +250,9 @@ export function useWorkbench() {
       resultRef.current = nextResult;
       setResultRevision(revisionRef.current);
       setSavedRevision(revisionRef.current);
-      setWorkspace("export");
-      setMessage("皮肤包已生成");
     } catch (reason) {
       if (token === run.current) {
         setError(reason instanceof Error ? reason.message : String(reason));
-        setMessage("打包未完成");
       }
     } finally {
       if (token === run.current) setBusy(false);
@@ -317,11 +289,12 @@ export function useWorkbench() {
   const dirty = !!session && revision !== savedRevision;
   const stale = !!result && revision !== resultRevision;
 
-  // Texture workspace: keep the atlas in sync with the latest settings without
-  // making the user press "generate" for every slider movement. The debounce is
-  // followed by a latest-wins queue; old jobs cannot overwrite newer results.
+  // Editing workspaces keep the preview in sync with the latest settings
+  // without making the user press "generate": the model page and the texture
+  // page both recalculate after a short debounce. The debounce is followed by a
+  // latest-wins queue, so old jobs cannot overwrite newer results.
   useEffect(() => {
-    if (workspace !== "texture" || !session) return;
+    if (workspace === "export" || !session) return;
     if (busy || previewBusy) return;
     if (previewFailedRevision.current === revision) return;
     if (result && revision === resultRevision) return;
@@ -356,7 +329,6 @@ export function useWorkbench() {
     await action(async () => {
       await post("/api/models/update", { id: session.modelId, settings });
       setSavedRevision(revision);
-      setMessage("编辑配置已保存");
     });
   }
 
@@ -384,9 +356,7 @@ export function useWorkbench() {
     setSelected,
     solo,
     setSolo,
-    elapsed,
     busy,
-    message,
     error,
     setError,
     wire,
@@ -410,7 +380,6 @@ export function useWorkbench() {
     updateProfile,
     changed,
     accept,
-    convert,
     preview,
     finalizeResult,
     previewBusy,

@@ -839,18 +839,13 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   };
 
   const tabs = [
-    {
-      ...STUDIO_WORKSPACES[0]!,
-      badge: studioParts.length || null,
-    },
+    STUDIO_WORKSPACES[0]!,
     {
       ...STUDIO_WORKSPACES[1]!,
-      badge: studioMaterials.length || null,
       attention: previewStatus !== 'idle',
     },
     {
       ...STUDIO_WORKSPACES[2]!,
-      badge: stale ? '过期' : result ? (result.preview ? '预览' : '已生成') : null,
       attention: stale,
     },
   ];
@@ -1395,7 +1390,6 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                 size={result.textureReport.size}
                 regions={atlasRegionsUi}
                 materials={atlasMaterials}
-                summary={result.textureReport}
                 selected={soloKey}
                 onSelect={selectMaterial}
                 onSelectCandidates={(ids) => setCandidates(candidateItems(ids))}
@@ -1527,7 +1521,6 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                     size={result.textureReport.size}
                     regions={atlasRegionsUi}
                     materials={atlasMaterials}
-                    summary={result.textureReport}
                     selected={soloKey}
                     onSelect={selectMaterial}
                     onSelectCandidates={(ids) => setCandidates(candidateItems(ids))}

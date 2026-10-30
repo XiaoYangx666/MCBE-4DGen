@@ -103,4 +103,14 @@ export const gameRoutes = [
     await manager.pruneBackups(slot).catch(() => {});
     return json(result);
   }),
+
+  gameRoute('POST', '/api/packs/reattach', async ({ studio, req }) => {
+    const body = (await req.json()) as { slot?: string };
+    const slot = String(body.slot ?? '');
+    const manager = studio.requireManager();
+    const result = await manager.reattach(slot);
+    await manager.pruneBackups(slot).catch(() => {});
+    if (slot === 'custom') await backupGameSkins(studio, 'custom:reattach');
+    return json(result);
+  }),
 ];
