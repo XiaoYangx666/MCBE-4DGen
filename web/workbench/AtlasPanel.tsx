@@ -16,6 +16,7 @@ export function AtlasPanel({
   onSelectCandidates,
   previewBusy,
   showList = true,
+  showAdvanced = true,
 }: {
   result: Result | null;
   session: Session | null;
@@ -24,6 +25,7 @@ export function AtlasPanel({
   onSelectCandidates?: (keys: readonly string[]) => void;
   previewBusy?: boolean;
   showList?: boolean;
+  showAdvanced?: boolean;
 }) {
   const texture = result?.details?.texture;
   const materialByKey = useMemo(
@@ -89,12 +91,12 @@ export function AtlasPanel({
       size={texture?.atlas?.width ?? 128}
       regions={regions}
       materials={materials}
-      {...(texture?.atlas ? { summary: texture.atlas } : {})}
       selected={selected}
       onSelect={onSelect}
       {...(onSelectCandidates ? { onSelectCandidates } : {})}
       variant="panel"
       showList={showList}
+      showAdvanced={showAdvanced}
     />
   );
 }

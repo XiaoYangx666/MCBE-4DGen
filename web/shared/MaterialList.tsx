@@ -27,7 +27,7 @@ export interface MaterialListProps {
   weightTitle?: string;
 }
 
-function WeightInput({
+export function WeightInput({
   value,
   label,
   disabled,

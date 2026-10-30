@@ -73,6 +73,7 @@ export function PackPage() {
     addSkins,
     installSkin,
     recoverGame,
+    reattachGame,
     menuActions,
     menuItemsFor,
     openPack,
@@ -227,9 +228,16 @@ export function PackPage() {
                     }}
                   />
                   {state?.changedOutsideManager && (
-                    <p className="inline-note">
-                      游戏目录有外部改动，已暂停写入。你仍可查看包内皮肤。
-                    </p>
+                    <div className="pack-message error">
+                      游戏目录和记录不一致（常见于游戏更新），已暂停写入。
+                      <button
+                        type="button"
+                        disabled={!!busy}
+                        onClick={() => reattachGame()}
+                      >
+                        重新写回
+                      </button>
+                    </div>
                   )}
                   {!!row.pack?.meta?.importWarnings?.length && (
                     <details className="inline-note">

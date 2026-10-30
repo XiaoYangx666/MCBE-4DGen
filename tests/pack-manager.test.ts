@@ -440,3 +440,61 @@ test('game edits identify individual skins even when they share a PNG',async()=>
   assert.ok((await readFile(join(unmanaged,contents.skins[0]!.texture))).length);
  }finally{await cleanup(f.dir);}
 });
+
+test('reattach redeploys the recorded packs after a game update wipes the slot', async () => {
+  const f = await fixture();
+  try {
+    await f.manager.importPack('first', f.source);
+    await f.manager.enable('custom', 'first');
+    // Simulate the game resetting skin_packs to its default empty pack.
+    await rm(join(f.root, 'custom'), { recursive: true, force: true });
+    await mkdir(join(f.root, 'custom'), { recursive: true });
+    await writeFile(join(f.root, 'custom/skins.json'), '{"skins":[],"serialize_name":"Custom"}');
+    await writeFile(join(f.root, 'custom/manifest.json'), '{"header":{"uuid":"game-default"}}');
+    assert.equal((await f.manager.status()).find((s) => s.slot === 'custom')!.changedOutsideManager, true);
+    await f.manager.importPack('second', f.source);
+    await assert.rejects(f.manager.enable('custom', 'second'), /changed outside manager/);
+    const result = await f.manager.reattach('custom');
+    assert.equal(result.changed, true);
+    assert.equal((await validateSkinPackPath(join(f.root, 'custom'))).skins, 1);
+    assert.equal((await f.manager.status()).find((s) => s.slot === 'custom')!.changedOutsideManager, false);
+    // Overwritten external files stay available as a snapshot.
+    assert.match(await readFile(join(f.state, 'backups', result.backup!, 'files', 'manifest.json'), 'utf8'), /game-default/);
+  } finally { await cleanup(f.dir); }
+});
+
+test('reattach with nothing enabled adopts the current directory', async () => {
+  const f = await fixture();
+  try {
+    await f.manager.importPack('first', f.source);
+    await f.manager.enable('custom', 'first');
+    await f.manager.disable('custom', 'first');
+    await writeFile(join(f.root, 'custom/manifest.json'), '{"header":{"uuid":"game-default"}}');
+    assert.equal((await f.manager.status()).find((s) => s.slot === 'custom')!.changedOutsideManager, true);
+    const result = await f.manager.reattach('custom');
+    assert.ok(result.backup);
+    const after = (await f.manager.status()).find((s) => s.slot === 'custom')!;
+    assert.equal(after.changedOutsideManager, false);
+    assert.deepEqual(after.active, []);
+    assert.equal(await readFile(join(f.root, 'custom/manifest.json'), 'utf8'), '{"header":{"uuid":"game-default"}}');
+  } finally { await cleanup(f.dir); }
+});
+
+test('reattach supersedes an interrupted deployment', async () => {
+  const f = await fixture();
+  try {
+    await f.manager.importPack('first', f.source);
+    await f.manager.enable('custom', 'first');
+    const statePath = join(f.state, 'targets', 'custom.json');
+    const state = JSON.parse(await readFile(statePath, 'utf8'));
+    state.pending = { backup: '00000000-0000-4000-8000-000000000000', planned: {} };
+    await writeFile(statePath, JSON.stringify(state));
+    await writeFile(join(f.root, 'custom/manifest.json'), '{"header":{"uuid":"game-default"}}');
+    const result = await f.manager.reattach('custom');
+    assert.equal(result.changed, true);
+    assert.equal((await validateSkinPackPath(join(f.root, 'custom'))).skins, 1);
+    const after = JSON.parse(await readFile(statePath, 'utf8'));
+    assert.equal(after.pending, undefined);
+    assert.equal((await f.manager.status()).find((s) => s.slot === 'custom')!.changedOutsideManager, false);
+  } finally { await cleanup(f.dir); }
+});

@@ -258,7 +258,7 @@ export const convertRoutes = [
           },
         };
         job.status = 'done';
-        job.message = preview ? '纹理预览已更新' : '转换完成';
+        job.message = preview ? '预览已更新' : '转换完成';
       } catch (error) {
         job.status = 'error';
         job.message = error instanceof Error ? error.message : String(error);

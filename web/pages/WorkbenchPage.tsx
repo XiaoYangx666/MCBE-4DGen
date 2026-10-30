@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { CSSProperties } from "react";
 import { SaveSkinDialog } from "../packs/SaveSkinDialog";
 import { SettingsPanel } from "../workbench/SettingsPanel";
 import { Viewer } from "../workbench/Viewer";
@@ -7,9 +6,10 @@ import type { Workbench } from "../workbench/use-workbench";
 import { WorkspaceTabs } from "../shared/WorkspaceTabs";
 import { MaterialCandidates, type MaterialCandidate } from "../shared/MaterialCandidates";
 import { partDisplayNames } from "../shared/part-labels";
-import { useResizableWidth } from "../shared/use-resizable";
 import { ModelPartsPanel } from "../workbench/ModelPartsPanel";
 import { TexturePanel } from "../workbench/TexturePanel";
+import { TextureChart } from "../workbench/TextureChart";
+import { AtlasDetails } from "../workbench/AtlasDetails";
 import { AtlasPanel } from "../workbench/AtlasPanel";
 import { OutputPanels } from "../workbench/OutputPanels";
 import type { StudioWorkspace } from "../shared/WorkspaceTabs";
@@ -26,10 +26,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     setExcluded,
     includedParts,
     setIncludedParts,
-    textureMode,
-    setTextureMode,
-    textureTarget,
-    setTextureTarget,
     selectedPart,
     setSelectedPart,
     materialDeltas,
@@ -39,10 +35,8 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     setSelected,
     solo,
     setSolo,
-    elapsed,
     busy,
     previewBusy,
-    message,
     error,
     setError,
     wire,
@@ -65,16 +59,13 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     setProfileText,
     updateProfile,
     changed,
-    convert,
+    preview,
     finalizeResult,
     estimate,
     stale,
-    dirty,
   } = workbench;
   const [saveOpen, setSaveOpen] = useState(false);
   const [candidates, setCandidates] = useState<MaterialCandidate[] | null>(null);
-  const leftPanel = useResizableWidth(310, 250, 460, "left");
-  const rightPanel = useResizableWidth(380, 300, 560, "right");
 
   // Preview meshes are matched by source material name; stored selections use
   // stable keys. Ambiguous duplicate names are never guessed for preview solo.
@@ -149,21 +140,17 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     {
       key: "model" as const,
       label: "模型",
-      hint: "预览、部件与转换参数",
-      badge: session?.parts?.length || null,
+      hint: "部件、减面与姿势",
     },
     {
       key: "texture" as const,
       label: "纹理",
-      hint: "材质、清晰度与图集",
-      badge: session?.materials.length || null,
-      attention: stale || previewBusy,
+      hint: "材质清晰度与图集",
     },
     {
       key: "export" as const,
       label: "导出",
-      hint: "结果检查与皮肤包",
-      badge: stale ? "过期" : result ? (result.preview ? "预览" : "已生成") : null,
+      hint: "生成并保存皮肤包",
       attention: stale,
     },
   ];
@@ -205,6 +192,20 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
 
   const canSave = !!result && !result.preview && !stale && !busy;
 
+  const previewStatus = (
+    <span
+      className={`preview-status ${previewBusy ? "running" : stale ? "stale" : ""}`}
+    >
+      {previewBusy
+        ? "正在更新预览…"
+        : stale
+          ? "预览待更新"
+          : result
+            ? "预览已是最新"
+            : "尚未生成预览"}
+    </span>
+  );
+
   return (
     <>
       <div className="workspace workbench-shell">
@@ -222,28 +223,10 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
           <div className="workspace-global">
             {stale && <span className="workspace-stale">结果已过期</span>}
             {previewBusy && <span className="workspace-working">正在更新预览…</span>}
-            {dirty && <span>配置未保存</span>}
-            {session && (
-              <button
-                type="button"
-                className="text-button"
-                disabled={!canSave}
-                title={canSave ? "保存皮肤包" : "生成最终结果后可保存"}
-                onClick={() => setSaveOpen(true)}
-              >
-                保存皮肤…
-              </button>
-            )}
           </div>
         </header>
 
-        <div
-          className={`workspace-body workbench-${workspace}`}
-          style={{
-            "--texture-left": `${leftPanel.width}px`,
-            "--texture-right": `${rightPanel.width}px`,
-          } as CSSProperties}
-        >
+        <div className={`workspace-body workbench-${workspace}`}>
           <aside className="workspace-side left">
             {workspace === "model" && (
               <ModelPartsPanel
@@ -260,29 +243,15 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
               <TexturePanel
                 session={session}
                 result={result}
-                stale={stale}
                 previewBusy={previewBusy}
+                stale={stale}
                 selected={selected}
-                setSelected={setSelected}
-                materialWeights={materialWeights}
-                setMaterialWeights={setMaterialWeights}
-                changed={changed}
-                busy={busy}
-                textureMode={textureMode}
-                setTextureMode={setTextureMode}
-                textureTarget={textureTarget}
-                setTextureTarget={setTextureTarget}
+                onSelect={selectMaterial}
                 includedParts={includedParts}
-                materialDeltas={materialDeltas}
+                busy={busy}
               />
             )}
           </aside>
-
-          <div
-            className={`workspace-splitter${workspace === "texture" ? "" : " hidden"}`}
-            aria-hidden="true"
-            {...leftPanel.handleProps}
-          />
 
           <section className="workspace-preview">
             <div className="workspace-toolbar">
@@ -323,19 +292,12 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                     />{" "}
                     线框
                   </label>
+                  {previewStatus}
                 </>
               )}
               {workspace === "texture" && (
                 <>
-                  <span className={`preview-status ${previewBusy ? "running" : stale ? "stale" : ""}`}>
-                    {previewBusy
-                      ? "正在计算实际分配…"
-                      : stale
-                        ? "显示的是上一次结果"
-                        : result
-                          ? "预览与当前配置一致"
-                          : "等待首次预览"}
-                  </span>
+                  {previewStatus}
                   {soloName && (
                     <button type="button" onClick={() => setSolo(() => null)}>
                       显示全部材质
@@ -409,12 +371,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
             </div>
           </section>
 
-          <div
-            className={`workspace-splitter${workspace === "texture" ? "" : " hidden"}`}
-            aria-hidden="true"
-            {...rightPanel.handleProps}
-          />
-
           <aside className="workspace-side right">
             {workspace === "model" && (
               <SettingsPanel
@@ -439,22 +395,39 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                 setProfileText={setProfileText}
                 setProfile={setProfile}
                 setError={setError}
-                convert={convert}
+                retryPreview={preview}
+                previewBusy={previewBusy}
                 error={error}
-                message={message}
-                elapsed={elapsed}
-                openPacks={() => setSaveOpen(true)}
               />
             )}
             {workspace === "texture" && (
-              <AtlasPanel
-                result={result}
-                session={session}
-                selected={selected || null}
-                onSelect={selectMaterial}
-                onSelectCandidates={(keys) => setCandidates(candidateItems(keys))}
-                previewBusy={previewBusy}
-              />
+              <div className="texture-side-inner">
+                <AtlasPanel
+                  result={result}
+                  session={session}
+                  selected={selected || null}
+                  onSelect={selectMaterial}
+                  onSelectCandidates={(keys) =>
+                    setCandidates(candidateItems(keys))
+                  }
+                  previewBusy={previewBusy}
+                  showList={false}
+                  showAdvanced={false}
+                />
+                <TextureChart
+                  session={session}
+                  result={result}
+                  selected={selected}
+                  onSelect={selectMaterial}
+                  materialWeights={materialWeights}
+                  setMaterialWeights={setMaterialWeights}
+                  changed={changed}
+                  busy={busy}
+                  solo={solo}
+                  setSolo={setSolo}
+                />
+                <AtlasDetails result={result} />
+              </div>
             )}
             {workspace === "export" && (
               <div className="export-side-inner">
@@ -464,13 +437,7 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                     {session
                       ? `当前配置：${height}px 高 · ${
                           binding === "humanoid" ? "六部位人形" : "静态整体"
-                        } · ${
-                          textureMode === "budget"
-                            ? textureTarget === "density"
-                              ? "预算·密度"
-                              : "预算·细节保留"
-                            : "旧版算法"
-                        } · ${Object.keys(materialWeights).length} 项权重调整`
+                        } · 预算·密度 · ${Object.keys(materialWeights).length} 项权重调整`
                       : "打开模型后开始。"}
                   </p>
                   {result ? (
@@ -492,32 +459,37 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                     </>
                   ) : (
                     <p className="inline-note">
-                      还没有生成结果。先在模型工作区转换，或在纹理工作区调整后回来导出。
+                      还没有结果。先在「模型」或「纹理」页调整，预览会自动更新；回到这里生成最终皮肤包。
                     </p>
                   )}
                   <div className="export-actions">
-                    <button
-                      type="button"
-                      className="primary"
-                      disabled={!session || busy}
-                      onClick={() => void finalizeResult()}
-                    >
-                      {busy
-                        ? "正在生成…"
-                        : result?.preview && !stale
-                          ? "打包并生成下载"
-                          : stale || !result
-                            ? "生成最终皮肤包"
-                            : "重新生成"}
-                    </button>
-                    {canSave && (
+                    {canSave ? (
+                      <>
+                        <button
+                          type="button"
+                          className="primary"
+                          disabled={busy}
+                          onClick={() => setSaveOpen(true)}
+                        >
+                          保存皮肤…
+                        </button>
+                        <button
+                          type="button"
+                          className="download"
+                          disabled={busy}
+                          onClick={() => void finalizeResult()}
+                        >
+                          重新生成
+                        </button>
+                      </>
+                    ) : (
                       <button
                         type="button"
-                        className="download"
-                        disabled={busy}
-                        onClick={() => setSaveOpen(true)}
+                        className="primary"
+                        disabled={!session || busy}
+                        onClick={() => void finalizeResult()}
                       >
-                        保存皮肤…
+                        {busy ? "正在生成…" : "生成皮肤包"}
                       </button>
                     )}
                   </div>

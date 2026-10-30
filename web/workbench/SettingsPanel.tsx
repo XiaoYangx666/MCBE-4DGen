@@ -27,18 +27,16 @@ type SettingsPanelProps = {
   setProfileText: Dispatch<SetStateAction<string>>;
   setProfile: Dispatch<SetStateAction<HumanoidProfile>>;
   setError: Dispatch<SetStateAction<string>>;
-  convert: () => void;
+  retryPreview: () => void;
+  previewBusy: boolean;
   error: string;
-  message: string;
-  elapsed: number;
-  openPacks: () => void;
 };
 
 export function SettingsPanel(props: SettingsPanelProps) {
   const { session, busy, binding, setBinding, changed, ratio, setRatio, estimate,
     result, stale, maxError, setMaxError, height, setHeight, setMode, profile,
-    updateProfile, profileText, setProfileText, setProfile, setError, convert,
-    error, message, elapsed, openPacks } = props;
+    updateProfile, profileText, setProfileText, setProfile, setError,
+    retryPreview, previewBusy, error } = props;
   const actual = result && !stale ? (result.report.triangles ?? null) : null;
   const [heightText, setHeightText] = useState(String(height));
   useEffect(() => setHeightText(String(height)), [height]);
@@ -51,7 +49,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
   return (
     <aside className="inspector">
       <div className="section-label">02 / 转换设置</div>
-      <h2>调整与生成</h2>
+      <h2>绑定、减面与姿势</h2>
       <fieldset disabled={busy || !session}>
         <label className="field">
           绑定方式
@@ -196,49 +194,25 @@ export function SettingsPanel(props: SettingsPanelProps) {
         )}
       </fieldset>
       <div className="generation">
-        <button
-          className="primary"
-          disabled={busy || !session}
-          onClick={() => {
-            if (!heightValid) {
-              setError("模型高度需为 1–128 之间的数字");
-              return;
-            }
-            convert();
-          }}
-        >
-          {busy ? (
-        <>
-          <span className="spinner" /> 处理中…
-        </>
-          ) : stale || !result ? (
-        "生成皮肤"
-          ) : result.preview ? (
-        "生成最终皮肤包"
-          ) : (
-        "重新生成皮肤"
-          )}
-        </button>
-        <p>权重微调后再次生成会复用模型；姿势、减面或材质保留变化时重新处理模型。</p>
-        {result && (
+        <p className="help">
+          调整后预览会自动重新计算；最终皮肤包在「导出」页生成并保存。
+        </p>
+        {error && (
           <button
             type="button"
             className="download"
-            onClick={openPacks}
-            disabled={busy || stale || result.preview}
+            disabled={previewBusy || !session}
+            onClick={retryPreview}
           >
-            {stale
-              ? "参数已修改，请重新生成"
-              : result.preview
-                ? "预览尚未打包"
-                : "保存皮肤…"}
+            {previewBusy ? "正在计算…" : "重试预览"}
           </button>
         )}
       </div>
-      <div className={"status " + (error ? "error" : "")} role="status">
-        {error || message}
-        {busy && <span> · 已用时 {elapsed.toFixed(1)} 秒</span>}
-      </div>
+      {error && (
+        <div className="status error" role="status">
+          {error}
+        </div>
+      )}
       <div className="notice">
         预览用于检查转换结果。游戏里的渲染与动作仍需实际验收。
       </div>

@@ -15,7 +15,7 @@ import {
   createPreviewViewport,
   type PreviewViewport,
 } from "../shared/preview-viewport";
-import { Icon } from "../shared/Icons";
+import { ViewLightingButton } from "../shared/ViewLightingButton";
 import { captureCameraView, restoreCameraView, type CameraViewState } from "./camera-state";
 
 type CameraState = CameraViewState & { sessionId: string };
@@ -366,16 +366,7 @@ export function Viewer({
       <div className="view-hint">拖动旋转 · 滚轮缩放 · 右键平移 · 点击选择</div>
       <div className="orientation-hint">正面检查：脸和胸前应朝向绿色箭头</div>
       {onUnlitChange && (
-        <button
-          type="button"
-          className={`view-lighting-button${unlit ? "" : " active"}`}
-          aria-pressed={!unlit}
-          aria-label={unlit ? "开启光照" : "关闭光照"}
-          title={unlit ? "开启光照" : "关闭光照"}
-          onClick={() => onUnlitChange(!unlit)}
-        >
-          <Icon name="sun" size={15} />
-        </button>
+        <ViewLightingButton unlit={unlit} onChange={onUnlitChange} />
       )}
       <div className="view-buttons">
         <button onClick={() => frontRef.current?.()}>正面检查</button>

@@ -472,6 +472,14 @@ export function usePackPage() {
       "已恢复中断的操作",
     );
   }
+  function reattachGame() {
+    if (!row) return;
+    void run(
+      "正在写回…",
+      () => post("/api/packs/reattach", { slot: row.preset ? row.id : gameSlotName }),
+      "已重新写回游戏目录",
+    );
+  }
 
   async function exportGamePack() {
     if (!row?.preset || !contents || !indices.length) return;
@@ -674,6 +682,7 @@ export function usePackPage() {
     addSkins,
     installSkin,
     recoverGame,
+    reattachGame,
     menuActions,
     menuItemsFor,
     openPack,

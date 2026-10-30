@@ -5,16 +5,14 @@ export interface WorkspaceTab {
   label: string;
   /** Short helper shown under the label on wide layouts. */
   hint: string;
-  /** Small badge, e.g. a material count or a stale marker. */
-  badge?: string | number | null;
-  /** Draw attention to the tab (stale result, pending preview). */
+  /** Small marker for "this step needs another look" (stale result, running job). */
   attention?: boolean;
 }
 
 export const STUDIO_WORKSPACES: readonly WorkspaceTab[] = [
-  { key: 'model', label: '模型', hint: '预览、部件与转换参数' },
-  { key: 'texture', label: '纹理', hint: '材质、清晰度与图集' },
-  { key: 'export', label: '导出', hint: '结果检查与皮肤包' },
+  { key: 'model', label: '模型', hint: '部件、减面与姿势' },
+  { key: 'texture', label: '纹理', hint: '材质清晰度与图集' },
+  { key: 'export', label: '导出', hint: '生成并保存皮肤包' },
 ];
 
 /**
@@ -51,8 +49,12 @@ export function WorkspaceTabs({
         >
           <span className="workspace-tab-label">{tab.label}</span>
           <small>{tab.hint}</small>
-          {tab.badge !== undefined && tab.badge !== null && tab.badge !== '' && (
-            <i className={tab.attention ? 'attention' : undefined}>{tab.badge}</i>
+          {tab.attention && (
+            <i
+              className="attention"
+              role="img"
+              aria-label="此工作区需要更新"
+            />
           )}
         </button>
       ))}

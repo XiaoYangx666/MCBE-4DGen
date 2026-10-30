@@ -1,5 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MaterialList } from './MaterialList';
+import {
+  QUALITY_MAX,
+  QUALITY_MIN,
+  formatQuality,
+  qualityToSlider,
+  sliderToQuality,
+} from './texture-scale';
 import type {
   StudioMaterial,
   TextureMode,
@@ -22,18 +29,86 @@ export interface MaterialPixelInfo {
   flat?: boolean;
 }
 
-const QUALITY_MIN = 0.1;
-const QUALITY_MAX = 20;
 const QUALITY_STEP = 1;
-const QUALITY_LOG = Math.log(QUALITY_MAX / QUALITY_MIN);
-const qualityToSlider = (quality: number) =>
-  Math.round(
-    (Math.log(Math.min(QUALITY_MAX, Math.max(QUALITY_MIN, quality)) / QUALITY_MIN) /
-      QUALITY_LOG) *
-      100,
+
+/**
+ * Direct numeric entry next to the slider. Typing a value and pressing Enter
+ * (or leaving the field) applies it; Escape restores the current value. The
+ * text only follows the slider while the field is not focused, so a running
+ * preview cannot overwrite what is being typed.
+ */
+function QualityInput({
+  value,
+  unit,
+  label,
+  disabled,
+  onCommit,
+}: {
+  value: number;
+  unit: string;
+  label: string;
+  disabled: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const [text, setText] = useState(formatQuality(value));
+  const [editing, setEditing] = useState(false);
+  const cancel = useRef(false);
+
+  useEffect(() => {
+    if (!editing) setText(formatQuality(value));
+  }, [value, editing]);
+
+  const commit = () => {
+    setEditing(false);
+    if (cancel.current) {
+      cancel.current = false;
+      setText(formatQuality(value));
+      return;
+    }
+    const parsed = Number(text.trim().replace(',', '.'));
+    if (
+      text.trim() === '' ||
+      !Number.isFinite(parsed) ||
+      parsed < QUALITY_MIN ||
+      parsed > QUALITY_MAX
+    ) {
+      setText(formatQuality(value));
+      return;
+    }
+    const rounded = Math.round(parsed * 100) / 100;
+    setText(formatQuality(rounded));
+    if (rounded !== Math.round(value * 100) / 100) onCommit(rounded);
+  };
+
+  return (
+    <span className="texture-quality-value">
+      <input
+        type="number"
+        inputMode="decimal"
+        min={QUALITY_MIN}
+        max={QUALITY_MAX}
+        step={0.05}
+        value={text}
+        disabled={disabled}
+        aria-label={label}
+        title={`${QUALITY_MIN}–${QUALITY_MAX}${unit}，可直接输入`}
+        onFocus={() => setEditing(true)}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            event.currentTarget.blur();
+          } else if (event.key === 'Escape') {
+            cancel.current = true;
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      {unit && <em>{unit}</em>}
+    </span>
   );
-const sliderToQuality = (value: number) =>
-  QUALITY_MIN * Math.exp((value / 100) * QUALITY_LOG);
+}
 
 /**
  * The texture workspace's material browser. It owns search, filtering and the
@@ -182,10 +257,13 @@ export function MaterialBrowser({
         <div className="texture-quality-tuner" aria-live="polite">
           <div className="texture-quality-head">
             <b title={selected.name}>{selected.name}</b>
-            <span>
-              {selected.quality.toFixed(2)}
-              {qualityUnit}
-            </span>
+            <QualityInput
+              value={selected.quality}
+              unit={qualityUnit}
+              label={`${selected.name} ${qualityLabel}数值`}
+              disabled={disabled}
+              onCommit={(value) => onWeight(selected.id, value)}
+            />
           </div>
           <input
             type="range"
