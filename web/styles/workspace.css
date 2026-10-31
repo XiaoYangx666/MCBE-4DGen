@@ -404,6 +404,11 @@
 .texture-tuner-bar button.active { border-color: var(--accent); color: var(--accent); }
 .texture-tuner-bar button:hover:not(:disabled) { color: var(--ink); }
 .stage.has-tuner .view-hint { display: none; }
+.released-note {
+  margin-top: 8px !important;
+  color: var(--muted) !important;
+  font-size: 10.5px !important;
+}
 
 /* Donut hover card: material, owning parts and the occupied share. */
 .texture-donut-tooltip {

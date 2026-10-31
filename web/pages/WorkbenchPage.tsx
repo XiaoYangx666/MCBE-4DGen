@@ -64,6 +64,7 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     finalizeResult,
     estimate,
     stale,
+    released,
   } = workbench;
   const [saveOpen, setSaveOpen] = useState(false);
   const [candidates, setCandidates] = useState<MaterialCandidate[] | null>(null);
@@ -107,6 +108,11 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     // Entering the model workspace should show the whole model again.
     if (workspace === "model") setSolo(() => null);
   }, [workspace, setSolo]);
+
+  useEffect(() => {
+    // The candidate picker refers to materials of the previous session.
+    if (!session) setCandidates(null);
+  }, [session]);
 
   function candidateItems(keys: readonly string[]): MaterialCandidate[] {
     return keys.map((key) => {
@@ -238,7 +244,9 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
             <small>
               {session
                 ? `${session.materials.length} 材质 · ${session.parts?.length ?? 0} 部件 · 切换工作区不会丢失配置`
-                : "从模型管理打开模型后开始编辑。"}
+                : released
+                  ? "预览已释放以节省内存，重新打开模型即可继续。"
+                  : "从模型管理打开模型后开始编辑。"}
             </small>
           </div>
           <WorkspaceTabs value={workspace} tabs={tabs} onChange={switchWorkspace} />
@@ -355,7 +363,7 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
               )}
             </div>
             <div className={`stage${workspace === "texture" ? " has-tuner" : ""}`}>
-              {viewer}
+              {session ? viewer : null}
               {workspace === "texture" && (
                 <TextureTuner
                   session={session}
@@ -381,6 +389,11 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                     <br />
                     <a href="#/models">打开模型管理 →</a>
                   </p>
+                  {released && (
+                    <p className="released-note">
+                      长时间未操作，预览和临时数据已释放以节省内存。重新打开模型即可继续，配置已经保存。
+                    </p>
+                  )}
                 </div>
               )}
               {selectedPart && (

@@ -33,6 +33,9 @@ export function useWorkbench() {
   const [solo, setSolo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [released, setReleased] = useState(false);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const releaseRef = useRef<() => void>(() => {});
   const [wire, setWire] = useState(false);
   const [unlit, setUnlit] = useState(true);
   const [focus, setFocus] = useState("all");
@@ -74,6 +77,7 @@ export function useWorkbench() {
         : { rotationYDegrees: 0, shoulderOutset: 0, armSpreadDegrees: 0 });
     setSession(next);
     setResult(null);
+    setReleased(false);
     // Material-level exclusion was removed: geometry is now decided by parts
     // only. Convert saved exclusions into dropped parts so old projects keep
     // their intent instead of silently applying a hidden filter.
@@ -325,12 +329,59 @@ export function useWorkbench() {
   }, [dirty]);
 
   async function saveSettings() {
-    if (!session?.modelId) return;
+    if (!session?.modelId) return false;
+    let saved = false;
     await action(async () => {
       await post("/api/models/update", { id: session.modelId, settings });
       setSavedRevision(revision);
+      saved = true;
     });
+    return saved;
   }
+
+  /**
+   * Idle sessions hold the imported model, the prepared geometry and the
+   * preview job in the backend. After a long pause the settings are saved and
+   * those buffers are dropped; opening the model again restores everything.
+   */
+  async function releaseIdle() {
+    if (!session || busy || previewBusy) return;
+    try {
+      if (dirty && !(await saveSettings())) return;
+      await api(`/api/session/${session.id}`, { method: "DELETE" });
+    } catch {
+      // The session may already have been replaced; clearing the client copy
+      // is still the right thing to do.
+    }
+    setSession(null);
+    setResult(null);
+    resultRef.current = null;
+    setPreviewBusy(false);
+    setWorkspace("model");
+    setSelected("");
+    setSolo(null);
+    setReleased(true);
+  }
+  releaseRef.current = () => {
+    void releaseIdle();
+  };
+
+  useEffect(() => {
+    if (!session) return;
+    const schedule = () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      idleTimer.current = setTimeout(() => releaseRef.current(), 20 * 60 * 1000);
+    };
+    schedule();
+    const events = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
+    for (const event of events)
+      window.addEventListener(event, schedule, { passive: true });
+    return () => {
+      for (const event of events) window.removeEventListener(event, schedule);
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      idleTimer.current = null;
+    };
+  }, [session?.id, busy, previewBusy]);
 
   return {
     session,
@@ -387,5 +438,6 @@ export function useWorkbench() {
     estimate,
     dirty,
     stale,
+    released,
   };
 }
