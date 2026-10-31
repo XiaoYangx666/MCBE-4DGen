@@ -647,7 +647,7 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
 .studio-layout.compact .viewport-toggle { top: 54px; }
 .studio-layout.compact .viewport-actions {
   bottom: 10px;
-  z-index: 41;
+  z-index: 5;
 }
 .studio-layout.compact .viewport-actions .viewport-reset { min-height: 36px; }
 
@@ -2300,7 +2300,21 @@ footer a { color: var(--accent); }
   color: var(--muted);
   font-size: 10.5px;
 }
-.texture-section .atlas-inspector { margin: 0; }
+.texture-section .atlas-inspector { margin: 0; gap: 8px; }
+.texture-section .atlas-inspector-head {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.texture-section .atlas-inspector-head b { font-size: 12px; white-space: nowrap; }
+.texture-section .atlas-inspector-toggle { white-space: nowrap; }
+.texture-section .atlas-inspector-image,
+.texture-section .atlas-inspector.variant-panel .atlas-inspector-image {
+  max-width: 180px;
+  cursor: pointer;
+  touch-action: auto;
+}
 .material-donut {
   display: flex;
   flex-direction: column;

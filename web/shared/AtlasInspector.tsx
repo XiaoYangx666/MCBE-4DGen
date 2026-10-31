@@ -68,6 +68,7 @@ export function AtlasInspector({
   variant = 'panel',
   showList = true,
   showAdvanced = true,
+  zoomable = true,
   emptyText = '转换后查看实际图集。',
 }: {
   src: string;
@@ -85,6 +86,8 @@ export function AtlasInspector({
   variant?: 'dialog' | 'panel';
   showList?: boolean;
   showAdvanced?: boolean;
+  /** Wheel zoom, drag pan and the zoom controls; off for compact previews. */
+  zoomable?: boolean;
   emptyText?: string;
 }) {
   const [internal, setInternal] = useState<string | null>(null);
@@ -197,18 +200,20 @@ export function AtlasInspector({
           <b>最终贴图</b>
         </div>
         <div className="atlas-inspector-actions">
-          <div className="atlas-zoom" role="group" aria-label="图集缩放">
-            <button type="button" aria-label="缩小图集" onClick={() => zoomBy(1 / 1.35)}>
-              −
-            </button>
-            <span>{zoom.toFixed(1)}×</span>
-            <button type="button" aria-label="放大图集" onClick={() => zoomBy(1.35)}>
-              +
-            </button>
-            <button type="button" aria-label="重置图集视图" onClick={resetView}>
-              重置
-            </button>
-          </div>
+          {zoomable && (
+            <div className="atlas-zoom" role="group" aria-label="图集缩放">
+              <button type="button" aria-label="缩小图集" onClick={() => zoomBy(1 / 1.35)}>
+                −
+              </button>
+              <span>{zoom.toFixed(1)}×</span>
+              <button type="button" aria-label="放大图集" onClick={() => zoomBy(1.35)}>
+                +
+              </button>
+              <button type="button" aria-label="重置图集视图" onClick={resetView}>
+                重置
+              </button>
+            </div>
+          )}
           {coverageSrc && (
             <button
               type="button"
@@ -231,20 +236,26 @@ export function AtlasInspector({
         <div className="atlas-inspector-body">
           <div className="atlas-inspector-stage">
             <div
-              className={`atlas-inspector-image${zoom > 1 ? ' zoomed' : ''}`}
+              className={`atlas-inspector-image${zoomable && zoom > 1 ? ' zoomed' : ''}`}
               ref={imageRef}
-              onWheel={onWheel}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
+              {...(zoomable
+                ? {
+                    onWheel,
+                    onPointerDown,
+                    onPointerMove,
+                    onPointerUp: endDrag,
+                    onPointerCancel: endDrag,
+                  }
+                : {})}
               onMouseLeave={() => setHover(null)}
             >
               <div
                 className="atlas-inspector-canvas"
-                style={{
-                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                }}
+                style={
+                  zoomable
+                    ? { transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }
+                    : undefined
+                }
               >
                 <img src={showCoverage && coverageSrc ? coverageSrc : src} alt="输出贴图与分区" draggable={false} />
                 <svg viewBox={`0 0 ${size} ${size}`} aria-hidden="true">

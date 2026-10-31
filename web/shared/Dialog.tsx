@@ -10,6 +10,8 @@ export interface DialogProps {
   closeLabel?: string;
   closeOnBackdrop?: boolean;
   autoFocusClose?: boolean;
+  /** `sheet` slides up from the bottom without blurring the page. */
+  variant?: 'center' | 'sheet';
   onClose: () => void;
   children: ReactNode;
 }
@@ -28,6 +30,7 @@ export function Dialog({
   closeLabel = '关闭弹窗',
   closeOnBackdrop = false,
   autoFocusClose = false,
+  variant = 'center',
   onClose,
   children,
 }: DialogProps) {
@@ -41,13 +44,13 @@ export function Dialog({
 
   return (
     <div
-      className="pick-overlay"
+      className={`pick-overlay variant-${variant}`}
       role="dialog"
       aria-modal="true"
       aria-label={label}
       {...backdropProps}
     >
-      <div className={'pick-box ' + className}>
+      <div className={'pick-box ' + className + ` variant-${variant}`}>
         <div className="card-top">
           <div>
             {eyebrow && <span className="eyebrow">{eyebrow}</span>}

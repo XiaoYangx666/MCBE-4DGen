@@ -852,6 +852,7 @@ export function ModelStudio({
                   onSelect={(id) => setSoloKey(id)}
                   showList={false}
                   showAdvanced={false}
+                  zoomable={false}
                   {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
                 />
                 <MaterialDonut

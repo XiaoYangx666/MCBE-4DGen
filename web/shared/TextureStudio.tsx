@@ -306,6 +306,8 @@ export function TextureStudio({
           label="材质调整"
           className="material-adjust-dialog"
           closeLabel="关闭材质调整"
+          variant="sheet"
+          closeOnBackdrop
           onClose={() => setAdjustId(null)}
         >
           <div className="texture-quality-tuner">

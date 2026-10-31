@@ -748,6 +748,33 @@
   padding: 20px 22px;
   box-shadow: 0 30px 80px color-mix(in srgb, var(--canvas) 53.3%, transparent);
 }
+/* Bottom sheet dialog: no blur, slides from the bottom, keeps the page visible. */
+.pick-overlay.variant-sheet {
+  align-items: flex-end;
+  padding: 0;
+  background: rgb(0 0 0 / 0.28);
+  backdrop-filter: none;
+}
+.pick-box.variant-sheet {
+  width: min(520px, 100%);
+  max-height: 78dvh;
+  overflow: auto;
+  padding: 16px 18px calc(16px + env(safe-area-inset-bottom));
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -16px 40px rgb(0 0 0 / 0.28);
+  animation: pick-sheet-in 0.18s ease-out;
+}
+.pick-box.variant-sheet .card-top h2 { font-size: 15px; }
+.pick-box.material-adjust-dialog .texture-quality-tuner {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+}
+@keyframes pick-sheet-in {
+  from { opacity: 0.65; }
+  to { opacity: 1; }
+}
 .pick-box h3 { margin: 0; font-size: 16px; color: var(--ink); }
 .pick-box p { font-size: 11px; color: var(--accent); line-height: 1.7; margin: 8px 0 14px; }
 .card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
