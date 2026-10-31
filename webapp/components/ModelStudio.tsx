@@ -101,6 +101,8 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   const [mobileTab, setMobileTab] = useState<'basic' | 'pose' | 'material' | 'result'>('basic');
   /** CSS fullscreen for the 3D stage: keeps the floating buttons visible. */
   const [stageFullscreen, setStageFullscreen] = useState(false);
+  /** Full-page drop target; the compact sheet has no dedicated drop zone. */
+  const [dragging, setDragging] = useState(false);
   /** The web app keeps its own sheet layout at every width, not the desktop rails. */
   const compact = true;
   const [previewRoot, setPreviewRoot] = useState<THREE.Group | null>(null);
@@ -595,7 +597,24 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
   }, [result, source, weights, atlasRegions, materialLabels]);
 
   return (
-    <div className={`studio-layout model-layout ${compact ? 'compact' : ''} ${stageFullscreen ? 'stage-hidden' : ''}`}>
+    <div
+      className={`studio-layout model-layout ${compact ? 'compact' : ''} ${stageFullscreen ? 'stage-hidden' : ''}`}
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+        if (!loading && !busy) setDragging(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragging(false);
+        if (loading || busy) return;
+        const next = [...event.dataTransfer.files];
+        if (next.length) void choose(next);
+      }}
+    >
       <input
         ref={modelInput}
         className="mobile-model-input"
@@ -609,6 +628,13 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
           if (next.length) void choose(next);
         }}
       />
+      {dragging && (
+        <div className="model-drop-overlay" aria-hidden="true">
+          <Icon name="upload" size={30} />
+          <b>松开以导入模型</b>
+          <span>GLB / VRM / PMX / 含贴图的 ZIP</span>
+        </div>
+      )}
       <div className="studio-sheet">
         {compact && (
           <div className="mobile-settings-tabs" role="tablist" aria-label="模型设置">
