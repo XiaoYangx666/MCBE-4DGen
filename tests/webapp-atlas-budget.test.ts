@@ -53,13 +53,16 @@ const toCoreInput = (input: ResearchInput): ChartInput => ({
 
 describe('browser budget planner', () => {
   for (const fixture of fixtures()) {
-    it(`matches the shared core for ${fixture.name}`, () => {
+    for (const target of ['retention', 'density'] as const) {
+    it(`matches the shared core for ${fixture.name} (${target})`, () => {
       const inputs = fixture.inputs.map(toAtlasInput);
-      const web = planAtlas(inputs, 128, 1, { budget: 'texel-retention' });
+      const web = planAtlas(inputs, 128, 1, {
+        budget: target === 'density' ? 'texel-density' : 'texel-retention',
+      });
       const core = planAtlasBudget(fixture.inputs.map(toCoreInput), {
         size: 128,
         pad: 1,
-        target: 'retention',
+        target,
         coverageAware: false,
         sharing: 'none',
         merge: 'production',
@@ -84,6 +87,7 @@ describe('browser budget planner', () => {
       expect(webRects).toEqual(coreRects);
       expect(web.scale).toBeCloseTo(core.plan.scale, 12);
     });
+    }
   }
 
   it('honours per-input weights', () => {

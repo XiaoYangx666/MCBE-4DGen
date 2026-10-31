@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
-import { MaterialList, type MaterialListItem } from './MaterialList';
-import type { TextureTarget } from './texture-target';
-
-export type { TextureTarget } from './texture-target';
-export type TextureMode = 'legacy' | 'budget';
+import { useEffect, useMemo, useState } from 'react';
+import { MaterialList, WeightInput, type MaterialListItem } from './MaterialList';
+import {
+  formatQuality,
+  qualityToSlider,
+  sliderToQuality,
+} from './texture-scale';
 
 export interface StudioPart {
   id: string;
@@ -20,7 +21,7 @@ export interface StudioPart {
 }
 
 export interface StudioMaterial extends MaterialListItem {
-  /** Relative density / retention multiplier. */
+  /** Relative texture-density multiplier. */
   quality: number;
   /** Pixels from the last conversion, null before the first result. */
   lastPixels?: number | null;
@@ -32,10 +33,6 @@ export interface StudioMaterial extends MaterialListItem {
 }
 
 export interface TextureStudioProps {
-  mode: TextureMode;
-  target: TextureTarget;
-  onMode: (mode: TextureMode) => void;
-  onTarget: (target: TextureTarget) => void;
   materials: readonly StudioMaterial[];
   selectedMaterial: string | null;
   onSelectMaterial: (id: string | null) => void;
@@ -53,21 +50,35 @@ export interface TextureStudioProps {
   showKeptOnly: boolean;
   onShowKeptOnly: (value: boolean) => void;
   disabled?: boolean;
-  /** Extra note shown under the mode switch, e.g. bitmap resolution. */
+  /** Extra note shown above the controls, e.g. the allocation mode. */
   note?: string;
   className?: string;
 }
 
-const QUALITY_MIN = 0.1;
-const QUALITY_MAX = 4;
-const QUALITY_STEP = 0.05;
+/** Absolute density steps; 1× restores the untouched budget. */
+const PRESETS = [0.5, 1, 2, 4, 10];
+/** Slider positions the thumb snaps to, with the exact density they mean. */
+const TICKS = PRESETS.map((quality) => ({
+  quality,
+  slider: Math.round(qualityToSlider(quality)),
+}));
+const SNAP_RADIUS = 2.5;
 
-/** Shared texture-studio controls for the desktop workbench and the web app. */
+function snapSlider(value: number) {
+  let best = value;
+  let distance = SNAP_RADIUS + 1;
+  for (const tick of TICKS) {
+    const delta = Math.abs(value - tick.slider);
+    if (delta <= SNAP_RADIUS && delta < distance) {
+      best = tick.slider;
+      distance = delta;
+    }
+  }
+  return best;
+}
+
+/** Texture-density controls for the browser model studio. */
 export function TextureStudio({
-  mode,
-  target,
-  onMode,
-  onTarget,
   materials,
   selectedMaterial,
   onSelectMaterial,
@@ -99,58 +110,29 @@ export function TextureStudio({
     return [...map.entries()];
   }, [parts]);
   const allPartIds = useMemo(() => parts.map((part) => part.id), [parts]);
-  const qualityLabel = mode === 'budget'
-    ? target === 'density'
-      ? '相对纹理密度'
-      : '相对细节保留'
-    : '旧版像素权重';
-  const qualityUnit = mode === 'budget' ? '×' : '';
-  const presets = mode === 'budget' ? [0.5, 1, 1.5, 2] : [0.5, 1, 2, 4];
+  /** Dragging only moves a local draft; the host commits on release. */
+  const [draft, setDraft] = useState<number | null>(null);
+  useEffect(() => {
+    setDraft(null);
+  }, [selected?.id, selected?.quality]);
+
+  const sliderValue = draft ?? (selected ? qualityToSlider(selected.quality) : 0);
+  const draftQuality =
+    draft === null
+      ? (selected?.quality ?? 1)
+      : (TICKS.find((tick) => tick.slider === draft)?.quality ?? sliderToQuality(draft));
+
+  const commitDraft = () => {
+    if (draft === null || !selected) return;
+    const tick = TICKS.find((item) => item.slider === draft);
+    const value = Math.round((tick ? tick.quality : sliderToQuality(draft)) * 100) / 100;
+    setDraft(null);
+    if (Math.abs(value - selected.quality) < 0.001) return;
+    onWeight(selected.id, value);
+  };
 
   return (
     <div className={`texture-studio${className ? ` ${className}` : ''}`}>
-      <div className="texture-studio-mode" role="group" aria-label="纹理分配模式">
-        <button
-          type="button"
-          className={mode === 'legacy' ? 'active' : ''}
-          disabled={disabled}
-          onClick={() => onMode('legacy')}
-        >
-          旧版算法
-        </button>
-        <button
-          type="button"
-          className={mode === 'budget' ? 'active' : ''}
-          disabled={disabled}
-          onClick={() => onMode('budget')}
-        >
-          纹理预算
-        </button>
-      </div>
-      {mode === 'budget' ? (
-        <>
-          <div className="texture-studio-target" role="group" aria-label="预算目标">
-            <button
-              type="button"
-              className={target === 'density' ? 'active' : ''}
-              disabled={disabled}
-              onClick={() => onTarget('density')}
-              title="按表面积分配像素，适合整体轮廓"
-            >
-              密度
-            </button>
-            <button
-              type="button"
-              className={target === 'retention' ? 'active' : ''}
-              disabled={disabled}
-              onClick={() => onTarget('retention')}
-              title="按原始 UV 细节分配像素，适合脸部与小装饰"
-            >
-              细节保留
-            </button>
-          </div>
-        </>
-      ) : null}
       {note ? <div className="texture-studio-note">{note}</div> : null}
 
       {parts.length > 0 && (
@@ -301,30 +283,47 @@ export function TextureStudio({
           <div className="texture-quality-tuner">
             <div className="texture-quality-head">
               <b title={selected.name}>{selected.name}</b>
-              <span>
-                {selected.quality.toFixed(2)}
-                {qualityUnit}
-              </span>
+              <span>{formatQuality(draftQuality)}×</span>
             </div>
-            <input
-              type="range"
-              min={QUALITY_MIN}
-              max={QUALITY_MAX}
-              step={QUALITY_STEP}
-              value={Math.min(QUALITY_MAX, Math.max(QUALITY_MIN, selected.quality))}
-              disabled={disabled || !selected.included}
-              aria-label={`${selected.name} ${qualityLabel}`}
-              onChange={(event) => onWeight(selected.id, Number(event.target.value))}
-            />
+            <div className="texture-quality-slider">
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={sliderValue}
+                disabled={disabled || !selected.included}
+                aria-label={`${selected.name} 相对纹理密度`}
+                title="0.1–20×；拖动时只调整数值，松手后应用"
+                onChange={(event) => setDraft(snapSlider(Number(event.target.value)))}
+                onPointerUp={commitDraft}
+                onPointerCancel={commitDraft}
+                onKeyUp={commitDraft}
+                onBlur={commitDraft}
+              />
+              <div className="texture-quality-ticks" aria-hidden="true">
+                {TICKS.map((tick) => (
+                  <i key={tick.quality} style={{ left: `${tick.slider}%` }} />
+                ))}
+              </div>
+            </div>
             <div className="texture-quality-actions">
-              {presets.map((value) => (
+              <WeightInput
+                value={draftQuality}
+                label={selected.name}
+                disabled={disabled || !selected.included}
+                title="0.1–20×，可直接输入"
+                onCommit={(value) => onWeight(selected.id, value)}
+              />
+              {PRESETS.map((value) => (
                 <button
                   type="button"
                   key={value}
+                  className={Math.abs(selected.quality - value) < 0.001 ? 'active' : ''}
                   disabled={disabled || !selected.included}
                   onClick={() => onWeight(selected.id, value)}
                 >
-                  {value}×
+                  {formatQuality(value)}×
                 </button>
               ))}
               <button

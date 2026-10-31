@@ -24,9 +24,9 @@ export interface ConvertOptions {
   sourceTriangles?: number;
   /** Astage updates for the busy UI. */
   onProgress?: ProgressHandler;
-  /** Legacy browser planner (default) or the shared texel-budget planner. */
+  /** Opt into the legacy browser planner; the shared texel-budget planner is the default. */
   textureMode?: 'legacy' | 'budget';
-  /** Budget objective when `textureMode` is budget. */
+  /** Budget objective; density unless retention is requested. */
   textureTarget?: 'density' | 'retention';
   /** Relative material quality multipliers, keyed by stable material key. */
   materialWeights?: Readonly<Record<string, number>>;
@@ -186,7 +186,7 @@ export async function convertBatches(
   const report = reporter(options.onProgress);
   report('规划 128×128 图集…', `${inputs.length} 个材质`);
   await nextFrame();
-  const budget = options.textureMode === 'budget';
+  const budget = options.textureMode !== 'legacy';
   // Bedrock samples skin textures with nearest filtering, so no gutter is
   // needed. The 2 px this frees per chart goes back into content resolution.
   const layout = planAtlas(
@@ -195,7 +195,7 @@ export async function convertBatches(
     0,
     budget
       ? {
-          budget: options.textureTarget === 'density' ? 'texel-density' : 'texel-retention',
+          budget: options.textureTarget === 'retention' ? 'texel-retention' : 'texel-density',
           ...(options.materialWeights && Object.keys(options.materialWeights).length
             ? { weights: options.materialWeights }
             : {}),
@@ -352,7 +352,7 @@ export async function convertBatches(
       : {}),
     mode: budget ? 'budget' : 'legacy',
     ...(budget
-      ? { target: options.textureTarget === 'density' ? 'density' : 'retention' }
+      ? { target: options.textureTarget === 'retention' ? 'retention' : 'density' }
       : {}),
     size: layout.size,
     materials,

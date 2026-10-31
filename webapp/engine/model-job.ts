@@ -322,7 +322,7 @@ export async function renderConvertedBatches(
   // relative multipliers directly and must not apply them twice. Weight changes
   // must not mutate the cached prepared batches.
   const batches =
-    options.textureMode !== 'budget'
+    options.textureMode === 'legacy'
       ? prepared.batches.map((batch) => {
           const weight = options.weights[batch.key] ?? 1;
           return weight === 1
@@ -439,8 +439,8 @@ export function modelResultKey(input: ModelResultKeyInput) {
     input.maxError.toFixed(3),
     [...input.included].sort().join(','),
     input.includedParts ? [...input.includedParts].sort().join(',') : '*',
-    input.textureMode ?? 'legacy',
-    input.textureTarget ?? 'retention',
+    input.textureMode ?? 'budget',
+    input.textureTarget ?? 'density',
     input.atlasSharing ? 'share' : 'no-share',
     Object.entries(input.weights)
       .sort(([a], [b]) => a.localeCompare(b))

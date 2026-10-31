@@ -1059,6 +1059,20 @@
   color: var(--muted);
 }
 .texture-quality-tuner input[type="range"] { width: 100%; }
+.texture-quality-slider { position: relative; }
+.texture-quality-ticks {
+  position: relative;
+  height: 6px;
+  margin: -3px 8px 2px;
+  pointer-events: none;
+}
+.texture-quality-ticks i {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 4px;
+  background: var(--line);
+}
 .texture-quality-actions {
   display: flex;
   flex-wrap: wrap;

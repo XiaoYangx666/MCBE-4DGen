@@ -47,8 +47,6 @@ import {
   TextureStudio,
   type StudioMaterial,
   type StudioPart,
-  type TextureMode,
-  type TextureTarget,
 } from '../../web/shared/TextureStudio';
 import { createPartPreview } from '../lib/part-visibility';
 import { extractedParts } from '../engine/parts';
@@ -110,8 +108,6 @@ export function ModelStudio({
   const compact = true;
   const [previewRoot, setPreviewRoot] = useState<THREE.Group | null>(null);
   const [weights, setWeights] = useState<Record<string, number>>({});
-  const [textureMode, setTextureMode] = useState<TextureMode>('budget');
-  const [textureTarget, setTextureTarget] = useState<TextureTarget>('density');
   const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [showKeptParts, setShowKeptParts] = useState(true);
@@ -231,8 +227,6 @@ export function ModelStudio({
     setRigAvailable(false);
     setBinding('static');
     setWeights({});
-    setTextureMode('legacy');
-    setTextureTarget('retention');
     setIncludedParts(new Set());
     setSelectedPart(null);
     setShowKeptParts(true);
@@ -356,11 +350,12 @@ export function ModelStudio({
       included,
       includedParts,
       weights,
-      textureMode,
-      textureTarget,
+      textureMode: 'budget',
+      textureTarget: 'density',
+      atlasSharing: true,
       modelTriangles: model?.stats.triangles ?? 0,
     }),
-  ].join('|'), [binding, name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, includedParts, weights, textureMode, textureTarget, model?.stats.triangles]);
+  ].join('|'), [binding, name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, includedParts, weights, model?.stats.triangles]);
 
   const convert = async () => {
     if (!model || busy) return;
@@ -429,9 +424,9 @@ export function ModelStudio({
         included,
         includedParts,
         weights,
-        textureMode,
-        textureTarget,
-        atlasSharing: textureMode === 'budget',
+        textureMode: 'budget',
+        textureTarget: 'density',
+        atlasSharing: true,
         onProgress: setProgress,
       });
       if (run !== convertRun.current) return;
@@ -877,10 +872,6 @@ export function ModelStudio({
             <div className="settings-section-title">纹理与部件</div>
           {source ? (
             <TextureStudio
-              mode={textureMode}
-              target={textureTarget}
-              onMode={setTextureMode}
-              onTarget={setTextureTarget}
               materials={studioMaterials}
               selectedMaterial={soloKey}
               onSelectMaterial={(id) => setSoloKey(id)}
@@ -925,17 +916,7 @@ export function ModelStudio({
               showKeptOnly={showKeptParts}
               onShowKeptOnly={setShowKeptParts}
               disabled={loading || busy}
-              note={
-                result
-                  ? `上次转换：${
-                      result.textureReport.mode === 'budget'
-                        ? result.textureReport.target === 'density'
-                          ? '预算·密度'
-                          : '预算·细节保留'
-                        : '旧版算法'
-                    }`
-                  : undefined
-              }
+              note="纹理预算 · 密度 · 相对清晰度 0.1–20×"
             />
           ) : (
             <p className="field-help">导入模型后可以在这里选择部件、调整材质清晰度。</p>

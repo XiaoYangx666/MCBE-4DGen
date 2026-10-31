@@ -84,5 +84,12 @@ describe('browser model job helpers', () => {
       weights: { a: 1, b: 2 },
     }));
     expect(modelResultKey(base)).not.toBe(modelResultKey({ ...base, height: 33 }));
+    // The web app allocates with the budget planner at density by default.
+    expect(modelResultKey(base)).toBe(
+      modelResultKey({ ...base, textureMode: 'budget', textureTarget: 'density' }),
+    );
+    expect(modelResultKey(base)).not.toBe(
+      modelResultKey({ ...base, textureMode: 'legacy', textureTarget: 'retention' }),
+    );
   });
 });
