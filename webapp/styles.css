@@ -417,12 +417,6 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent);
 }
-.height-range {
-  width: 100%;
-  margin: 8px 0 0;
-  accent-color: var(--accent);
-}
-
 .field-label select {
   display: block;
   width: 100%;
@@ -660,6 +654,8 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
 /* Workspace/section titles are compact on mobile; the field labels carry the
    structure instead. */
 .studio-layout.compact .panel-heading { display: none; }
+/* The sheet already pads the form; drop the duplicated top gap on the first label. */
+.studio-layout.compact .settings-section > .field-label:first-of-type { margin-top: 0; }
 .studio-layout.compact .panel-scroll {
   padding: 0;
   overflow: visible;
@@ -1720,8 +1716,7 @@ footer a { color: var(--accent); }
   .dropzone-action { display: inline-flex; align-items: center; min-height: 38px; padding: 8px 14px; font-size: 13px; }
   .dropzone strong { font-size: 14px; }
   .dropzone p { font-size: 11px; }
-  .height-range { height: 30px; }
-  .tabs button { min-height: 38px; padding: 8px 12px; font-size: 13px; }
+    .tabs button { min-height: 38px; padding: 8px 12px; font-size: 13px; }
   .text-button { display: inline-flex; align-items: center; min-height: 34px; }
   .image-source-preview { height: 170px; }
   .download-buttons { flex-direction: column; align-items: stretch; }
@@ -2210,14 +2205,14 @@ footer a { color: var(--accent); }
   background: transparent;
 }
 .studio-layout.compact .sheet-body[data-tab="basic"] .settings-section:not([data-section="basic"]),
-.studio-layout.compact .sheet-body[data-tab="pose"] .settings-section:not([data-section="pose"]),
+.studio-layout.compact .sheet-body[data-tab="parts"] .settings-section:not([data-section="parts"]),
 .studio-layout.compact .sheet-body[data-tab="material"] .settings-section:not([data-section="material"]),
 .studio-layout.compact .sheet-body[data-tab="result"] .settings-section:not([data-section="result"]) {
   display: none;
 }
 .studio-layout.compact .sheet-body[data-tab="material"] .studio-inspector { display: none; }
 .studio-layout.compact .sheet-body[data-tab="basic"] .studio-materials,
-.studio-layout.compact .sheet-body[data-tab="pose"] .studio-materials,
+.studio-layout.compact .sheet-body[data-tab="parts"] .studio-materials,
 .studio-layout.compact .sheet-body[data-tab="result"] .studio-materials { display: none; }
 .studio-layout.compact .settings-footer {
   flex: 0 0 auto;
@@ -2244,3 +2239,153 @@ footer a { color: var(--accent); }
 }
 .model-drop-overlay b { font-size: 15px; }
 .model-drop-overlay span { color: var(--muted); font-size: 11px; }
+
+/* Material tab: compact entry point for reduction settings. */
+.material-adjust-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.material-adjust-row .button-link { min-height: 32px; }
+
+/* Parts live on their own tab, so the standalone list needs no separator. */
+.settings-section[data-section="parts"] .texture-studio-parts {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* Reduction dialog opened from the material tab. */
+.adjust-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.adjust-dialog-body .settings-group { margin: 0; }
+.adjust-dialog-body .field-label { margin-top: 0; }
+
+/* Result tab: texture beside the material share, then a compact fact grid. */
+.result-overview {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 12px;
+}
+.result-overview .result-png-preview {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.result-overview .result-png-preview img {
+  max-width: 132px;
+  max-height: 132px;
+}
+.result-png-button {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.result-png-button img { display: block; }
+.result-overview .material-share { flex: 1 1 auto; min-width: 0; }
+
+.material-share {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+.material-share figcaption {
+  color: var(--muted);
+  font-size: 10px;
+}
+.material-share-body {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+.material-share-bar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  width: 16px;
+  height: 132px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--hover);
+}
+.material-share-bar span {
+  width: 100%;
+  flex-basis: 0;
+  min-height: 2px;
+}
+.material-share-legend {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  max-height: 132px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.material-share-legend li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.material-share-legend i {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+.material-share-legend span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.material-share-legend em {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.result-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 14px 0 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+.result-stats > div {
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--surface);
+}
+.result-stats dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+.result-stats dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
