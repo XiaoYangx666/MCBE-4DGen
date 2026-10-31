@@ -44,6 +44,17 @@ describe('shared texture chart math', () => {
     expect(splitUvIslands(uvs)).toHaveLength(1);
   });
 
+  it('keeps quantised corner pairs distinct across digit boundaries', () => {
+    const step = 1e-6;
+    const uvs = new Float32Array([
+      ...triangle(1 * step, 23 * step, 2 * step, 23 * step, 2 * step, 24 * step),
+      ...triangle(12 * step, 3 * step, 13 * step, 3 * step, 13 * step, 4 * step),
+    ]);
+    // A `${u},${v}` string key would read "1,23" and "12,3" as different here,
+    // but a packed numeric key could collide; the splitter must keep them apart.
+    expect(splitUvIslands(uvs)).toHaveLength(2);
+  });
+
   it('merges nearby same-material charts when the box barely grows', () => {
     const uvs = new Float32Array([
       ...triangle(0, 0, 0.1, 0, 0, 0.1),

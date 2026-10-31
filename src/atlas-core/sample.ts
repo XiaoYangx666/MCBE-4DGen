@@ -13,7 +13,7 @@ export type Rgba = [number, number, number, number];
 export interface RgbaImage {
   width: number;
   height: number;
-  data: Uint8Array;
+  data: Uint8Array | Uint8ClampedArray;
 }
 
 /** Bilinear sample with wrap modes; straight alpha, premultiplied blending. */

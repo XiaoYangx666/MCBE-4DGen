@@ -7,10 +7,10 @@ import {
 import {
   buildUvCharts,
   normalizeWrapMode,
-  sampleWrappedRgba,
   unwrapChartBounds,
   type WrapMode,
 } from '../../src/texture-chart-math.ts';
+import { sampleArea } from '../../src/atlas-core/sample.ts';
 import {
   planAtlasBudget,
   type AtlasBudgetOptions,
@@ -518,6 +518,54 @@ interface TexturePixels {
 
 const MAX_CACHED_TEXTURE_PIXELS = 24 * 1024 * 1024;
 const MAX_CACHED_TEXTURES = 4;
+/** Keep about two source samples per atlas texel when a chart is downscaled. */
+const SAMPLE_SUPERSAMPLE = 2;
+
+const isFastRect = (bounds: [number, number, number, number], texture: TextureSource) =>
+  bounds[0] >= 0 &&
+  bounds[1] >= 0 &&
+  bounds[2] <= 1 &&
+  bounds[3] <= 1 &&
+  (bounds[2] - bounds[0]) * texture.width >= 0.5 &&
+  (bounds[3] - bounds[1]) * texture.height >= 0.5;
+
+/**
+ * Source resolution each texture actually needs for its wrap-sampled charts.
+ * Canvas `drawImage` already resamples the in-range fast path, so only charts
+ * that leave 0..1 read pixels. Downscaling those to roughly twice their atlas
+ * footprint keeps a 4K texture from occupying 64 MB for a 128 px atlas while
+ * preserving small, magnified UV regions at native resolution.
+ */
+function samplingTargets(
+  layout: AtlasLayout,
+  byKey: ReadonlyMap<string, AtlasInput>,
+): Map<string, { width: number; height: number }> {
+  const targets = new Map<string, { width: number; height: number }>();
+  for (const chart of layout.charts) {
+    const input = byKey.get(chart.inputKey);
+    const texture = input?.texture;
+    const bounds = chart.bounds;
+    if (!texture || !bounds || isFastRect(bounds, texture)) continue;
+    const innerWidth = Math.max(1, chart.rect.width - chart.rect.pad * 2);
+    const innerHeight = Math.max(1, chart.rect.height - chart.rect.pad * 2);
+    const spanU = Math.abs(bounds[2] - bounds[0]);
+    const spanV = Math.abs(bounds[3] - bounds[1]);
+    const requestWidth = spanU > 1e-9
+      ? Math.min(texture.width, Math.ceil((innerWidth * SAMPLE_SUPERSAMPLE) / spanU))
+      : texture.width;
+    const requestHeight = spanV > 1e-9
+      ? Math.min(texture.height, Math.ceil((innerHeight * SAMPLE_SUPERSAMPLE) / spanV))
+      : texture.height;
+    const target = targets.get(texture.key);
+    if (target) {
+      target.width = Math.max(target.width, requestWidth);
+      target.height = Math.max(target.height, requestHeight);
+    } else {
+      targets.set(texture.key, { width: requestWidth, height: requestHeight });
+    }
+  }
+  return targets;
+}
 
 /** Painter for the planned atlas. Tints and opacity are baked into pixels. */
 export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout): AtlasBuild {
@@ -533,29 +581,61 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
   const byKey = new Map<string, AtlasInput>();
   for (const input of inputs) if (!byKey.has(input.key)) byKey.set(input.key, input);
 
-  // A full texture read is only needed when a chart leaves 0..1. Cache the
-  // decoded pixels per texture, not per material, and evict old entries so a
-  // texture-heavy model does not keep every 4K image in memory at once.
+  // Fast path: in-range charts let the browser's image pipeline resample the
+  // source rectangle directly into the atlas.
+  for (const chart of layout.charts) {
+    const input = byKey.get(chart.inputKey);
+    const texture = input?.texture;
+    const bounds = chart.bounds;
+    if (!texture || !bounds || !isFastRect(bounds, texture)) continue;
+    const rect = chart.rect;
+    context.drawImage(
+      texture.image,
+      clamp(bounds[0] * texture.width, 0, texture.width),
+      clamp(bounds[1] * texture.height, 0, texture.height),
+      Math.max(0, (bounds[2] - bounds[0]) * texture.width),
+      Math.max(0, (bounds[3] - bounds[1]) * texture.height),
+      rect.x + rect.pad,
+      rect.y + rect.pad,
+      Math.max(1, rect.width - rect.pad * 2),
+      Math.max(1, rect.height - rect.pad * 2),
+    );
+  }
+
+  // One readback for the whole atlas. Wrapped charts and flat fills are
+  // written into this buffer, so a texture with many islands no longer costs
+  // one getImageData + putImageData pair per chart.
+  const image = context.getImageData(0, 0, size, size);
+  const data = image.data;
+  const targets = samplingTargets(layout, byKey);
   const pixelCache = new Map<string, TexturePixels>();
   let cachedPixels = 0;
+
   const texturePixels = (texture: TextureSource): TexturePixels | null => {
-    const hit = pixelCache.get(texture.key);
+    const target = targets.get(texture.key) ?? {
+      width: texture.width,
+      height: texture.height,
+    };
+    const cacheKey = `${texture.key}@${target.width}x${target.height}`;
+    const hit = pixelCache.get(cacheKey);
     if (hit) {
-      pixelCache.delete(texture.key);
-      pixelCache.set(texture.key, hit);
+      pixelCache.delete(cacheKey);
+      pixelCache.set(cacheKey, hit);
       return hit;
     }
     const scratch = document.createElement('canvas');
-    scratch.width = Math.max(1, texture.width);
-    scratch.height = Math.max(1, texture.height);
+    scratch.width = Math.max(1, target.width);
+    scratch.height = Math.max(1, target.height);
     const scratchContext = scratch.getContext('2d', { willReadFrequently: true });
     if (!scratchContext) return null;
+    scratchContext.imageSmoothingEnabled = true;
+    scratchContext.imageSmoothingQuality = 'high';
     scratchContext.drawImage(texture.image, 0, 0, scratch.width, scratch.height);
-    const image = scratchContext.getImageData(0, 0, scratch.width, scratch.height);
+    const decoded = scratchContext.getImageData(0, 0, scratch.width, scratch.height);
     const pixels: TexturePixels = {
-      width: image.width,
-      height: image.height,
-      data: image.data,
+      width: decoded.width,
+      height: decoded.height,
+      data: decoded.data,
     };
     while (
       (cachedPixels + pixels.width * pixels.height > MAX_CACHED_TEXTURE_PIXELS ||
@@ -568,9 +648,75 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
       cachedPixels -= evicted.width * evicted.height;
       pixelCache.delete(oldest);
     }
-    pixelCache.set(texture.key, pixels);
+    pixelCache.set(cacheKey, pixels);
     cachedPixels += pixels.width * pixels.height;
     return pixels;
+  };
+
+  const bake = (
+    input: AtlasInput,
+    innerX: number,
+    innerY: number,
+    innerWidth: number,
+    innerHeight: number,
+  ) => {
+    const options = {
+      factor: [
+        srgbToLinear(input.color[0]),
+        srgbToLinear(input.color[1]),
+        srgbToLinear(input.color[2]),
+        input.opacity,
+      ] as const,
+      alphaMode: input.alphaMode ?? ('BLEND' as AlphaMode),
+      alphaCutoff: input.alphaCutoff ?? 0.5,
+    };
+    for (let y = 0; y < innerHeight; y++) {
+      const start = ((innerY + y) * size + innerX) * 4;
+      bakeBaseColorPixels(data.subarray(start, start + innerWidth * 4), options);
+    }
+  };
+
+  const fillFlat = (input: AtlasInput, rect: AtlasRect) => {
+    const alpha = resolveAlpha(
+      input.opacity,
+      input.alphaMode ?? 'BLEND',
+      input.alphaCutoff ?? 0.5,
+    );
+    const red = Math.round(clamp(input.color[0], 0, 1) * 255);
+    const green = Math.round(clamp(input.color[1], 0, 1) * 255);
+    const blue = Math.round(clamp(input.color[2], 0, 1) * 255);
+    const value = Math.round(clamp(alpha, 0, 1) * 255);
+    for (let y = rect.y; y < rect.y + rect.height; y++)
+      for (let x = rect.x; x < rect.x + rect.width; x++) {
+        const offset = (y * size + x) * 4;
+        data[offset] = red;
+        data[offset + 1] = green;
+        data[offset + 2] = blue;
+        data[offset + 3] = value;
+      }
+  };
+
+  const extrude = (
+    rect: AtlasRect,
+    innerX: number,
+    innerY: number,
+    innerWidth: number,
+    innerHeight: number,
+  ) => {
+    if (rect.pad <= 0) return;
+    for (let y = -rect.pad; y < innerHeight + rect.pad; y++) {
+      const sourceY = clamp(y, 0, innerHeight - 1);
+      for (let x = -rect.pad; x < innerWidth + rect.pad; x++) {
+        if (x >= 0 && x < innerWidth && y >= 0 && y < innerHeight) continue;
+        const sourceX = clamp(x, 0, innerWidth - 1);
+        const source = ((innerY + sourceY) * size + innerX + sourceX) * 4;
+        const target = ((innerY + y) * size + innerX + x) * 4;
+        data[target] = data[source]!;
+        data[target + 1] = data[source + 1]!;
+        data[target + 2] = data[source + 2]!;
+        data[target + 3] = data[source + 3]!;
+      }
+    }
   };
 
   for (const chart of layout.charts) {
@@ -581,127 +727,54 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
     const innerY = rect.y + rect.pad;
     const innerWidth = Math.max(1, rect.width - rect.pad * 2);
     const innerHeight = Math.max(1, rect.height - rect.pad * 2);
-    const alphaMode = input.alphaMode ?? 'BLEND';
-    const alphaCutoff = input.alphaCutoff ?? 0.5;
     const texture = input.texture;
     const bounds = chart.bounds;
-    let image: ImageData | null = null;
 
-    if (texture && bounds) {
+    if (!texture || !bounds) {
+      fillFlat(input, rect);
+      continue;
+    }
+
+    if (!isFastRect(bounds, texture)) {
+      const pixels = texturePixels(texture);
+      if (!pixels) {
+        fillFlat(input, rect);
+        continue;
+      }
       const spanU = bounds[2] - bounds[0];
       const spanV = bounds[3] - bounds[1];
-      const inRange =
-        bounds[0] >= 0 &&
-        bounds[1] >= 0 &&
-        bounds[2] <= 1 &&
-        bounds[3] <= 1;
-      if (inRange && spanU * texture.width >= 0.5 && spanV * texture.height >= 0.5) {
-        // Fast and high quality: let the browser resample the source rect.
-        const sx = clamp(bounds[0] * texture.width, 0, texture.width);
-        const sy = clamp(bounds[1] * texture.height, 0, texture.height);
-        const sw = Math.max(0, (bounds[2] - bounds[0]) * texture.width);
-        const sh = Math.max(0, (bounds[3] - bounds[1]) * texture.height);
-        context.clearRect(innerX, innerY, innerWidth, innerHeight);
-        context.drawImage(
-          texture.image,
-          sx,
-          sy,
-          sw,
-          sh,
-          innerX,
-          innerY,
-          innerWidth,
-          innerHeight,
-        );
-        image = context.getImageData(innerX, innerY, innerWidth, innerHeight);
-      } else {
-        // Negative / seam-crossing UVs: sample the source sampler virtually.
-        const pixels = texturePixels(texture);
-        if (pixels) {
-          const sampled = context.createImageData(innerWidth, innerHeight);
-          const out = [0, 0, 0, 0];
-          for (let y = 0; y < innerHeight; y++) {
-            const v =
-              spanV > 1e-9
-                ? bounds[1] + ((y + 0.5) / innerHeight) * spanV
-                : (bounds[1] + bounds[3]) / 2;
-            for (let x = 0; x < innerWidth; x++) {
-              const u =
-                spanU > 1e-9
-                  ? bounds[0] + ((x + 0.5) / innerWidth) * spanU
-                  : (bounds[0] + bounds[2]) / 2;
-              sampleWrappedRgba(
-                pixels.data,
-                pixels.width,
-                pixels.height,
-                u,
-                v,
-                chart.wrap[0],
-                chart.wrap[1],
-                out,
-              );
-              const target = (y * innerWidth + x) * 4;
-              sampled.data[target] = out[0]!;
-              sampled.data[target + 1] = out[1]!;
-              sampled.data[target + 2] = out[2]!;
-              sampled.data[target + 3] = out[3]!;
-            }
-          }
-          image = sampled;
+      for (let y = 0; y < innerHeight; y++) {
+        const v0 = bounds[1] + (y / innerHeight) * spanV;
+        const v1 = bounds[1] + ((y + 1) / innerHeight) * spanV;
+        for (let x = 0; x < innerWidth; x++) {
+          const u0 = bounds[0] + (x / innerWidth) * spanU;
+          const u1 = bounds[0] + ((x + 1) / innerWidth) * spanU;
+          const sample = sampleArea(
+            pixels,
+            u0,
+            v0,
+            u1,
+            v1,
+            chart.wrap[0],
+            chart.wrap[1],
+          );
+          const offset = ((innerY + y) * size + innerX + x) * 4;
+          data[offset] = Math.round(sample[0]);
+          data[offset + 1] = Math.round(sample[1]);
+          data[offset + 2] = Math.round(sample[2]);
+          data[offset + 3] = Math.round(sample[3]);
         }
       }
     }
 
-    if (!image) {
-      context.clearRect(
-        innerX - rect.pad,
-        innerY - rect.pad,
-        innerWidth + rect.pad * 2,
-        innerHeight + rect.pad * 2,
-      );
-      context.fillStyle = rgba(
-        input.color,
-        resolveAlpha(input.opacity, alphaMode, alphaCutoff),
-      );
-      context.fillRect(
-        innerX - rect.pad,
-        innerY - rect.pad,
-        innerWidth + rect.pad * 2,
-        innerHeight + rect.pad * 2,
-      );
-      continue;
-    }
-
-    // Bake the base-color factor and alpha mode exactly like the Node atlas.
-    bakeBaseColorPixels(image.data, {
-      factor: [
-        srgbToLinear(input.color[0]),
-        srgbToLinear(input.color[1]),
-        srgbToLinear(input.color[2]),
-        input.opacity,
-      ],
-      alphaMode,
-      alphaCutoff,
-    });
-    // Extend the chart edge into its pad. This keeps linear filtering from
-    // sampling a neighboring chart or transparent atlas space at UV edges.
-    const paddedWidth = innerWidth + rect.pad * 2;
-    const paddedHeight = innerHeight + rect.pad * 2;
-    const padded = context.createImageData(paddedWidth, paddedHeight);
-    for (let y = 0; y < paddedHeight; y++) {
-      const sy = clamp(y - rect.pad, 0, innerHeight - 1);
-      for (let x = 0; x < paddedWidth; x++) {
-        const sx = clamp(x - rect.pad, 0, innerWidth - 1);
-        const source = (sy * innerWidth + sx) * 4;
-        const target = (y * paddedWidth + x) * 4;
-        for (let channel = 0; channel < 4; channel++)
-          padded.data[target + channel] = image.data[source + channel]!;
-      }
-    }
-    context.putImageData(padded, innerX - rect.pad, innerY - rect.pad);
+    bake(input, innerX, innerY, innerWidth, innerHeight);
+    extrude(rect, innerX, innerY, innerWidth, innerHeight);
   }
 
-  return { canvas, size, rects, coverage: coverageOf(context, size) };
+  context.putImageData(image, 0, 0);
+  let used = 0;
+  for (let index = 3; index < data.length; index += 4) if (data[index]! > 0) used++;
+  return { canvas, size, rects, coverage: used / (size * size) };
 }
 
 export interface AtlasMaterialUsage {
@@ -763,7 +836,9 @@ export async function measureAtlasUsage(
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex]!;
     options.onProgress?.(batchIndex, batches.length, batch.name);
-    await yieldToBrowser();
+    // Coverage is a diagnostic pass; repaint at ~12 fps instead of at every
+    // material so a 30-material model does not spend a frame per batch.
+    await yieldToBrowser(80);
     const key = batch.key ?? batch.name;
     names.set(key, batch.name);
     const mask = maskFor(key, false);
@@ -837,16 +912,6 @@ export async function measureAtlasUsage(
       uvPixels: uvMasks.get(key)!.reduce((sum, value) => sum + value, 0),
     })),
   };
-}
-
-const rgba = (color: Vec3, alpha: number) =>
-  `rgba(${Math.round(color[0] * 255)},${Math.round(color[1] * 255)},${Math.round(color[2] * 255)},${clamp(alpha, 0, 1)})`;
-
-function coverageOf(context: CanvasRenderingContext2D, size: number) {
-  const data = context.getImageData(0, 0, size, size).data;
-  let used = 0;
-  for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) used++;
-  return used / (size * size);
 }
 
 /**

@@ -74,14 +74,14 @@ const chartArea = (chart: {
 }) =>
   Math.max(0, chart.maxU - chart.minU) * Math.max(0, chart.maxV - chart.minV);
 
-/** Stable key for a UV corner, matching the desktop chart splitter. */
-const uvKey = (u: number, v: number) =>
-  `${Math.round(u / UV_EPSILON)},${Math.round(v / UV_EPSILON)}`;
-
 /**
  * Split a flat triangle list (`u0,v0,u1,v1,u2,v2` per triangle) into UV
  * islands that share at least one UV corner. Union-find with epsilon keys is
  * the same rule the desktop atlas has always used.
+ *
+ * Corner keys are stored as a nested number map instead of a
+ * `${u},${v}` string. The values are identical, but a dense model no longer
+ * allocates three strings per triangle while walking its UVs.
  */
 export function splitUvIslands(
   uvs: ArrayLike<number>,
@@ -105,14 +105,20 @@ export function splitUvIslands(
     if (rootA !== rootB) parent[rootB] = rootA;
   };
 
-  const owner = new Map<string, number>();
+  const owner = new Map<number, Map<number, number>>();
   const materials = options.materials;
   for (let triangle = 0; triangle < count; triangle++) {
     const offset = triangle * 6;
     for (let corner = 0; corner < 3; corner++) {
-      const key = uvKey(uvs[offset + corner * 2]!, uvs[offset + corner * 2 + 1]!);
-      const previous = owner.get(key);
-      if (previous === undefined) owner.set(key, triangle);
+      const u = Math.round(uvs[offset + corner * 2]! / UV_EPSILON);
+      const v = Math.round(uvs[offset + corner * 2 + 1]! / UV_EPSILON);
+      let column = owner.get(u);
+      if (!column) {
+        column = new Map();
+        owner.set(u, column);
+      }
+      const previous = column.get(v);
+      if (previous === undefined) column.set(v, triangle);
       else union(triangle, previous);
     }
   }
@@ -252,10 +258,14 @@ export function mergeUvCharts(
           Math.max(0, Math.min(x.maxU, y.maxU) - Math.max(x.minU, y.minU)) *
           Math.max(0, Math.min(x.maxV, y.maxV) - Math.max(x.minV, y.minV));
         const unionArea = chartArea(x) + chartArea(y) - overlap;
+        const joinedArea = chartArea(joined);
+        // Cheap necessary condition: a merge may only grow the box by
+        // `mergeGrowth`. Most pairs in a dense UV sheet fail here, so skip the
+        // coverage and material work below.
+        if (joinedArea > (1 + mergeGrowth) * unionArea + 1e-12) continue;
         const areaA = areas[a] ?? 0;
         const areaB = areas[b] ?? 0;
         const separateCoverage = unionArea > 0 ? (areaA + areaB) / unionArea : 0;
-        const joinedArea = chartArea(joined);
         const mergedCoverage = joinedArea > 0 ? (areaA + areaB) / joinedArea : 0;
         const materialsA = materials[a] ?? new Set<string>();
         const materialsB = materials[b] ?? new Set<string>();
@@ -270,7 +280,6 @@ export function mergeUvCharts(
           joinedArea <= unionArea * 1.02;
         if (
           (sharesMaterial || overlapsUv) &&
-          joinedArea <= (1 + mergeGrowth) * unionArea + 1e-12 &&
           mergedCoverage >= coverageFloor &&
           mergedCoverage >= coverageRetention * separateCoverage
         ) {

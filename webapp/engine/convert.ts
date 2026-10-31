@@ -187,10 +187,12 @@ export async function convertBatches(
   report('规划 128×128 图集…', `${inputs.length} 个材质`);
   await nextFrame();
   const budget = options.textureMode === 'budget';
+  // Bedrock samples skin textures with nearest filtering, so no gutter is
+  // needed. The 2 px this frees per chart goes back into content resolution.
   const layout = planAtlas(
     inputs,
     128,
-    1,
+    0,
     budget
       ? {
           budget: options.textureTarget === 'density' ? 'texel-density' : 'texel-retention',

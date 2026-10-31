@@ -100,6 +100,25 @@ describe('webapp atlas planner', () => {
     }
   });
 
+  it('packs without a gutter when padding is zero', () => {
+    const layout = planAtlas(
+      [input('a', 10), input('b', 5), input('c', 2), input('d', 1)],
+      128,
+      0,
+    );
+    for (const rect of layout.rects.values()) expect(rect.pad).toBe(0);
+    const bounds: [number, number, number, number] = [0, 0, 1, 1];
+    const rect = layout.rects.get('a')!;
+    const uvs = new Float32Array([0, 0, 1, 0, 1, 1]);
+    remapUvs(uvs, bounds, rect, 128);
+    // The full rectangle is content: corner UVs land on its exact edges.
+    expect(uvs[0]).toBeCloseTo(rect.x / 128);
+    expect(uvs[1]).toBeCloseTo(rect.y / 128);
+    expect(uvs[2]).toBeCloseTo((rect.x + rect.width) / 128);
+    expect(uvs[3]).toBeCloseTo(rect.y / 128);
+    expect(uvs[5]).toBeCloseTo((rect.y + rect.height) / 128);
+  });
+
   it('remaps UV bounds into the rect interior', () => {
     const bounds: [number, number, number, number] = [0.25, 0.25, 0.75, 0.75];
     const rect = { x: 10, y: 20, width: 40, height: 30, pad: 1 };
