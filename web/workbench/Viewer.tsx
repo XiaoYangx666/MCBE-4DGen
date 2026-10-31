@@ -107,6 +107,7 @@ export function Viewer({
         controls: { enableDamping: true },
         orientation: { direction: -1, label: "玩家正前方（−Z）" },
         onBeforeRender: () => beforeRender(),
+        releaseContextOnDispose: true,
         onContextLost: () =>
           setError("WebGL 上下文丢失，请刷新页面后重试。"),
       });

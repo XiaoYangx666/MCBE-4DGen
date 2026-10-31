@@ -78,6 +78,7 @@ export function PackPreview({
         orientation: { direction: -1, label: "玩家正前方（−Z）" },
         // Pack previews stay framed until the user starts orbiting.
         refitOnResize: "until-user-moves",
+        releaseContextOnDispose: true,
       });
       viewRef.current = view;
       preview = buildPolyMeshPreview(scene.geometry, scene.texture, {

@@ -90,6 +90,13 @@ export interface PreviewViewportOptions {
   onBeforeRender?: () => void;
   /** Called when the WebGL context is lost; the caller usually recreates. */
   onContextLost?: () => void;
+  /**
+   * Drop the WebGL context when the viewport is disposed. Desktop hosts that
+   * open many previews opt in to release GPU buffers; the browser app leaves
+   * it off so a StrictMode remount or a mobile GPU cannot inherit a stale
+   * context. Defaults to false.
+   */
+  releaseContextOnDispose?: boolean;
   /** Renderer factory, mainly for tests or hosts with a custom context. */
   createRenderer?: () => THREE.WebGLRenderer;
 }
@@ -375,6 +382,10 @@ export function createPreviewViewport(
 
   const contextLostHandler = (event: Event) => {
     event.preventDefault();
+    // `dispose` intentionally drops the context to release GPU memory. That
+    // must not surface as a failure in the host, especially under React
+    // StrictMode where the first effect is cleaned up and re-created.
+    if (disposed) return;
     contextLost = true;
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
@@ -429,10 +440,13 @@ export function createPreviewViewport(
       }
     }
     unbindTheme?.();
+    renderer.domElement.removeEventListener("webglcontextlost", contextLostHandler);
     renderer.dispose();
     // dispose() frees three.js resources but keeps the WebGL context alive.
-    // Force it away so repeated previews do not pile up GPU buffers.
-    renderer.forceContextLoss();
+    // Hosts that ask for it force it away so repeated previews do not pile up
+    // GPU buffers. The listener is already removed, so this release never
+    // reports a failure.
+    if (options.releaseContextOnDispose) renderer.forceContextLoss();
     renderer.domElement.remove();
     if (!hadClass) host.classList.remove("preview-viewport");
   };

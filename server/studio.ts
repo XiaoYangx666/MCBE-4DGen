@@ -26,6 +26,7 @@ import type { IntermediateModel } from '../src/model.ts';
 import { assignParts, materialKeyMap } from '../src/parts.ts';
 import { materialThumbnail } from '../src/material-thumbnail.ts';
 import { normalizeSelection, selectionFingerprint, materialDisplayLabels } from '../src/selection.ts';
+import { linearToSrgb } from '../src/texture-pixels.ts';
 import { PackManager } from '../src/pack-manager.ts';
 import type { ManagerConfig } from '../src/pack-manager.ts';
 import type { PackMeta } from '../src/pack-types.ts';
@@ -348,6 +349,14 @@ export class Studio {
         .map(async (material) => {
           const name = material.getName() || '(默认)';
           const thumbnail = await materialThumbnail(material);
+          const factor = material.getBaseColorFactor();
+          const color = `#${[factor[0]!, factor[1]!, factor[2]!]
+            .map((value) =>
+              Math.round(Math.min(1, Math.max(0, linearToSrgb(value))) * 255)
+                .toString(16)
+                .padStart(2, '0'),
+            )
+            .join('')}`;
           return {
             key: keys.get(material) ?? `m:${material.getName() || '(default)'}#1`,
             label: labels.get(keys.get(material) ?? '') ?? name,
@@ -355,6 +364,7 @@ export class Studio {
             alpha: material.getBaseColorFactor()[3],
             doubleSided: material.getDoubleSided(),
             transparent: material.getAlphaMode() === 'BLEND',
+            color,
             ...(thumbnail ? { thumbnail } : {}),
             partIds: parts
               .filter((part) => part.materialKey === keys.get(material))

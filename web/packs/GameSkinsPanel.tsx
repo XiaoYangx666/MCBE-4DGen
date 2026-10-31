@@ -22,6 +22,7 @@ function reasonLabel(reason: GameSkinBackupReason) {
     "custom:enable": "加入自定义",
     "custom:disable": "移出自定义",
     "custom:restore": "恢复初始",
+    "custom:reattach": "重新关联游戏包",
     "custom:apply-update": "更新到游戏",
     "custom:edit": "编辑游戏包",
     manual: "手动备份",

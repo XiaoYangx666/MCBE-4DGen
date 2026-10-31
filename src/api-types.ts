@@ -13,6 +13,8 @@ export interface MaterialSummary {
   transparent: boolean;
   /** Small data-URL preview of the base color texture, when one exists. */
   thumbnail?: string;
+  /** sRGB hex fallback swatch when the material has no thumbnail. */
+  color?: string;
   /** Parts that own triangles of this material. */
   partIds: string[];
 }

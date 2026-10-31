@@ -14,6 +14,7 @@ export type GameSkinBackupReason =
   | 'custom:enable'
   | 'custom:disable'
   | 'custom:restore'
+  | 'custom:reattach'
   | 'custom:apply-update'
   | 'custom:edit'
   | 'manual';
