@@ -430,6 +430,9 @@ export function createPreviewViewport(
     }
     unbindTheme?.();
     renderer.dispose();
+    // dispose() frees three.js resources but keeps the WebGL context alive.
+    // Force it away so repeated previews do not pile up GPU buffers.
+    renderer.forceContextLoss();
     renderer.domElement.remove();
     if (!hadClass) host.classList.remove("preview-viewport");
   };

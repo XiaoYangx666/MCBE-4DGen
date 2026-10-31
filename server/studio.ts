@@ -149,14 +149,28 @@ export class Studio {
   }
 
   addJob(id: string, job: Job): void {
-    if (this.jobs.size >= 8) this.jobs.delete(this.jobs.keys().next().value!);
+    // A finished job keeps its full pack and atlas buffers for downloads. Two
+    // are enough for the current result plus one quick re-generation; older
+    // jobs would otherwise pin hundreds of MB for the rest of the session.
+    if (this.jobs.size >= 2) this.jobs.delete(this.jobs.keys().next().value!);
     this.jobs.set(id, job);
   }
 
   retainPrepared(key: string, state: PreparedState): void {
-    if (!this.preparedModels.has(key) && this.preparedModels.size >= 2)
+    // Prepared models are only reusable for the current geometry key. Keeping
+    // more than one pins another full document (including source textures).
+    if (!this.preparedModels.has(key) && this.preparedModels.size >= 1)
       this.preparedModels.delete(this.preparedModels.keys().next().value!);
     this.preparedModels.set(key, state);
+  }
+
+  /** Drop a workbench session and its finished conversion buffers. */
+  releaseSession(id: string): boolean {
+    const removed = this.sessions.delete(id);
+    this.preparedModels.clear();
+    for (const [jobId, job] of this.jobs)
+      if (job.status !== 'running') this.jobs.delete(jobId);
+    return removed;
   }
 
   previewCachePath(key: string): string {
@@ -252,8 +266,12 @@ export class Studio {
   ): Promise<LoadedSession> {
     const { cache, cachePreview = true, existingId } = options;
     path = await ownModel(path);
-    if (this.sessions.size >= 4)
+    // Only the active workbench session is needed: its preview and conversion
+    // requests use this id. Dropping the previous session releases the full
+    // imported document (including source textures) instead of keeping four.
+    if (this.sessions.size >= 1)
       this.sessions.delete(this.sessions.keys().next().value!);
+    this.preparedModels.clear();
     const source =
       cache && (await fileExists(resolve(this.root, cache)))
         ? resolve(this.root, cache)

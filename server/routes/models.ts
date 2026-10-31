@@ -113,6 +113,12 @@ export const modelRoutes = [
       headers: { 'Content-Type': 'model/gltf-binary' },
     });
   }),
+
+  /** Release an idle workbench session so its model and previews leave memory. */
+  route('DELETE', '/api/session/:id', async ({ studio, params }) => {
+    studio.releaseSession(params.id!);
+    return json({ ok: true });
+  }),
 ];
 
 async function openModel({ studio, req }: RouteContext) {
