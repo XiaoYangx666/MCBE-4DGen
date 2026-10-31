@@ -378,19 +378,19 @@
 .shared-material-item.selectable { cursor: pointer; }
 .shared-material-item.selectable:hover { background: var(--hover); }
 .shared-material-list.with-solo .shared-material-item {
-  grid-template-columns: 34px minmax(0, 1fr) 86px 44px;
+  grid-template-columns: 34px minmax(0, 1fr) auto 44px;
   grid-template-areas:
     "thumb name weight solo"
     "meta  meta meta   meta";
 }
 .shared-material-list.with-toggle .shared-material-item {
-  grid-template-columns: 18px 30px minmax(0, 1fr) 78px;
+  grid-template-columns: 18px 30px minmax(0, 1fr) auto;
   grid-template-areas:
     "toggle thumb name weight"
     "toggle meta  meta meta";
 }
 .shared-material-list.with-toggle.with-solo .shared-material-item {
-  grid-template-columns: 18px 30px minmax(0, 1fr) 78px 44px;
+  grid-template-columns: 18px 30px minmax(0, 1fr) auto 44px;
   grid-template-areas:
     "toggle thumb name weight solo"
     "toggle meta  meta meta   meta";
@@ -920,9 +920,7 @@
   min-width: 0;
 }
 .texture-part-group + .texture-part-group {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
+  margin-top: 6px;
 }
 .texture-part-group-head {
   display: flex;
@@ -1009,6 +1007,33 @@
   color: var(--muted);
   font-size: 9.5px;
 }
+.texture-part-solo {
+  flex: none;
+  min-height: 26px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.texture-part-solo:hover:not(:disabled),
+.texture-part-solo.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.texture-part-solo:disabled { opacity: 0.45; cursor: default; }
+.shared-material-actions {
+  grid-area: weight;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
 .shared-material-status {
   flex: none;
   white-space: nowrap;
@@ -1017,6 +1042,23 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+.shared-material-adjust {
+  flex: none;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.shared-material-adjust:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.shared-material-adjust:disabled { opacity: 0.5; cursor: default; }
 .shared-material-status.limited { color: #c08552; }
 .texture-quality-tuner {
   margin-top: 8px;

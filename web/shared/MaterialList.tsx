@@ -27,6 +27,8 @@ export interface MaterialListProps {
   onWeight: (id: string, value: number) => void;
   /** Hide the inline numeric weight input (the host has a dedicated tuner). */
   showWeight?: boolean;
+  /** Open a per-material density dialog from the row. */
+  onAdjust?: (id: string) => void;
   weightLabel?: string;
   weightTitle?: string;
 }
@@ -102,6 +104,7 @@ export function MaterialList({
   showWeight = true,
   weightLabel,
   weightTitle,
+  onAdjust,
 }: MaterialListProps) {
   return (
     <div className={`shared-material-list ${onSolo ? 'with-solo' : ''}${onToggle ? ' with-toggle' : ''}`}>
@@ -149,30 +152,48 @@ export function MaterialList({
             {item.name}
           </button>
           <span className="shared-material-meta">{item.meta}</span>
-          {item.status && (
-            <span className={`shared-material-status${item.limited ? ' limited' : ''}`}>
-              {item.status}
-            </span>
-          )}
-          {showWeight && (
-            <WeightInput
-              value={item.weight}
-              label={weightLabel ? `${item.name} ${weightLabel}` : item.name}
-              disabled={disabled}
-              onCommit={(value) => onWeight(item.id, value)}
-              {...(weightTitle ? { title: weightTitle } : {})}
-            />
-          )}
-          {onSolo && (
-            <button
-              type="button"
-              className={`shared-material-solo ${item.soloed ? 'active' : ''}`}
-              disabled={disabled}
-              title="仅用于观察，不影响转换时保留的材质"
-              onClick={() => onSolo(item.id)}
-            >
-              {item.soloed ? '还原' : '只看'}
-            </button>
+          {(item.status || onAdjust || showWeight || onSolo) && (
+            <div className="shared-material-actions">
+              {item.status && (
+                <span className={`shared-material-status${item.limited ? ' limited' : ''}`}>
+                  {item.status}
+                </span>
+              )}
+              {onAdjust && (
+                <button
+                  type="button"
+                  className="shared-material-adjust"
+                  disabled={disabled || item.included === false}
+                  title="调整这个材质的纹理清晰度"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onAdjust(item.id);
+                  }}
+                >
+                  调整
+                </button>
+              )}
+              {showWeight && (
+                <WeightInput
+                  value={item.weight}
+                  label={weightLabel ? `${item.name} ${weightLabel}` : item.name}
+                  disabled={disabled}
+                  onCommit={(value) => onWeight(item.id, value)}
+                  {...(weightTitle ? { title: weightTitle } : {})}
+                />
+              )}
+              {onSolo && (
+                <button
+                  type="button"
+                  className={`shared-material-solo ${item.soloed ? 'active' : ''}`}
+                  disabled={disabled}
+                  title="仅用于观察，不影响转换时保留的材质"
+                  onClick={() => onSolo(item.id)}
+                >
+                  {item.soloed ? '还原' : '只看'}
+                </button>
+              )}
+            </div>
           )}
         </div>
       ))}

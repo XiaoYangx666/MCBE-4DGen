@@ -41,7 +41,7 @@ import { useSkinPack } from '../lib/pack-context';
 import type { TextureSource } from '../engine/types';
 import { RatioField } from '../../web/shared/RatioField';
 import { ConversionReport } from './ConversionReport';
-import { MaterialShareChart } from './MaterialShareChart';
+import { MaterialDonut } from './MaterialDonut';
 import { formatBytes } from '../../web/shared/format';
 import { PoseControls } from '../../web/shared/PoseControls';
 import {
@@ -101,7 +101,7 @@ export function ModelStudio({
   const [rigAvailable, setRigAvailable] = useState(false);
   const [source, setSource] = useState<ExtractedModel | null>(null);
   const [included, setIncluded] = useState<Set<string>>(new Set());
-  const [mobileTab, setMobileTab] = useState<'basic' | 'parts' | 'material' | 'result'>('basic');
+  const [mobileTab, setMobileTab] = useState<'basic' | 'edit' | 'texture' | 'export'>('basic');
   /** CSS fullscreen for the 3D stage: keeps the floating buttons visible. */
   const [stageFullscreen, setStageFullscreen] = useState(false);
   /** Full-page drop target; the compact sheet has no dedicated drop zone. */
@@ -116,8 +116,6 @@ export function ModelStudio({
   /** Pixel difference versus the previous conversion of the same model. */
   const [materialDeltas, setMaterialDeltas] = useState<Map<string, number>>(new Map());
   const [atlasOpen, setAtlasOpen] = useState(false);
-  /** Ratio/shape-error dialog opened from the material tab. */
-  const [adjustOpen, setAdjustOpen] = useState(false);
   const [soloKey, setSoloKey] = useState<string | null>(null);
   const sourcePose = useRef('0|0');
   const armRig = useRef<ArmRig | null>(null);
@@ -454,7 +452,7 @@ export function ModelStudio({
       setResultKey(key);
       setWarnings([...new Set([...merged, ...converted.warnings])]);
       setViewMode('output');
-      if (compact) setMobileTab('result');
+      if (compact) setMobileTab('export');
     } catch (cause) {
       if (run === convertRun.current)
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -523,6 +521,7 @@ export function ModelStudio({
         meta: `${part.triangles.toLocaleString('zh-CN')} 面 · ${label}`,
         materials: [label],
         materialKey: part.materialKey,
+        thumbnail: materialThumbs.get(part.materialKey) ?? null,
         sharedWith: (byMaterial.get(part.materialKey) ?? [])
           .filter((entry) => entry.id !== part.id)
           .map((entry) => entry.name),
@@ -598,6 +597,27 @@ export function ModelStudio({
     }));
   }, [result, source, weights, atlasRegions, materialLabels]);
 
+  const inspectorRegions = useMemo(
+    () =>
+      (result?.textureReport.regions ?? []).map((region) => ({
+        id: region.key,
+        material: region.name,
+        ...(region.materialKey ? { materialKey: region.materialKey } : {}),
+        ...(region.materialKeys ? { materialKeys: region.materialKeys } : {}),
+        ...(region.materials ? { materials: region.materials } : {}),
+        x: region.x,
+        y: region.y,
+        width: region.width,
+        height: region.height,
+        contentPixels: region.contentPixels,
+        shared: (region.materialKeys?.length ?? 0) > 1,
+        ...(region.sourceWidth
+          ? { source: `${region.sourceWidth}×${region.sourceHeight}` }
+          : {}),
+      })),
+    [result],
+  );
+
   return (
     <div
       className={`studio-layout model-layout ${compact ? 'compact' : ''} ${stageFullscreen ? 'stage-hidden' : ''}`}
@@ -642,9 +662,9 @@ export function ModelStudio({
           <div className="mobile-settings-tabs" role="tablist" aria-label="模型设置">
             {([
               ['basic', '基础'],
-              ['parts', '部件'],
-              ['material', '材质'],
-              ['result', '结果'],
+              ['edit', '部件/材质'],
+              ['texture', '纹理'],
+              ['export', '导出'],
             ] as const).map(([key, label]) => (
               <button
                 key={key}
@@ -746,129 +766,176 @@ export function ModelStudio({
               <option value="front">全部单面</option>
             </select>
           </label>
+
+          <details className="fold">
+            <summary>
+              <span>减面与形状</span>
+              <small>保留 {Math.round(ratio * 100)}%</small>
+            </summary>
+            <div className="fold-body">
+              <RatioField
+                ratio={ratio}
+                onChange={setRatio}
+                sourceTriangles={sourceTriangles}
+                targetFaces={targetFaces}
+                actualFaces={actualFaces}
+                disabled={loading || busy}
+                showBudget={!!model}
+              />
+              <label className="field-label">
+                形状变化容限
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.005}
+                  value={maxError}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isFinite(value) && value >= 0 && value <= 1) setMaxError(value);
+                  }}
+                />
+              </label>
+              <p className="field-help">默认 0.03。调小更保形，可能减不到目标；调大减得更多，但更容易丢轮廓。</p>
+            </div>
+          </details>
           </div>
         </fieldset>
         <div className="settings-section" data-section="parts">
-          <div className="settings-section-title">模型部件</div>
-          {source ? (
-            <StudioParts
-              parts={studioParts}
-              includedParts={includedParts}
-              onTogglePart={(id) => {
-                setIncludedParts((previous) => {
-                  const next = new Set(previous);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  return next;
-                });
-                if (selectedPart === id) setSelectedPart(null);
-              }}
-              onSetParts={(ids) => {
-                setIncludedParts(new Set(ids));
-                if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
-              }}
-              selectedPart={selectedPart}
-              onSelectPart={setSelectedPart}
-              showKeptOnly={showKeptParts}
-              onShowKeptOnly={setShowKeptParts}
-              disabled={loading || busy}
-            />
-          ) : (
-            <p className="field-help">导入模型后可以在这里选择要保留的部件。</p>
-          )}
+          <details className="fold" open>
+            <summary>
+              <span>模型部件</span>
+              <small>{includedParts.size}/{studioParts.length} 保留</small>
+            </summary>
+            {source ? (
+              <StudioParts
+                parts={studioParts}
+                includedParts={includedParts}
+                onTogglePart={(id) => {
+                  setIncludedParts((previous) => {
+                    const next = new Set(previous);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  });
+                  if (selectedPart === id) setSelectedPart(null);
+                }}
+                onSetParts={(ids) => {
+                  setIncludedParts(new Set(ids));
+                  if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
+                }}
+                selectedPart={selectedPart}
+                onSelectPart={setSelectedPart}
+                showKeptOnly={showKeptParts}
+                onShowKeptOnly={setShowKeptParts}
+                disabled={loading || busy}
+              />
+            ) : (
+              <p className="field-help">导入模型后可以在这里选择要保留的部件。</p>
+            )}
+          </details>
         </div>
       {compact && (
-        <div className="settings-section result-section" data-section="result">
-          {result ? (
-            <>
-              <div className="mobile-result-actions">
-                <button
-                  type="button"
-                  className="button-link"
-                  disabled={packBusy || stale}
-                  onClick={() => void addToPack()}
-                >
-                  <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
-                  {packBusy ? '正在加入…' : '加入皮肤包'}
-                </button>
-                <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
-              </div>
-              {packMessage && (
-                <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
-              )}
-              {packError && (
-                <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
-              )}
-              <div className="result-overview">
-                {result.textureUrl && (
-                  <figure className="result-png-preview">
-                    <figcaption>
-                      输出贴图 {result.textureReport.size} × {result.textureReport.size} PNG
-                    </figcaption>
-                    <button
-                      type="button"
-                      className="result-png-button"
-                      title="查看贴图分区"
-                      onClick={() => setAtlasOpen(true)}
-                    >
-                      <img src={result.textureUrl} alt="输出贴图预览" loading="lazy" />
-                    </button>
-                  </figure>
-                )}
-                <MaterialShareChart
+        <>
+          <div className="settings-section texture-section" data-section="texture">
+            {result && result.textureUrl ? (
+              <>
+                <div className="texture-tab-head">
+                  输出贴图 {result.textureReport.size} × {result.textureReport.size} PNG
+                </div>
+                <AtlasInspector
+                  src={result.textureUrl}
+                  size={result.textureReport.size}
+                  regions={inspectorRegions}
+                  materials={atlasMaterials}
+                  selected={soloKey}
+                  onSelect={(id) => setSoloKey(id)}
+                  showList={false}
+                  showAdvanced={false}
+                  {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
+                />
+                <MaterialDonut
                   materials={result.textureReport.materials.map((material) => ({
                     key: material.key,
                     name: materialLabels.get(material.key) ?? material.name,
                     pixels: material.pixels,
                   }))}
                   total={result.textureReport.size * result.textureReport.size}
+                  selected={soloKey}
+                  onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
                 />
-              </div>
-              <dl className="result-stats">
-                <div>
-                  <dt>输出三角面</dt>
-                  <dd>{result.report.triangles.toLocaleString('zh-CN')}</dd>
+              </>
+            ) : (
+              <p className="field-help">转换后在这里查看可点击的贴图和材质占比。</p>
+            )}
+          </div>
+          <div className="settings-section result-section" data-section="export">
+            {result ? (
+              <>
+                <div className="mobile-result-actions">
+                  <button
+                    type="button"
+                    className="button-link"
+                    disabled={packBusy || stale}
+                    onClick={() => void addToPack()}
+                  >
+                    <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
+                    {packBusy ? '正在加入…' : '加入皮肤包'}
+                  </button>
+                  <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
                 </div>
-                <div>
-                  <dt>转换用时</dt>
-                  <dd>{result.elapsedMs !== undefined ? `${(result.elapsedMs / 1000).toFixed(1)} 秒` : '—'}</dd>
-                </div>
-                <div>
-                  <dt>源三角面</dt>
-                  <dd>{result.report.sourceTriangles.toLocaleString('zh-CN')}</dd>
-                </div>
-                <div>
-                  <dt>材质</dt>
-                  <dd>{result.report.materials.length}</dd>
-                </div>
-                <div>
-                  <dt>绑定</dt>
-                  <dd>{result.binding === 'humanoid' ? '六部位人形' : '静态整体'}</dd>
-                </div>
-                <div>
-                  <dt>分配方式</dt>
-                  <dd>纹理预算 · 密度</dd>
-                </div>
-                <div>
-                  <dt>有效 UV 覆盖</dt>
-                  <dd>{Math.round((result.textureReport.uvUtilization ?? result.textureCoverage) * 100)}%</dd>
-                </div>
-                {!!result.excludedMaterials?.length && (
-                  <div>
-                    <dt>已移除材质</dt>
-                    <dd>{result.excludedMaterials.length}</dd>
-                  </div>
+                {packMessage && (
+                  <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
                 )}
-              </dl>
-              <WarningList warnings={warnings} />
-            </>
-          ) : (
-            <>
-              <WarningList warnings={warnings} />
-              <p className="field-help">转换后这里显示输出贴图和材质占比。</p>
-            </>
-          )}
-        </div>
+                {packError && (
+                  <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
+                )}
+                <dl className="result-stats">
+                  <div>
+                    <dt>输出三角面</dt>
+                    <dd>{result.report.triangles.toLocaleString('zh-CN')}</dd>
+                  </div>
+                  <div>
+                    <dt>转换用时</dt>
+                    <dd>{result.elapsedMs !== undefined ? `${(result.elapsedMs / 1000).toFixed(1)} 秒` : '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>源三角面</dt>
+                    <dd>{result.report.sourceTriangles.toLocaleString('zh-CN')}</dd>
+                  </div>
+                  <div>
+                    <dt>材质</dt>
+                    <dd>{result.report.materials.length}</dd>
+                  </div>
+                  <div>
+                    <dt>绑定</dt>
+                    <dd>{result.binding === 'humanoid' ? '六部位人形' : '静态整体'}</dd>
+                  </div>
+                  <div>
+                    <dt>分配方式</dt>
+                    <dd>纹理预算 · 密度</dd>
+                  </div>
+                  <div>
+                    <dt>有效 UV 覆盖</dt>
+                    <dd>{Math.round((result.textureReport.uvUtilization ?? result.textureCoverage) * 100)}%</dd>
+                  </div>
+                  {!!result.excludedMaterials?.length && (
+                    <div>
+                      <dt>已移除材质</dt>
+                      <dd>{result.excludedMaterials.length}</dd>
+                    </div>
+                  )}
+                </dl>
+                <WarningList warnings={warnings} />
+              </>
+            ) : (
+              <>
+                <WarningList warnings={warnings} />
+                <p className="field-help">转换后在这里加入或下载皮肤包。</p>
+              </>
+            )}
+          </div>
+        </>
       )}
             </div>
           </aside>
@@ -897,50 +964,44 @@ export function ModelStudio({
               )}
 
           <div className="settings-section" data-section="material">
-            <div className="settings-section-title">材质与清晰度</div>
-            <div className="material-adjust-row">
-              <span>面数保留 {Math.round(ratio * 100)}%</span>
-              <button
-                type="button"
-                className="button-link"
-                disabled={!model}
-                onClick={() => setAdjustOpen(true)}
-              >
-                <Icon name="settings" size={14} /> 调整
-              </button>
-            </div>
-          {source ? (
-            <TextureStudio
-              materials={studioMaterials}
-              selectedMaterial={soloKey}
-              onSelectMaterial={(id) => setSoloKey(id)}
-              onToggleMaterial={(id) => {
-                const willInclude = !included.has(id);
-                setIncluded((previous) => {
-                  const next = new Set(previous);
-                  if (willInclude) next.add(id);
-                  else next.delete(id);
-                  return next;
-                });
-                if (!willInclude && soloKey === id) setSoloKey(null);
-              }}
-              onWeight={(id, value) => {
-                setWeights((previous) => ({ ...previous, [id]: value }));
-              }}
-              onResetWeight={(id) => {
-                setWeights((previous) => {
-                  const next = { ...previous };
-                  delete next[id];
-                  return next;
-                });
-              }}
-              onResetAllWeights={() => setWeights({})}
-              disabled={loading || busy}
-              note="纹理预算 · 密度 · 相对清晰度 0.1–20×"
-            />
-          ) : (
-            <p className="field-help">导入模型后可以在这里选择部件、调整材质清晰度。</p>
-          )}
+            <details className="fold" open>
+              <summary>
+                <span>材质与清晰度</span>
+                <small>{studioMaterials.length} 项</small>
+              </summary>
+              {source ? (
+                <TextureStudio
+                  materials={studioMaterials}
+                  selectedMaterial={soloKey}
+                  onSelectMaterial={(id) => setSoloKey(id)}
+                  onToggleMaterial={(id) => {
+                    const willInclude = !included.has(id);
+                    setIncluded((previous) => {
+                      const next = new Set(previous);
+                      if (willInclude) next.add(id);
+                      else next.delete(id);
+                      return next;
+                    });
+                    if (!willInclude && soloKey === id) setSoloKey(null);
+                  }}
+                  onWeight={(id, value) => {
+                    setWeights((previous) => ({ ...previous, [id]: value }));
+                  }}
+                  onResetWeight={(id) => {
+                    setWeights((previous) => {
+                      const next = { ...previous };
+                      delete next[id];
+                      return next;
+                    });
+                  }}
+                  onResetAllWeights={() => setWeights({})}
+                  disabled={loading || busy}
+                  note="纹理预算 · 密度 · 相对清晰度 0.1–20×"
+                />
+              ) : (
+                <p className="field-help">导入模型后可以在这里调整材质清晰度。</p>
+              )}
+            </details>
           </div>
             </div>
           </aside>
@@ -1179,50 +1240,6 @@ export function ModelStudio({
           />
         </Dialog>
       ) : null}
-
-      {adjustOpen && (
-        <Dialog
-          title="转换调整"
-          label="转换调整"
-          className="adjust-dialog"
-          closeLabel="关闭调整"
-          onClose={() => setAdjustOpen(false)}
-        >
-          <div className="adjust-dialog-body">
-            <RatioField
-              ratio={ratio}
-              onChange={setRatio}
-              sourceTriangles={sourceTriangles}
-              targetFaces={targetFaces}
-              actualFaces={actualFaces}
-              disabled={loading || busy}
-              showBudget={!!model}
-            />
-            <label className="field-label">
-              形状变化容限
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.005}
-                value={maxError}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if (Number.isFinite(value) && value >= 0 && value <= 1) setMaxError(value);
-                }}
-              />
-            </label>
-            <p className="field-help">
-              默认 0.03。调小更保形，可能减不到目标；调大减得更多，但更容易丢轮廓。
-            </p>
-          </div>
-          <div className="pick-actions">
-            <button type="button" className="primary" onClick={() => setAdjustOpen(false)}>
-              完成
-            </button>
-          </div>
-        </Dialog>
-      )}
 
       {pending && (
         <Dialog

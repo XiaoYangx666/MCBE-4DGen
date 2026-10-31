@@ -2204,16 +2204,16 @@ footer a { color: var(--accent); }
   border-radius: 0;
   background: transparent;
 }
+.studio-layout.compact .studio-inspector + .studio-materials { margin-top: 8px; }
 .studio-layout.compact .sheet-body[data-tab="basic"] .settings-section:not([data-section="basic"]),
-.studio-layout.compact .sheet-body[data-tab="parts"] .settings-section:not([data-section="parts"]),
-.studio-layout.compact .sheet-body[data-tab="material"] .settings-section:not([data-section="material"]),
-.studio-layout.compact .sheet-body[data-tab="result"] .settings-section:not([data-section="result"]) {
+.studio-layout.compact .sheet-body[data-tab="edit"] .settings-section:not([data-section="parts"]):not([data-section="material"]),
+.studio-layout.compact .sheet-body[data-tab="texture"] .settings-section:not([data-section="texture"]),
+.studio-layout.compact .sheet-body[data-tab="export"] .settings-section:not([data-section="export"]) {
   display: none;
 }
-.studio-layout.compact .sheet-body[data-tab="material"] .studio-inspector { display: none; }
 .studio-layout.compact .sheet-body[data-tab="basic"] .studio-materials,
-.studio-layout.compact .sheet-body[data-tab="parts"] .studio-materials,
-.studio-layout.compact .sheet-body[data-tab="result"] .studio-materials { display: none; }
+.studio-layout.compact .sheet-body[data-tab="texture"] .studio-materials,
+.studio-layout.compact .sheet-body[data-tab="export"] .studio-materials { display: none; }
 .studio-layout.compact .settings-footer {
   flex: 0 0 auto;
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
@@ -2240,103 +2240,132 @@ footer a { color: var(--accent); }
 .model-drop-overlay b { font-size: 15px; }
 .model-drop-overlay span { color: var(--muted); font-size: 11px; }
 
-/* Material tab: compact entry point for reduction settings. */
-.material-adjust-row {
+/* Collapsible groups inside the sheet. */
+.fold {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.fold + .fold { margin-top: 8px; }
+.fold > summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
-  color: var(--muted);
-  font-size: 11.5px;
+  gap: 6px;
+  min-height: 38px;
+  padding: 7px 10px;
+  color: var(--ink);
+  font-size: 12.5px;
+  cursor: pointer;
+  list-style: none;
 }
-.material-adjust-row .button-link { min-height: 32px; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fold > summary small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.fold > summary::after {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+  content: '展开';
+}
+.fold[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.fold[open] > summary::after { content: '收起'; }
+.fold > .fold-body,
+.fold > .texture-studio,
+.fold > .texture-studio-parts,
+.fold > .field-help {
+  padding: 8px 10px 10px;
+}
+.fold-body > .field-label { margin-top: 0; }
 
-/* Parts live on their own tab, so the standalone list needs no separator. */
 .settings-section[data-section="parts"] .texture-studio-parts {
   padding-top: 0;
   border-top: 0;
 }
 
-/* Reduction dialog opened from the material tab. */
-.adjust-dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.adjust-dialog-body .settings-group { margin: 0; }
-.adjust-dialog-body .field-label { margin-top: 0; }
-
-/* Result tab: texture beside the material share, then a compact fact grid. */
-.result-overview {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-top: 12px;
-}
-.result-overview .result-png-preview {
-  flex: 0 0 auto;
-  margin: 0;
-}
-.result-overview .result-png-preview img {
-  max-width: 132px;
-  max-height: 132px;
-}
-.result-png-button {
-  display: block;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-.result-png-button img { display: block; }
-.result-overview .material-share { flex: 1 1 auto; min-width: 0; }
-
-.material-share {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  min-width: 0;
-}
-.material-share figcaption {
+/* Texture tab: clickable atlas plus allocation donut. */
+.texture-tab-head {
+  margin-bottom: 8px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 10.5px;
 }
-.material-share-body {
+.texture-section .atlas-inspector { margin: 0; }
+.material-donut {
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
+  align-items: center;
   gap: 8px;
-  min-width: 0;
+  margin: 14px 0 0;
 }
-.material-share-bar {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  width: 16px;
-  height: 132px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: var(--hover);
+.material-donut figcaption {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 10.5px;
 }
-.material-share-bar span {
+.material-donut-ring {
+  position: relative;
+  width: 196px;
+  max-width: 100%;
+  aspect-ratio: 1;
+}
+.material-donut-ring svg {
+  display: block;
   width: 100%;
-  flex-basis: 0;
-  min-height: 2px;
+  height: 100%;
 }
-.material-share-legend {
+.material-donut-track { stroke: var(--hover); }
+.material-donut-segment {
+  cursor: pointer;
+  outline: none;
+  transition: stroke-width 0.12s ease, opacity 0.12s ease;
+}
+.material-donut-segment:hover,
+.material-donut-segment:focus-visible { stroke-width: 21; }
+.material-donut-center {
+  position: absolute;
+  inset: 0;
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  max-height: 132px;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 26%;
+  text-align: center;
+  pointer-events: none;
+}
+.material-donut-center b {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.material-donut-center span {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.material-donut-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 10px;
+  width: 100%;
   margin: 0;
   padding: 0;
-  overflow: auto;
   list-style: none;
 }
-.material-share-legend li {
+.material-donut-legend li {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -2344,23 +2373,32 @@ footer a { color: var(--accent); }
   color: var(--muted);
   font-size: 10px;
 }
-.material-share-legend i {
+.material-donut-legend i {
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
   border-radius: 2px;
 }
-.material-share-legend span {
+.material-donut-legend span {
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.material-share-legend em {
+.material-donut-legend em {
   flex: 0 0 auto;
   font-style: normal;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* Export tab keeps the actions compact on phones. */
+.studio-layout.compact .mobile-result-actions .download-buttons { flex: 0 0 auto; }
+.studio-layout.compact .mobile-result-actions .download-buttons .primary {
+  width: auto;
+  min-height: 38px;
+  padding: 7px 12px;
+  font-size: 12.5px;
 }
 
 .result-stats {

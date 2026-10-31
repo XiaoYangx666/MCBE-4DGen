@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Dialog } from './Dialog';
 import { MaterialList, WeightInput, type MaterialListItem } from './MaterialList';
 import {
   formatQuality,
@@ -16,6 +17,8 @@ export interface StudioPart {
   materials: readonly string[];
   /** Stable material key, when the host has one. */
   materialKey?: string;
+  /** Small data-URL preview of the part's base color texture. */
+  thumbnail?: string | null;
   /** Other part names that sample the same material. */
   sharedWith?: readonly string[];
 }
@@ -82,7 +85,7 @@ function snapSlider(value: number) {
   return best;
 }
 
-/** Structural part keep/drop list; the host renders it on its own tab. */
+/** Structural part keep/drop list; the host supplies the collapsible header. */
 export function StudioParts({
   parts,
   includedParts,
@@ -95,7 +98,6 @@ export function StudioParts({
   disabled = false,
   className,
 }: StudioPartsProps) {
-  const [partsOpen, setPartsOpen] = useState(true);
   const groups = useMemo(() => {
     const map = new Map<string, StudioPart[]>();
     for (const part of parts) {
@@ -109,121 +111,128 @@ export function StudioParts({
   if (!parts.length) return null;
   return (
     <div className={`texture-studio-parts${className ? ` ${className}` : ''}`}>
-      <button
-        type="button"
-        className="texture-studio-section-title"
-        aria-expanded={partsOpen}
-        onClick={() => setPartsOpen((value) => !value)}
-      >
-        <span>模型部件</span>
-        <small>
-          {includedParts.size}/{parts.length} 保留
-        </small>
-        <i aria-hidden="true">{partsOpen ? '−' : '+'}</i>
-      </button>
-      {partsOpen && (
-        <>
-          <div className="texture-studio-actions">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onSetParts(allPartIds)}
-            >
-              全部保留
-            </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() =>
-                onSetParts(allPartIds.filter((id) => !includedParts.has(id)))
-              }
-            >
-              反选
-            </button>
-            <label className="texture-studio-check">
-              <input
-                type="checkbox"
-                checked={showKeptOnly}
-                disabled={disabled}
-                onChange={(event) => onShowKeptOnly(event.target.checked)}
-              />
-              预览隐藏已删除部件
-            </label>
-          </div>
-          {selectedPart && (
-            <p className="texture-studio-preview-note">
-              正在只显示所选部件。
-              <button type="button" onClick={() => onSelectPart(null)}>
-                显示保留结果
-              </button>
-            </p>
-          )}
-          <div className="texture-studio-part-groups">
-            {groups.map(([group, list]) => {
-              const groupIds = list.map((part) => part.id);
-              const kept = groupIds.filter((id) => includedParts.has(id)).length;
-              return (
-                <div className="texture-part-group" key={group}>
-                  {(list.length > 1 || list[0]!.name !== group) && (
-                    <div className="texture-part-group-head">
-                      <span title={group}>{group}</span>
-                      <small>{kept}/{list.length}</small>
+      <div className="texture-studio-actions">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onSetParts(allPartIds)}
+        >
+          全部保留
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() =>
+            onSetParts(allPartIds.filter((id) => !includedParts.has(id)))
+          }
+        >
+          反选
+        </button>
+        <label className="texture-studio-check">
+          <input
+            type="checkbox"
+            checked={showKeptOnly}
+            disabled={disabled}
+            onChange={(event) => onShowKeptOnly(event.target.checked)}
+          />
+          预览隐藏已删除部件
+        </label>
+      </div>
+      {selectedPart && (
+        <p className="texture-studio-preview-note">
+          正在只显示所选部件。
+          <button type="button" onClick={() => onSelectPart(null)}>
+            显示保留结果
+          </button>
+        </p>
+      )}
+      <div className="texture-studio-part-groups">
+        {groups.map(([group, list]) => {
+          const groupIds = list.map((part) => part.id);
+          const kept = groupIds.filter((id) => includedParts.has(id)).length;
+          return (
+            <div className="texture-part-group" key={group}>
+              {(list.length > 1 || list[0]!.name !== group) && (
+                <div className="texture-part-group-head">
+                  <span title={group}>{group}</span>
+                  <small>{kept}/{list.length}</small>
+                  <button
+                    type="button"
+                    disabled={disabled || kept === list.length}
+                    onClick={() =>
+                      onSetParts([...new Set([...includedParts, ...groupIds])])
+                    }
+                  >
+                    全选
+                  </button>
+                </div>
+              )}
+              {list.map((part) => {
+                const included = includedParts.has(part.id);
+                const soloed = selectedPart === part.id;
+                const toggleSolo = () => {
+                  if (!included || disabled) return;
+                  onSelectPart(soloed ? null : part.id);
+                };
+                return (
+                  <div
+                    className={`texture-part-row${soloed ? ' selected' : ''}${included ? '' : ' dropped'}`}
+                    key={part.id}
+                    onClick={(event) => {
+                      if ((event.target as HTMLElement).closest('input, button')) return;
+                      toggleSolo();
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={included}
+                      disabled={disabled}
+                      aria-label={`保留 ${part.name}`}
+                      onChange={() => onTogglePart(part.id)}
+                    />
+                    {part.thumbnail ? (
+                      <img className="texture-part-thumb" src={part.thumbnail} alt="" loading="lazy" />
+                    ) : (
+                      <span className="texture-part-thumb empty" aria-hidden="true" />
+                    )}
+                    <div className="texture-part-text">
                       <button
                         type="button"
-                        disabled={disabled || kept === list.length}
-                        onClick={() =>
-                          onSetParts([...new Set([...includedParts, ...groupIds])])
-                        }
+                        className="texture-part-name"
+                        disabled={disabled || !included}
+                        title={included ? `在预览中只显示 ${part.name}` : '部件已删除'}
+                        onClick={toggleSolo}
                       >
-                        全选
+                        {part.name}
                       </button>
+                      <span className="texture-part-meta" title={part.meta}>
+                        {part.meta}
+                      </span>
                     </div>
-                  )}
-                  {list.map((part) => {
-                    const included = includedParts.has(part.id);
-                    return (
-                      <div
-                        className={`texture-part-row${selectedPart === part.id ? ' selected' : ''}${included ? '' : ' dropped'}`}
-                        key={part.id}
+                    <button
+                      type="button"
+                      className={`texture-part-solo${soloed ? ' active' : ''}`}
+                      disabled={disabled || !included}
+                      aria-pressed={soloed}
+                      onClick={toggleSolo}
+                    >
+                      {soloed ? '还原' : '只看'}
+                    </button>
+                    {part.sharedWith && part.sharedWith.length > 0 && (
+                      <span
+                        className="texture-part-shared"
+                        title={`共享材质：${part.materials.join('、')}`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={included}
-                          disabled={disabled}
-                          aria-label={`保留 ${part.name}`}
-                          onChange={() => onTogglePart(part.id)}
-                        />
-                        <button
-                          type="button"
-                          className="texture-part-name"
-                          disabled={disabled || !included}
-                          title={included ? `在预览中只显示 ${part.name}` : '部件已删除'}
-                          onClick={() =>
-                            onSelectPart(selectedPart === part.id ? null : part.id)
-                          }
-                        >
-                          {part.name}
-                        </button>
-                        <span className="texture-part-meta" title={part.meta}>
-                          {part.meta}
-                        </span>
-                        {part.sharedWith && part.sharedWith.length > 0 && (
-                          <span
-                            className="texture-part-shared"
-                            title={`共享材质：${part.materials.join('、')}`}
-                          >
-                            共享 ×{part.sharedWith.length + 1}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
+                        共享 ×{part.sharedWith.length + 1}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -241,26 +250,27 @@ export function TextureStudio({
   note,
   className,
 }: TextureStudioProps) {
-  const selected = materials.find((material) => material.id === selectedMaterial) ?? null;
+  const [adjustId, setAdjustId] = useState<string | null>(null);
+  const adjusting = materials.find((material) => material.id === adjustId) ?? null;
   /** Dragging only moves a local draft; the host commits on release. */
   const [draft, setDraft] = useState<number | null>(null);
   useEffect(() => {
     setDraft(null);
-  }, [selected?.id, selected?.quality]);
+  }, [adjusting?.id, adjusting?.quality]);
 
-  const sliderValue = draft ?? (selected ? qualityToSlider(selected.quality) : 0);
+  const sliderValue = draft ?? (adjusting ? qualityToSlider(adjusting.quality) : 0);
   const draftQuality =
     draft === null
-      ? (selected?.quality ?? 1)
+      ? (adjusting?.quality ?? 1)
       : (TICKS.find((tick) => tick.slider === draft)?.quality ?? sliderToQuality(draft));
 
   const commitDraft = () => {
-    if (draft === null || !selected) return;
+    if (draft === null || !adjusting) return;
     const tick = TICKS.find((item) => item.slider === draft);
     const value = Math.round((tick ? tick.quality : sliderToQuality(draft)) * 100) / 100;
     setDraft(null);
-    if (Math.abs(value - selected.quality) < 0.001) return;
-    onWeight(selected.id, value);
+    if (Math.abs(value - adjusting.quality) < 0.001) return;
+    onWeight(adjusting.id, value);
   };
 
   return (
@@ -268,10 +278,6 @@ export function TextureStudio({
       {note ? <div className="texture-studio-note">{note}</div> : null}
 
       <div className="texture-studio-materials">
-        <div className="texture-studio-section-title static">
-          <span>材质与清晰度</span>
-          <small>{materials.length} 项</small>
-        </div>
         <MaterialList
           items={materials.map((material) => ({
             id: material.id,
@@ -290,11 +296,21 @@ export function TextureStudio({
           onToggle={onToggleMaterial}
           onSelect={(id) => onSelectMaterial(id === selectedMaterial ? null : id)}
           onWeight={onWeight}
+          onAdjust={setAdjustId}
         />
-        {selected && (
+      </div>
+
+      {adjusting && (
+        <Dialog
+          title={`调整 ${adjusting.name}`}
+          label="材质调整"
+          className="material-adjust-dialog"
+          closeLabel="关闭材质调整"
+          onClose={() => setAdjustId(null)}
+        >
           <div className="texture-quality-tuner">
             <div className="texture-quality-head">
-              <b title={selected.name}>{selected.name}</b>
+              <b title={adjusting.name}>{adjusting.name}</b>
               <span>{formatQuality(draftQuality)}×</span>
             </div>
             <div className="texture-quality-slider">
@@ -304,8 +320,8 @@ export function TextureStudio({
                 max={100}
                 step={1}
                 value={sliderValue}
-                disabled={disabled || !selected.included}
-                aria-label={`${selected.name} 相对纹理密度`}
+                disabled={disabled || !adjusting.included}
+                aria-label={`${adjusting.name} 相对纹理密度`}
                 title="0.1–20×；拖动时只调整数值，松手后应用"
                 onChange={(event) => setDraft(snapSlider(Number(event.target.value)))}
                 onPointerUp={commitDraft}
@@ -322,18 +338,18 @@ export function TextureStudio({
             <div className="texture-quality-actions">
               <WeightInput
                 value={draftQuality}
-                label={selected.name}
-                disabled={disabled || !selected.included}
+                label={adjusting.name}
+                disabled={disabled || !adjusting.included}
                 title="0.1–20×，可直接输入"
-                onCommit={(value) => onWeight(selected.id, value)}
+                onCommit={(value) => onWeight(adjusting.id, value)}
               />
               {PRESETS.map((value) => (
                 <button
                   type="button"
                   key={value}
-                  className={Math.abs(selected.quality - value) < 0.001 ? 'active' : ''}
-                  disabled={disabled || !selected.included}
-                  onClick={() => onWeight(selected.id, value)}
+                  className={Math.abs(adjusting.quality - value) < 0.001 ? 'active' : ''}
+                  disabled={disabled || !adjusting.included}
+                  onClick={() => onWeight(adjusting.id, value)}
                 >
                   {formatQuality(value)}×
                 </button>
@@ -341,27 +357,27 @@ export function TextureStudio({
               <button
                 type="button"
                 disabled={disabled}
-                onClick={() => onResetWeight(selected.id)}
+                onClick={() => onResetWeight(adjusting.id)}
               >
                 恢复此材质
               </button>
             </div>
             <div className="texture-quality-result">
-              {selected.lastPixels != null ? (
+              {adjusting.lastPixels != null ? (
                 <>
                   <span>
-                    上次分配 {selected.lastPixels.toLocaleString('zh-CN')} px
-                    {selected.flat ? ' · 纯色采样' : ''}
+                    上次分配 {adjusting.lastPixels.toLocaleString('zh-CN')} px
+                    {adjusting.flat ? ' · 纯色采样' : ''}
                   </span>
-                  {selected.deltaPixels != null && selected.deltaPixels !== 0 && (
-                    <em className={selected.deltaPixels > 0 ? 'up' : 'down'}>
-                      {selected.deltaPixels > 0 ? '+' : ''}
-                      {selected.deltaPixels.toLocaleString('zh-CN')} px
+                  {adjusting.deltaPixels != null && adjusting.deltaPixels !== 0 && (
+                    <em className={adjusting.deltaPixels > 0 ? 'up' : 'down'}>
+                      {adjusting.deltaPixels > 0 ? '+' : ''}
+                      {adjusting.deltaPixels.toLocaleString('zh-CN')} px
                     </em>
                   )}
-                  {selected.floorCharts && selected.floorCharts > 0 ? (
+                  {adjusting.floorCharts && adjusting.floorCharts > 0 ? (
                     <small className="limited">
-                      有 {selected.floorCharts} 个 UV 岛已到最小尺寸，继续降低不会更小。
+                      有 {adjusting.floorCharts} 个 UV 岛已到最小尺寸，继续降低不会更小。
                     </small>
                   ) : (
                     <small>未触发最小尺寸限制。</small>
@@ -377,8 +393,13 @@ export function TextureStudio({
               </button>
             </div>
           </div>
-        )}
-      </div>
+          <div className="pick-actions">
+            <button type="button" className="primary" onClick={() => setAdjustId(null)}>
+              完成
+            </button>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }
