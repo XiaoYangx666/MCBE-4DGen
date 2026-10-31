@@ -82,7 +82,10 @@ function textureThumbnail(texture: TextureSource | null): string | null {
   return result;
 }
 
-export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
+export function ModelStudio({
+  onOpenMenu,
+  showMenu = true,
+}: { onOpenMenu?: () => void; showMenu?: boolean } = {}) {
   const [model, setModel] = useState<LoadedModel | null>(null);
   const [sourceBytes, setSourceBytes] = useState(0);
   const [name, setName] = useState(DEFAULT_NAME);
@@ -997,14 +1000,16 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
         <div className="model-stage">
           {compact && (
             <div className="stage-side-buttons">
-              <button
-                type="button"
-                className="stage-menu-button"
-                aria-label="打开菜单"
-                onClick={onOpenMenu}
-              >
-                <Icon name="menu" size={18} />
-              </button>
+              {showMenu && (
+                <button
+                  type="button"
+                  className="stage-menu-button"
+                  aria-label="打开菜单"
+                  onClick={onOpenMenu}
+                >
+                  <Icon name="menu" size={18} />
+                </button>
+              )}
               {model && (
                 <button
                   type="button"

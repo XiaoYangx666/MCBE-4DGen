@@ -179,7 +179,7 @@ function AppShell() {
           {modelVisited && (
             <div hidden={mode !== 'model'}>
               <Suspense fallback={<div className="panel-loading"><span className="spinner" /> 正在加载模型工作台…</div>}>
-                <ModelStudio onOpenMenu={() => setDrawerOpen(true)} />
+                <ModelStudio onOpenMenu={() => setDrawerOpen(true)} showMenu={compact} />
               </Suspense>
             </div>
           )}

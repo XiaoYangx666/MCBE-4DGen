@@ -76,9 +76,9 @@ export function Viewport({
           autoRotate,
           autoRotateSpeed: 1.2,
           maxPolarAngle: Math.PI * 0.92,
-          // The scene is framed to fit; pinch/scroll zoom is disabled on mobile
-          // and desktop alike so the model stays at a readable scale.
-          enableZoom: false,
+          // Keep wheel and pinch zoom available; the scene still frames itself
+          // to fit when a new object is attached.
+          enableZoom: true,
         },
         orientation: { direction: -1, label: '玩家正前方（−Z）' },
         // Source models are usually authored facing +Z; exported skins use the
@@ -162,7 +162,7 @@ export function Viewport({
         </div>
       ) : (
         <>
-          <div className="viewport-hint">拖拽旋转</div>
+          <div className="viewport-hint">拖拽旋转 · 滚轮/双指缩放</div>
           <div className="viewport-orientation">正面检查：脸和胸前应朝向绿色箭头</div>
           <button
             type="button"
