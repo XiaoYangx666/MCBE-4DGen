@@ -53,9 +53,16 @@ export function isModelAsset(name: string): boolean {
  * and textures resolve across nested folders.
  */
 export async function expandModelArchives(input: File[]): Promise<ExpandedModelFiles> {
+  const archives = input.filter(isModelArchive);
+  // Expanding several archives at once multiplies memory by the number of
+  // models and is the usual reason a phone appears to hang on "读取文件…".
+  if (archives.length > 1)
+    throw new Error(
+      `一次只能导入一个 ZIP（当前选中了 ${archives.length} 个）。请单独选择要转换的模型，或先解压后选择文件夹里的模型文件。`,
+    );
   const files = input.filter((file) => !isModelArchive(file));
   const warnings: string[] = [];
-  for (const archive of input.filter(isModelArchive)) {
+  for (const archive of archives) {
     files.push(...await readArchive(archive, warnings));
   }
   return { files, warnings };

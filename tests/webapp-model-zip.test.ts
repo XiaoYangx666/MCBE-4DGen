@@ -45,6 +45,12 @@ describe('webapp model ZIP import', () => {
     expect(isModelAsset('a.psd')).toBe(false);
   });
 
+  it('rejects several archives selected at once', async () => {
+    const first = await zipFile({ 'model.gltf': '{}' }, 'a.zip');
+    const second = await zipFile({ 'model.gltf': '{}' }, 'b.zip');
+    await expect(expandModelArchives([first, second])).rejects.toThrow(/一次只能导入一个 ZIP/);
+  });
+
   it('points skin pack archives at the skin pack page', async () => {
     const archive = await zipFile({
       'pack/manifest.json': '{}',
