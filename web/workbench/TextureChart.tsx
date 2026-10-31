@@ -1,11 +1,6 @@
-import { useMemo } from 'react';
-import { WeightInput } from '../shared/MaterialList';
+import { useMemo, useState } from 'react';
 import { atlasColor } from '../shared/atlas-colors';
-import {
-  QUALITY_MAX,
-  qualityToSlider,
-  sliderToQuality,
-} from '../shared/texture-scale';
+import { partDisplayNames, type PartNameInput } from '../shared/part-labels';
 import type { Result, Session } from './types';
 
 const RADIUS = 52;
@@ -13,36 +8,23 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const GAP = 1.4;
 
 /**
- * Texture inspector: atlas allocation as a donut plus a compact, always
- * present tuner for the selected material. The ring segments use the same
- * colours as the atlas overlay, so a click anywhere identifies the material.
+ * Atlas allocation as a donut. Segments share the atlas overlay colours, and
+ * hovering one shows the material, the parts it belongs to and how much of the
+ * atlas it takes, so the ring explains itself without a legend.
  */
 export function TextureChart({
   session,
   result,
   selected,
   onSelect,
-  materialWeights,
-  setMaterialWeights,
-  changed,
-  busy,
-  solo,
-  setSolo,
 }: {
   session: Session | null;
   result: Result | null;
   selected: string;
   onSelect: (id: string | null) => void;
-  materialWeights: Record<string, number>;
-  setMaterialWeights: (
-    update: (weights: Record<string, number>) => Record<string, number>,
-  ) => void;
-  changed: () => void;
-  busy: boolean;
-  solo: string | null;
-  setSolo: (update: (current: string | null) => string | null) => void;
 }) {
   const materials = session?.materials ?? [];
+  const parts = session?.parts ?? [];
   const measurements = useMemo(
     () =>
       new Map(
@@ -55,6 +37,21 @@ export function TextureChart({
   );
   const atlas = result?.details?.texture?.atlas ?? null;
   const atlasPixels = atlas ? atlas.width * atlas.height : 0;
+
+  const partsByMaterial = useMemo(() => {
+    const map = new Map<string, PartNameInput[]>();
+    for (const part of parts) {
+      const list = map.get(part.materialKey) ?? [];
+      list.push({
+        name: part.name,
+        node: part.node,
+        mesh: part.mesh,
+        material: part.materialName,
+      });
+      map.set(part.materialKey, list);
+    }
+    return map;
+  }, [parts]);
 
   const shares = useMemo(() => {
     const items = materials
@@ -73,22 +70,14 @@ export function TextureChart({
     return { items, used, total: atlasPixels };
   }, [materials, measurements, atlasPixels]);
 
-  const active = materials.find((material) => material.key === selected) ?? null;
-  const activeMeasurement = active ? measurements.get(active.key) : null;
-  const activePixels =
-    activeMeasurement?.rectPixels ?? activeMeasurement?.pixels ?? null;
-  const weight = active ? (materialWeights[active.key] ?? 1) : 1;
+  const [hover, setHover] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
   const usedPercent =
     shares.total > 0 ? (shares.used / shares.total) * 100 : 0;
-
-  const setWeight = (value: number) => {
-    if (!active) return;
-    setMaterialWeights((weights) => ({
-      ...weights,
-      [active.key]: Math.max(0, Math.min(QUALITY_MAX, value)),
-    }));
-    changed();
-  };
 
   let offset = 0;
   const segments = shares.items.map((item) => {
@@ -105,6 +94,23 @@ export function TextureChart({
     return segment;
   });
 
+  const hovered = hover
+    ? (segments.find((segment) => segment.id === hover.id) ?? null)
+    : null;
+  const hoveredParts = hovered
+    ? partDisplayNames(partsByMaterial.get(hovered.id) ?? [])
+    : [];
+  const hoveredPartLabel = hoveredParts.length
+    ? `部件：${hoveredParts.slice(0, 4).join('、')}${
+        hoveredParts.length > 4 ? ` 等 ${hoveredParts.length} 个` : ''
+      }`
+    : '部件：未关联到具体部件';
+  const viewportWidth =
+    typeof window === 'undefined' ? 1280 : window.innerWidth;
+  const tooltipX = hover
+    ? Math.min(Math.max(hover.x, 132), Math.max(132, viewportWidth - 132))
+    : 0;
+
   return (
     <div className="texture-chart">
       <div className="texture-chart-head">
@@ -117,7 +123,11 @@ export function TextureChart({
       </div>
 
       <div className="texture-donut">
-        <svg viewBox="0 0 120 120" role="img" aria-label="材质占图集比例">
+        <svg
+          viewBox="0 0 120 120"
+          role="group"
+          aria-label="材质占图集比例"
+        >
           <circle
             className="texture-donut-track"
             cx="60"
@@ -141,12 +151,41 @@ export function TextureChart({
               strokeDasharray={`${segment.dash} ${segment.rest}`}
               strokeDashoffset={segment.offset}
               transform="rotate(-90 60 60)"
-              onClick={() =>
-                onSelect(segment.id === selected ? null : segment.id)
+              tabIndex={0}
+              aria-label={`${segment.name}，占图集 ${segment.percent.toFixed(
+                1,
+              )}%`}
+              onPointerEnter={(event) =>
+                setHover({
+                  id: segment.id,
+                  x: event.clientX,
+                  y: event.clientY,
+                })
               }
-            >
-              <title>{`${segment.name} · ${segment.percent.toFixed(1)}%`}</title>
-            </circle>
+              onPointerMove={(event) =>
+                setHover({
+                  id: segment.id,
+                  x: event.clientX,
+                  y: event.clientY,
+                })
+              }
+              onPointerLeave={() => setHover(null)}
+              onFocus={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setHover({
+                  id: segment.id,
+                  x: rect.left + rect.width / 2,
+                  y: rect.top,
+                });
+              }}
+              onBlur={() => setHover(null)}
+              onClick={() => onSelect(segment.id)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                onSelect(segment.id);
+              }}
+            />
           ))}
         </svg>
         <div className="texture-donut-center">
@@ -155,79 +194,24 @@ export function TextureChart({
         </div>
       </div>
 
-      <div className="texture-tuner">
-        {active ? (
-          <>
-            <div className="texture-tuner-head">
-              <b title={active.name}>{active.name}</b>
-              <span>
-                {activePixels != null && shares.total > 0
-                  ? `${activePixels.toLocaleString('zh-CN')} px · ${(
-                      (activePixels / shares.total) *
-                      100
-                    ).toFixed(1)}%`
-                  : '未分配'}
-              </span>
-            </div>
-            <div className="texture-tuner-controls">
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={qualityToSlider(weight)}
-                disabled={busy}
-                aria-label={`${active.name} 相对纹理密度`}
-                onChange={(event) =>
-                  setWeight(
-                    Math.round(
-                      sliderToQuality(Number(event.target.value)) * 100,
-                    ) / 100,
-                  )
-                }
-              />
-              <WeightInput
-                value={weight}
-                label={active.name}
-                disabled={busy}
-                title="0.1–20×，可直接输入"
-                onCommit={setWeight}
-              />
-              <button
-                type="button"
-                className={solo === active.key ? 'active' : ''}
-                disabled={busy}
-                onClick={() =>
-                  setSolo((current) =>
-                    current === active.key ? null : active.key,
-                  )
-                }
-              >
-                {solo === active.key ? '还原' : '只看'}
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                title="恢复此材质的默认密度"
-                onClick={() => {
-                  setMaterialWeights((weights) => {
-                    const next = { ...weights };
-                    delete next[active.key];
-                    return next;
-                  });
-                  changed();
-                }}
-              >
-                恢复
-              </button>
-            </div>
-          </>
-        ) : (
-          <p className="texture-tuner-empty">
-            选中左侧列表或环形图中的材质后，在这里调节密度。
-          </p>
-        )}
-      </div>
+      {hover && hovered && (
+        <div
+          className={`texture-donut-tooltip${hover.y < 150 ? ' below' : ''}`}
+          style={{ left: tooltipX, top: hover.y }}
+          role="tooltip"
+        >
+          <span className="texture-donut-tooltip-head">
+            <i style={{ background: atlasColor(hovered.id) }} />
+            <b>{hovered.name}</b>
+          </span>
+          <span className="texture-donut-tooltip-line">{hoveredPartLabel}</span>
+          <span className="texture-donut-tooltip-line">
+            {hovered.pixels.toLocaleString('zh-CN')} px ·{' '}
+            {hovered.percent.toFixed(1)}%
+            {atlas ? ` · 图集 ${atlas.width}×${atlas.height}` : ''}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

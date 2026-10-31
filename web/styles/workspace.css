@@ -315,37 +315,84 @@
 }
 .texture-donut-center b { font-size: 18px; font-weight: 550; }
 .texture-donut-center small { color: var(--muted); font-size: 9.5px; }
-.texture-tuner-empty { margin: 0; color: var(--muted); font-size: 10.5px; line-height: 1.7; }
+.texture-tuner-empty { margin: 0; color: var(--muted); font-size: 10.5px; line-height: 1.6; }
 .texture-details { flex: none; }
 
-.texture-tuner {
+/* Density tuner floats at the bottom centre of the preview stage. */
+.texture-tuner-overlay {
+  position: absolute;
+  bottom: 50px;
+  left: 50%;
+  z-index: 6;
+  width: min(640px, calc(100% - 28px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.texture-tuner-bar {
   display: flex;
-  flex: none;
   flex-direction: column;
   gap: 6px;
-  min-height: 62px;
-  padding: 8px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--surface);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, #000 24%, transparent);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
 }
+.texture-tuner-bar.empty { padding: 8px 12px; }
 .texture-tuner-head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.texture-tuner-swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
 }
 .texture-tuner-head b {
   overflow: hidden;
+  min-width: 0;
   font-size: 11.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.texture-tuner-head span { color: var(--muted); font-size: 10px; white-space: nowrap; }
-.texture-tuner-controls { display: flex; align-items: center; gap: 6px; }
-.texture-tuner-controls input[type="range"] { flex: 1 1 auto; min-width: 0; }
-.texture-tuner-controls .shared-material-weight { width: 52px; }
-.texture-tuner-controls button {
+.texture-tuner-head small {
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.texture-tuner-head .grow { flex: 1 1 auto; }
+.texture-tuner-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.texture-tuner-slider {
+  position: relative;
+  flex: 1 1 140px;
+  min-width: 90px;
+  padding-bottom: 6px;
+}
+.texture-tuner-slider input[type="range"] { width: 100%; margin: 0; }
+.texture-tuner-ticks {
+  position: absolute;
+  right: 7px;
+  bottom: 0;
+  left: 7px;
+  height: 4px;
+  pointer-events: none;
+}
+.texture-tuner-ticks i {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 4px;
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
+  transform: translateX(-50%);
+}
+.texture-tuner-controls .shared-material-weight { flex: none; width: 52px; }
+.texture-tuner-presets { display: flex; flex: none; gap: 3px; }
+.texture-tuner-bar button {
   flex: none;
   padding: 3px 6px;
   border: 1px solid var(--line);
@@ -354,8 +401,39 @@
   color: var(--muted);
   font-size: 10px;
 }
-.texture-tuner-controls button.active { border-color: var(--accent); color: var(--accent); }
-.texture-tuner-controls button:hover:not(:disabled) { color: var(--ink); }
+.texture-tuner-bar button.active { border-color: var(--accent); color: var(--accent); }
+.texture-tuner-bar button:hover:not(:disabled) { color: var(--ink); }
+.stage.has-tuner .view-hint { display: none; }
+
+/* Donut hover card: material, owning parts and the occupied share. */
+.texture-donut-tooltip {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 264px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: 0 10px 26px color-mix(in srgb, #000 30%, transparent);
+  color: var(--ink);
+  font-size: 10.5px;
+  line-height: 1.5;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 12px));
+}
+.texture-donut-tooltip.below { transform: translate(-50%, 12px); }
+.texture-donut-tooltip-head { display: flex; align-items: center; gap: 5px; }
+.texture-donut-tooltip-head i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.texture-donut-tooltip-head b { font-size: 11.5px; }
+.texture-donut-tooltip-line { color: var(--muted); }
 
 /* Texture outliner (left column). */
 .texture-list { display: flex; flex-direction: column; height: 100%; min-height: 0; }
@@ -379,6 +457,20 @@
 }
 .texture-list-tools > input[type="search"],
 .texture-list-tools select { width: 100%; }
+.texture-list-tools input[type="search"] {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+}
+.texture-list-tools input[type="search"]:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 10%, transparent);
+}
 .texture-list-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .texture-table-filters { display: flex; gap: 4px; flex: none; }
 .texture-table-filters button {
@@ -482,4 +574,7 @@
   .workbench-texture > .workspace-preview { order: 1; min-height: 46dvh; }
   .texture-list-scroll { max-height: 46dvh; }
   .texture-chart-bars { max-height: 260px; }
+  .texture-tuner-overlay { bottom: 46px; width: calc(100% - 16px); }
+  .texture-tuner-head small { display: none; }
+  .texture-tuner-slider { flex-basis: 100%; }
 }

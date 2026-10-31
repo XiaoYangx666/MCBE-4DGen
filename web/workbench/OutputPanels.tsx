@@ -1,6 +1,7 @@
 import type { Result, Session } from "./types";
 import { ConversionSummary } from "../shared/ConversionSummary";
 import { AtlasPanel } from "./AtlasPanel";
+import { AtlasDetails } from "./AtlasDetails";
 
 /**
  * Result workspace: conversion report, atlas diagnostics and download links.
@@ -58,6 +59,8 @@ export function OutputPanels({
               onSelect={(key) => onSelect(key ?? "")}
               {...(onSelectCandidates ? { onSelectCandidates } : {})}
               previewBusy={previewBusy}
+              showList={false}
+              showAdvanced={false}
             />
             <div className="atlas-actions">
               {stale ? (
@@ -127,6 +130,7 @@ export function OutputPanels({
             selectedMaterial={selected}
             onSelectMaterial={onSelect}
           >
+            <AtlasDetails result={result} />
             <details>
               <summary>图集区域与尺寸明细</summary>
               <p>共享区域列出全部材质。面积指图集矩形，不等同于可见像素。</p>
