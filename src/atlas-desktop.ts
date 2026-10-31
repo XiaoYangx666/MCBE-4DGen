@@ -91,8 +91,8 @@ export async function optimizeTexturesWithBudget(
   const filter = options.filter ?? 'lanczos3';
   if (!Number.isSafeInteger(size) || size < 1 || size > 8192)
     throw new Error('atlas size must be an integer in [1, 8192]');
-  if (!Number.isSafeInteger(padding) || padding < 1 || padding > 64)
-    throw new Error('padding must be an integer in [1, 64]');
+  if (!Number.isSafeInteger(padding) || padding < 0 || padding > 64)
+    throw new Error('padding must be an integer in [0, 64]');
 
   const inspection = await inspectModel(input);
   const model: IntermediateModel = {

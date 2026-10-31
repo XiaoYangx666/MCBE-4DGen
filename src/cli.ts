@@ -152,7 +152,7 @@ async function main() {
   const options = {
     prepare: { height, center: 'ground' as const },
     mesh: ratio === undefined ? { preset: 'original' as const } : { ratio, maxError: 0.001 },
-    texture: { maxTextureSize: textureSize, ...(atlas !== undefined ? { atlasSize: atlas } : { compactSize: 128, padding: 1 }) },
+    texture: { maxTextureSize: textureSize, ...(atlas !== undefined ? { atlasSize: atlas } : { compactSize: 128, padding: 0 }) },
   };
   const model = await importModel(input, { backend: importer });
   if (binding === 'humanoid' && ratio !== undefined) throw new Error('Humanoid binding currently preserves original triangles; omit --ratio');
