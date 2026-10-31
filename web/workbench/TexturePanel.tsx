@@ -219,7 +219,7 @@ export function TexturePanel({
           <div
             key={row.id}
             className={`texture-row${row.id === selected ? ' selected' : ''}`}
-            onClick={() => onSelect(row.id === selected ? null : row.id)}
+            onClick={() => onSelect(row.id)}
           >
             {row.thumbnail ? (
               <img className="texture-row-thumb" src={row.thumbnail} alt="" />

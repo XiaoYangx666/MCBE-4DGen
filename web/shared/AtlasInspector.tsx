@@ -187,7 +187,7 @@ export function AtlasInspector({
       return;
     }
     const owner = ids[0] ?? null;
-    select(selected === owner ? null : owner);
+    if (owner) select(owner);
   };
 
   return (

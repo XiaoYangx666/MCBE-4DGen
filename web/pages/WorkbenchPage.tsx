@@ -9,6 +9,7 @@ import { partDisplayNames } from "../shared/part-labels";
 import { ModelPartsPanel } from "../workbench/ModelPartsPanel";
 import { TexturePanel } from "../workbench/TexturePanel";
 import { TextureChart } from "../workbench/TextureChart";
+import { TextureTuner } from "../workbench/TextureTuner";
 import { AtlasDetails } from "../workbench/AtlasDetails";
 import { AtlasPanel } from "../workbench/AtlasPanel";
 import { OutputPanels } from "../workbench/OutputPanels";
@@ -118,10 +119,31 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     });
   }
 
-  function selectMaterial(key: string | null) {
-    setSelected(key ?? "");
+  function clearMaterialSelection() {
+    setSelected("");
+    setSolo(() => null);
     setCandidates(null);
-    if (workspace === "texture") setSolo(() => key);
+  }
+
+  function selectMaterial(key: string | null) {
+    setCandidates(null);
+    if (!key) {
+      clearMaterialSelection();
+      return;
+    }
+    if (workspace === "texture") {
+      // A second click on the selected material toggles isolation instead of
+      // dropping the selection, so editing a weight never changes the view.
+      if (key === selected) {
+        setSolo((current) => (current === key ? null : key));
+        return;
+      }
+      setSelected(key);
+      // An active isolation follows the new selection.
+      setSolo((current) => (current ? key : null));
+      return;
+    }
+    setSelected(key === selected ? "" : key);
   }
 
   function chooseNames(names: string[]) {
@@ -332,8 +354,22 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                 </select>
               )}
             </div>
-            <div className="stage">
+            <div className={`stage${workspace === "texture" ? " has-tuner" : ""}`}>
               {viewer}
+              {workspace === "texture" && (
+                <TextureTuner
+                  session={session}
+                  result={result}
+                  selected={selected}
+                  materialWeights={materialWeights}
+                  setMaterialWeights={setMaterialWeights}
+                  changed={changed}
+                  busy={busy}
+                  solo={solo}
+                  setSolo={setSolo}
+                  onClear={clearMaterialSelection}
+                />
+              )}
               {!session && workspace === "model" && (
                 <div className="welcome">
                   <div className="cube">◈</div>
@@ -419,12 +455,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                   result={result}
                   selected={selected}
                   onSelect={selectMaterial}
-                  materialWeights={materialWeights}
-                  setMaterialWeights={setMaterialWeights}
-                  changed={changed}
-                  busy={busy}
-                  solo={solo}
-                  setSolo={setSolo}
                 />
                 <AtlasDetails result={result} />
               </div>

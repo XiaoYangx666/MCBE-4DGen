@@ -258,6 +258,7 @@ export function Viewer({
     let down = [0, 0];
     const pointerDown = (event: PointerEvent) => { down = [event.clientX, event.clientY]; };
     const pointerUp = (event: PointerEvent) => {
+      if (event.button !== 0) return;
       if (Math.hypot(event.clientX - down[0]!, event.clientY - down[1]!) > 4) return;
       const rect = el.getBoundingClientRect();
       ray.setFromCamera(new THREE.Vector2(
