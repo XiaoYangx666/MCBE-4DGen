@@ -5,6 +5,7 @@ import {
   collectMaterialVisibility,
   restoreMaterialVisibility,
 } from '../webapp/lib/material-visibility.ts';
+import { stableMaterialKeyMap } from '../webapp/engine/extract.ts';
 
 function sceneWithMaterials() {
   const face = new THREE.MeshBasicMaterial({ name: '颜' });
@@ -40,6 +41,16 @@ describe('webapp material preview visibility', () => {
     expect(hair.visible).toBe(true);
 
     applyMaterialVisibility(scene, hair.uuid, new Set([face.uuid]), originals);
+    expect(face.visible).toBe(true);
+    expect(hair.visible).toBe(false);
+  });
+
+  it('accepts stable material keys from the extractor', () => {
+    const { scene, face, hair } = sceneWithMaterials();
+    const originals = collectMaterialVisibility(scene);
+    const keys = stableMaterialKeyMap(scene);
+    const faceKey = keys.get(face.uuid)!;
+    applyMaterialVisibility(scene, null, new Set([faceKey]), originals);
     expect(face.visible).toBe(true);
     expect(hair.visible).toBe(false);
   });
