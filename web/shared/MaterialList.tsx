@@ -6,6 +6,8 @@ export interface MaterialListItem {
   meta: string;
   thumbnail?: string | null;
   color?: string;
+  /** Material is exported; hosts that omit the toggle treat rows as kept. */
+  included?: boolean;
   weight: number;
   soloed?: boolean;
   selected?: boolean;
@@ -18,6 +20,8 @@ export interface MaterialListItem {
 export interface MaterialListProps {
   items: MaterialListItem[];
   disabled?: boolean;
+  /** Show a keep/drop checkbox; omit for hosts without material-level inclusion. */
+  onToggle?: (id: string) => void;
   onSelect?: (id: string) => void;
   onSolo?: (id: string) => void;
   onWeight: (id: string, value: number) => void;
@@ -91,6 +95,7 @@ export function WeightInput({
 export function MaterialList({
   items,
   disabled = false,
+  onToggle,
   onSelect,
   onSolo,
   onWeight,
@@ -99,18 +104,30 @@ export function MaterialList({
   weightTitle,
 }: MaterialListProps) {
   return (
-    <div className={`shared-material-list ${onSolo ? 'with-solo' : ''}`}>
+    <div className={`shared-material-list ${onSolo ? 'with-solo' : ''}${onToggle ? ' with-toggle' : ''}`}>
       {items.map((item) => (
         <div
           className={[
             'shared-material-item',
             item.selected ? 'selected' : '',
             item.soloed ? 'solo' : '',
+            onToggle && item.included === false ? 'dropped' : '',
             onSelect ? 'selectable' : '',
           ].filter(Boolean).join(' ')}
           key={item.id}
           onClick={onSelect && !disabled ? () => onSelect(item.id) : undefined}
         >
+          {onToggle && (
+            <input
+              className="shared-material-toggle"
+              type="checkbox"
+              checked={item.included !== false}
+              disabled={disabled}
+              aria-label={`保留 ${item.name}`}
+              onClick={(event) => event.stopPropagation()}
+              onChange={() => onToggle(item.id)}
+            />
+          )}
           {item.thumbnail ? (
             <img className="shared-material-thumb" src={item.thumbnail} alt="" />
           ) : (

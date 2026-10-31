@@ -383,6 +383,20 @@
     "thumb name weight solo"
     "meta  meta meta   meta";
 }
+.shared-material-list.with-toggle .shared-material-item {
+  grid-template-columns: 18px 30px minmax(0, 1fr) 78px;
+  grid-template-areas:
+    "toggle thumb name weight"
+    "toggle meta  meta meta";
+}
+.shared-material-list.with-toggle.with-solo .shared-material-item {
+  grid-template-columns: 18px 30px minmax(0, 1fr) 78px 44px;
+  grid-template-areas:
+    "toggle thumb name weight solo"
+    "toggle meta  meta meta   meta";
+}
+.shared-material-toggle { grid-area: toggle; margin: 0; }
+.shared-material-item.dropped { opacity: 0.55; }
 .shared-material-item + .shared-material-item { border-top: 1px solid var(--line); }
 .shared-material-item.selected { border-radius: 5px; background: var(--selected); }
 .shared-material-item.solo {
