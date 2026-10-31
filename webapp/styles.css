@@ -1962,6 +1962,9 @@ footer a { color: var(--accent); }
 .studio-layout.compact .workspace-global { flex: 0 0 auto; }
 .studio-layout.compact .workspace-global .button-link { padding: 5px 8px; font-size: 10px; }
 .studio-layout.compact .workspace-body { min-height: 0; }
+/* The model workspace is preview + settings only on mobile; the desktop
+   parts/drop-zone column is replaced by the floating import button. */
+.studio-layout.compact.workspace-model .workspace-side.left { display: none; }
 /* The scene takes whatever height the window has left; the panel below is a
    plain fixed block, never a floating sheet or modal. */
 .studio-layout.compact .model-workspace {
@@ -2106,7 +2109,8 @@ footer a { color: var(--accent); }
     min-height: 44dvh;
     overflow: hidden;
   }
-  .studio-layout.workspace-model .workspace-side.left { order: 2; border-top: 1px solid var(--line) !important; }
+  /* The model workspace is preview + settings only on mobile; the desktop
+     parts/drop-zone column is replaced by the floating import button. */
   .studio-layout.workspace-model .workspace-side.right { order: 3; border-top: 1px solid var(--line) !important; }
   .studio-layout.workspace-texture .workspace-side,
   .studio-layout.workspace-texture .workspace-preview { display: none; }

@@ -1123,6 +1123,16 @@ export function ModelStudio({ onOpenMenu }: { onOpenMenu?: () => void } = {}) {
                 >
                   <Icon name="menu" size={16} />
                 </button>
+                <button
+                  type="button"
+                  className="stage-icon-button"
+                  aria-label={model ? '更换模型' : '导入模型'}
+                  title={model ? '更换模型' : '导入模型'}
+                  disabled={loading || busy}
+                  onClick={() => modelInput.current?.click()}
+                >
+                  <Icon name="upload" size={16} />
+                </button>
               </div>
               <div className="stage-topbar">
                 <button
