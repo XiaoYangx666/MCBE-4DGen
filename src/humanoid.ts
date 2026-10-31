@@ -67,6 +67,8 @@ export async function exportHumanoid(
     height: number;
     textureSize: number;
     atlas?: number;
+    /** Gutter in pixels per side; 0 by default (Bedrock uses nearest sampling). */
+    atlasPadding?: number;
     materialWeights?: Record<string, number>;
     /** Opt-in shared texel-budget planner; legacy compact stays the default. */
     atlasBudget?: 'texel-density' | 'texel-retention';
@@ -436,7 +438,7 @@ export async function exportHumanoid(
   return textureHumanoid(state, options, timings);
 }
 
-async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:number; atlas?:number; materialWeights?:Record<string,number>; atlasBudget?:'texel-density'|'texel-retention'; atlasSharing?:boolean; onStage?:(phase:string)=>void}, timings:Record<string,number> = {}) {
+async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:number; atlas?:number; atlasPadding?:number; materialWeights?:Record<string,number>; atlasBudget?:'texel-density'|'texel-retention'; atlasSharing?:boolean; onStage?:(phase:string)=>void}, timings:Record<string,number> = {}) {
   const {pivots, classification} = state;
   let phaseName = 'atlas', phaseStart = performance.now();
   const phase = (name:string) => {timings[phaseName] = Math.round(performance.now()-phaseStart); phaseName=name; phaseStart=performance.now(); options.onStage?.(name);};
@@ -446,7 +448,7 @@ async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:nu
     ...(options.materialWeights ? {materialWeights:options.materialWeights} : {}),
     ...(options.atlasBudget ? {atlasBudget:options.atlasBudget} : {}),
     ...(options.atlasSharing ? {atlasSharing:true} : {}),
-    ...(options.atlas ? {atlasSize:options.atlas} : {compactSize:128,padding:1}),
+    ...(options.atlas ? {atlasSize:options.atlas} : {compactSize:128,padding:options.atlasPadding ?? 0}),
   });
   const optimized = {model:texture.model, report:{texture:texture.report}};
   phase("export");

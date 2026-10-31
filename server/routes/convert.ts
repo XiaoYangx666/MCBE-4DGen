@@ -164,6 +164,15 @@ export const convertRoutes = [
           filterMaterialKeys(model.document, new Set(excluded));
         }
         const started = performance.now();
+        // Bedrock samples skin textures with nearest filtering, so the default
+        // atlas has no gutter. Set FOURDGEN_ATLAS_PADDING=1 to restore the
+        // 1px edge extrusion used by linear-filtered viewers.
+        const atlasPadding = (() => {
+          const raw = process.env.FOURDGEN_ATLAS_PADDING;
+          if (raw === undefined) return 0;
+          const value = Number(raw);
+          return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+        })();
         let exported;
         let details: unknown;
         if (body.binding === 'humanoid') {
@@ -186,6 +195,7 @@ export const convertRoutes = [
                 )[phase] ?? phase;
             },
             textureSize: 256,
+            atlasPadding,
             ...(Object.keys(materialWeights).length
               ? { materialWeights }
               : {}),
@@ -213,7 +223,7 @@ export const convertRoutes = [
             mesh: { ratio: body.ratio, maxError: body.maxError },
             texture: {
               compactSize: 128,
-              padding: 1,
+              padding: atlasPadding,
               ...(Object.keys(materialWeights).length
                 ? { materialWeights }
                 : {}),

@@ -398,7 +398,7 @@ test("Original retains image resolution; explicit insufficient atlas refuses dat
   for (const options of [
     { atlasSize: 0 },
     { maxTextureSize: 1.5 },
-    { padding: 0 },
+    { padding: -1 },
   ])
     await assert.rejects(optimizeTextures(await fixture(), options));
 });

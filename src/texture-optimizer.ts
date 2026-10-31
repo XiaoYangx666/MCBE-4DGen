@@ -192,8 +192,8 @@ export async function optimizeTextures(
     padding = options.padding ?? 2;
   if (filter !== "nearest" && filter !== "lanczos3")
     throw new Error("filter must be nearest or lanczos3");
-  if (!Number.isSafeInteger(padding) || padding < 1 || padding > 64)
-    throw new Error("padding must be an integer in [1, 64]");
+  if (!Number.isSafeInteger(padding) || padding < 0 || padding > 64)
+    throw new Error("padding must be an integer in [0, 64]");
   for (const size of [
     options.maxTextureSize,
     options.atlasSize,
