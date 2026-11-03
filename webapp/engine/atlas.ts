@@ -65,6 +65,8 @@ export interface AtlasChart {
   triangles: number[];
   /** Surface area used for this island's demand. */
   area: number;
+  /** True when this chart was moved into another chart's unused pixels. */
+  overlap?: boolean;
 }
 
 export interface AtlasLayout {
@@ -393,6 +395,13 @@ function planWithBudget(
   const targetArea = new Map(
     planned.charts.map((chart) => [chart.chartId, chart.targetArea]),
   );
+  // Keep the planner pure: the browser adapter applies hole filling after
+  // this returns, so the web plan still matches the shared core plan.
+  const report = summarizePlan(coreInputs, planned.plan, {
+    floorBound,
+    targetArea,
+    sharedSavedPixels: planned.budget.sharedSavedPixels,
+  });
   return {
     size,
     rects,
@@ -404,13 +413,270 @@ function planWithBudget(
       floorBound,
       targetArea,
       sharedSavedPixels: planned.budget.sharedSavedPixels,
-      report: summarizePlan(coreInputs, planned.plan, {
-        floorBound,
-        targetArea,
-        sharedSavedPixels: planned.budget.sharedSavedPixels,
-      }),
+      report,
     },
   };
+}
+
+/** Mark a triangle's atlas pixels in a 0/1 mask. */
+function rasterTriangle(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  points: readonly [number, number][],
+  value: 0 | 1,
+) {
+  const [a, b, c] = points;
+  if (!a || !b || !c) return;
+  const ax = a[0];
+  const ay = a[1];
+  const bx = b[0];
+  const by = b[1];
+  const cx = c[0];
+  const cy = c[1];
+  const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  if (Math.abs(area) < 1e-8) {
+    const x = Math.max(0, Math.min(width - 1, Math.floor((ax + bx + cx) / 3)));
+    const y = Math.max(0, Math.min(height - 1, Math.floor((ay + by + cy) / 3)));
+    mask[y * width + x] = value;
+    return;
+  }
+  const x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx)));
+  const x1 = Math.min(width - 1, Math.ceil(Math.max(ax, bx, cx)));
+  const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy)));
+  const y1 = Math.min(height - 1, Math.ceil(Math.max(ay, by, cy)));
+  for (let y = y0; y <= y1; y++) {
+    const py = y + 0.5;
+    for (let x = x0; x <= x1; x++) {
+      const px = x + 0.5;
+      const e0 = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+      const e1 = (cx - bx) * (py - by) - (cy - by) * (px - bx);
+      const e2 = (ax - cx) * (py - cy) - (ay - cy) * (px - cx);
+      if (
+        (e0 >= 0 && e1 >= 0 && e2 >= 0) ||
+        (e0 <= 0 && e1 <= 0 && e2 <= 0)
+      )
+        mask[y * width + x] = value;
+    }
+  }
+}
+
+/** Mark a chart's triangle coverage, or its whole rect for flat materials. */
+function markChartMask(
+  chart: AtlasChart,
+  input: AtlasInput,
+  size: number,
+  mask: Uint8Array,
+  value: 0 | 1,
+  fullRect: boolean,
+) {
+  const rect = chart.rect;
+  if (fullRect || !chart.bounds || !input.uvs) {
+    for (let y = Math.max(0, rect.y); y < Math.min(size, rect.y + rect.height); y++)
+      for (let x = Math.max(0, rect.x); x < Math.min(size, rect.x + rect.width); x++)
+        mask[y * size + x] = value;
+    return;
+  }
+  const innerX = rect.x + rect.pad;
+  const innerY = rect.y + rect.pad;
+  const innerWidth = Math.max(1, rect.width - rect.pad * 2);
+  const innerHeight = Math.max(1, rect.height - rect.pad * 2);
+  const spanU = chart.bounds[2] - chart.bounds[0];
+  const spanV = chart.bounds[3] - chart.bounds[1];
+  const uvs = input.uvs;
+  for (const triangle of chart.triangles) {
+    const points: [number, number][] = [];
+    for (let corner = 0; corner < 3; corner++) {
+      const index = (triangle * 3 + corner) * 2;
+      const u = spanU > 1e-6 ? (uvs[index]! - chart.bounds[0]) / spanU : 0.5;
+      const v = spanV > 1e-6 ? (uvs[index + 1]! - chart.bounds[1]) / spanV : 0.5;
+      points.push([innerX + u * innerWidth, innerY + v * innerHeight]);
+    }
+    rasterTriangle(mask, size, size, points, value);
+  }
+}
+
+/** Tight pixel bounds of a chart's triangles inside its rectangle. */
+function chartContentBounds(
+  chart: AtlasChart,
+  input: AtlasInput,
+): { x: number; y: number; w: number; h: number; offsetX: number; offsetY: number } | null {
+  if (!chart.bounds || !input.uvs || !chart.triangles.length) return null;
+  const rect = chart.rect;
+  const innerX = rect.x + rect.pad;
+  const innerY = rect.y + rect.pad;
+  const innerWidth = Math.max(1, rect.width - rect.pad * 2);
+  const innerHeight = Math.max(1, rect.height - rect.pad * 2);
+  const spanU = chart.bounds[2] - chart.bounds[0];
+  const spanV = chart.bounds[3] - chart.bounds[1];
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const triangle of chart.triangles) {
+    for (let corner = 0; corner < 3; corner++) {
+      const index = (triangle * 3 + corner) * 2;
+      const u = spanU > 1e-6 ? (input.uvs[index]! - chart.bounds[0]) / spanU : 0.5;
+      const v = spanV > 1e-6 ? (input.uvs[index + 1]! - chart.bounds[1]) / spanV : 0.5;
+      const x = innerX + u * innerWidth;
+      const y = innerY + v * innerHeight;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) return null;
+  const x0 = Math.max(rect.x, Math.floor(minX));
+  const y0 = Math.max(rect.y, Math.floor(minY));
+  const x1 = Math.min(rect.x + rect.width, Math.ceil(maxX));
+  const y1 = Math.min(rect.y + rect.height, Math.ceil(maxY));
+  return {
+    x: x0,
+    y: y0,
+    w: Math.max(1, x1 - x0),
+    h: Math.max(1, y1 - y0),
+    offsetX: x0 - rect.x,
+    offsetY: y0 - rect.y,
+  };
+}
+
+/** Triangle coverage inside a chart's inner rectangle, for masked painting. */
+function chartInnerMask(
+  chart: AtlasChart,
+  input: AtlasInput,
+): Uint8Array | null {
+  if (!chart.bounds || !input.uvs || !chart.triangles.length) return null;
+  const rect = chart.rect;
+  const innerWidth = Math.max(1, rect.width - rect.pad * 2);
+  const innerHeight = Math.max(1, rect.height - rect.pad * 2);
+  const spanU = chart.bounds[2] - chart.bounds[0];
+  const spanV = chart.bounds[3] - chart.bounds[1];
+  const mask = new Uint8Array(innerWidth * innerHeight);
+  for (const triangle of chart.triangles) {
+    const points: [number, number][] = [];
+    for (let corner = 0; corner < 3; corner++) {
+      const index = (triangle * 3 + corner) * 2;
+      const u = spanU > 1e-6 ? (input.uvs[index]! - chart.bounds[0]) / spanU : 0.5;
+      const v = spanV > 1e-6 ? (input.uvs[index + 1]! - chart.bounds[1]) / spanV : 0.5;
+      points.push([u * innerWidth, v * innerHeight]);
+    }
+    rasterTriangle(mask, innerWidth, innerHeight, points, 1);
+  }
+  return mask;
+}
+
+function maskSat(mask: Uint8Array, size: number): Int32Array {
+  const stride = size + 1;
+  const sat = new Int32Array(stride * stride);
+  for (let y = 0; y < size; y++) {
+    let row = 0;
+    for (let x = 0; x < size; x++) {
+      row += mask[y * size + x]!;
+      sat[(y + 1) * stride + (x + 1)] =
+        sat[y * stride + (x + 1)]! + row;
+    }
+  }
+  return sat;
+}
+
+function maskSum(
+  sat: Int32Array,
+  size: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): number {
+  const stride = size + 1;
+  return (
+    sat[(y + height) * stride + (x + width)]! -
+    sat[y * stride + (x + width)]! -
+    sat[(y + height) * stride + x]! +
+    sat[y * stride + x]!
+  );
+}
+
+/**
+ * Move and grow small charts into any triangle-free pixels of the atlas.
+ * A host chart keeps its own rect and UVs, so its resolution is unchanged;
+ * the small chart gets the previously wasted pixels. A few passes let the
+ * rectangle freed by one chart feed the next, which is the recursive part of
+ * the packing problem.
+ */
+export function fillAtlasHoles(
+  charts: AtlasChart[],
+  byKey: ReadonlyMap<string, AtlasInput>,
+  size: number,
+) {
+  if (charts.length < 2) return;
+  const used = new Uint8Array(size * size);
+  for (const chart of charts) {
+    const input = byKey.get(chart.inputKey);
+    if (!input) continue;
+    markChartMask(chart, input, size, used, 1, !chart.bounds || !input.uvs);
+  }
+
+  const ordered = [...charts].sort(
+    (a, b) => a.rect.width * a.rect.height - b.rect.width * b.rect.height,
+  );
+  const SCALES = [16, 12, 10, 8, 6, 4, 3, 2, 1.5, 1];
+  for (let pass = 0; pass < 3; pass++) {
+    let moves = 0;
+    for (const chart of ordered) {
+      const input = byKey.get(chart.inputKey);
+      if (!input) continue;
+      const content = chartContentBounds(chart, input);
+      if (!content) continue;
+      const oldX = content.x;
+      const oldY = content.y;
+      markChartMask(chart, input, size, used, 0, false);
+      const sat = maskSat(used, size);
+      let found: { x: number; y: number; width: number; height: number } | null = null;
+      for (const scale of SCALES) {
+        const newWidth = Math.max(1, Math.round(chart.rect.width * scale));
+        const newHeight = Math.max(1, Math.round(chart.rect.height * scale));
+        if (newWidth > size || newHeight > size) continue;
+        const scaleX = newWidth / chart.rect.width;
+        const scaleY = newHeight / chart.rect.height;
+        const width = Math.max(1, Math.ceil(content.w * scaleX) + 1);
+        const height = Math.max(1, Math.ceil(content.h * scaleY) + 1);
+        if (width > size || height > size) continue;
+        const offsetX = Math.round(content.offsetX * scaleX);
+        const offsetY = Math.round(content.offsetY * scaleY);
+        for (let y = 0; y + height <= size && !found; y++) {
+          for (let x = 0; x + width <= size; x++) {
+            // Keep the exact old placement for a pure move; scale-ups may
+            // overlap their own freed content and grow in place.
+            if (scale === 1 && x === oldX && y === oldY) continue;
+            if (maskSum(sat, size, x, y, width, height) !== 0) continue;
+            const newX = x - offsetX;
+            const newY = y - offsetY;
+            if (
+              newX < 0 ||
+              newY < 0 ||
+              newX + newWidth > size ||
+              newY + newHeight > size
+            )
+              continue;
+            found = { x: newX, y: newY, width: newWidth, height: newHeight };
+            break;
+          }
+        }
+        if (found) break;
+      }
+      if (found) {
+        chart.rect.x = found.x;
+        chart.rect.y = found.y;
+        chart.rect.width = found.width;
+        chart.rect.height = found.height;
+        chart.overlap = true;
+        moves++;
+      }
+      markChartMask(chart, input, size, used, 1, false);
+    }
+    if (!moves) break;
+  }
 }
 
 /**
@@ -583,23 +849,54 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
 
   // Fast path: in-range charts let the browser's image pipeline resample the
   // source rectangle directly into the atlas.
-  for (const chart of layout.charts) {
+  // Draw moved charts last: their rectangles overlap a larger chart's
+  // rectangle, and their clip keeps the paint inside their own triangles.
+  const fastCharts = [...layout.charts].sort(
+    (a, b) => Number(!!a.overlap) - Number(!!b.overlap),
+  );
+  for (const chart of fastCharts) {
     const input = byKey.get(chart.inputKey);
     const texture = input?.texture;
     const bounds = chart.bounds;
     if (!texture || !bounds || !isFastRect(bounds, texture)) continue;
     const rect = chart.rect;
+    const innerX = rect.x + rect.pad;
+    const innerY = rect.y + rect.pad;
+    const innerWidth = Math.max(1, rect.width - rect.pad * 2);
+    const innerHeight = Math.max(1, rect.height - rect.pad * 2);
+    const clip = chart.overlap ? new Path2D() : null;
+    let clipped = false;
+    if (clip && input.uvs && chart.triangles.length) {
+      const spanU = bounds[2] - bounds[0];
+      const spanV = bounds[3] - bounds[1];
+      for (const triangle of chart.triangles) {
+        for (let corner = 0; corner < 3; corner++) {
+          const index = (triangle * 3 + corner) * 2;
+          const u = spanU > 1e-6 ? (input.uvs[index]! - bounds[0]) / spanU : 0.5;
+          const v = spanV > 1e-6 ? (input.uvs[index + 1]! - bounds[1]) / spanV : 0.5;
+          const x = innerX + u * innerWidth;
+          const y = innerY + v * innerHeight;
+          if (corner === 0) clip.moveTo(x, y);
+          else clip.lineTo(x, y);
+        }
+        clip.closePath();
+        clipped = true;
+      }
+    }
+    context.save();
+    if (clip && clipped) context.clip(clip);
     context.drawImage(
       texture.image,
       clamp(bounds[0] * texture.width, 0, texture.width),
       clamp(bounds[1] * texture.height, 0, texture.height),
       Math.max(0, (bounds[2] - bounds[0]) * texture.width),
       Math.max(0, (bounds[3] - bounds[1]) * texture.height),
-      rect.x + rect.pad,
-      rect.y + rect.pad,
-      Math.max(1, rect.width - rect.pad * 2),
-      Math.max(1, rect.height - rect.pad * 2),
+      innerX,
+      innerY,
+      innerWidth,
+      innerHeight,
     );
+    context.restore();
   }
 
   // One readback for the whole atlas. Wrapped charts and flat fills are
@@ -659,6 +956,7 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
     innerY: number,
     innerWidth: number,
     innerHeight: number,
+    mask?: Uint8Array | null,
   ) => {
     const options = {
       factor: [
@@ -670,6 +968,15 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
       alphaMode: input.alphaMode ?? ('BLEND' as AlphaMode),
       alphaCutoff: input.alphaCutoff ?? 0.5,
     };
+    if (mask) {
+      for (let y = 0; y < innerHeight; y++)
+        for (let x = 0; x < innerWidth; x++) {
+          if (!mask[y * innerWidth + x]) continue;
+          const start = ((innerY + y) * size + innerX + x) * 4;
+          bakeBaseColorPixels(data.subarray(start, start + 4), options);
+        }
+      return;
+    }
     for (let y = 0; y < innerHeight; y++) {
       const start = ((innerY + y) * size + innerX) * 4;
       bakeBaseColorPixels(data.subarray(start, start + innerWidth * 4), options);
@@ -735,6 +1042,8 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
       continue;
     }
 
+    const masked = !isFastRect(bounds, texture) || !!chart.overlap;
+    const innerMask = masked ? chartInnerMask(chart, input) : null;
     if (!isFastRect(bounds, texture)) {
       const pixels = texturePixels(texture);
       if (!pixels) {
@@ -747,6 +1056,7 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
         const v0 = bounds[1] + (y / innerHeight) * spanV;
         const v1 = bounds[1] + ((y + 1) / innerHeight) * spanV;
         for (let x = 0; x < innerWidth; x++) {
+          if (innerMask && !innerMask[y * innerWidth + x]) continue;
           const u0 = bounds[0] + (x / innerWidth) * spanU;
           const u1 = bounds[0] + ((x + 1) / innerWidth) * spanU;
           const sample = sampleArea(
@@ -767,7 +1077,7 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
       }
     }
 
-    bake(input, innerX, innerY, innerWidth, innerHeight);
+    bake(input, innerX, innerY, innerWidth, innerHeight, innerMask);
     extrude(rect, innerX, innerY, innerWidth, innerHeight);
   }
 

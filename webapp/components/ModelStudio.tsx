@@ -45,6 +45,7 @@ import { MaterialDonut } from './MaterialDonut';
 import { formatBytes } from '../../web/shared/format';
 import { PoseControls } from '../../web/shared/PoseControls';
 import {
+  MaterialTuner,
   StudioParts,
   TextureStudio,
   type StudioMaterial,
@@ -113,10 +114,14 @@ export function ModelStudio({
   const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [showKeptParts, setShowKeptParts] = useState(true);
+  /** Long primitive lists start folded so the material editor stays reachable. */
+  const [partsOpen, setPartsOpen] = useState(true);
   /** Pixel difference versus the previous conversion of the same model. */
   const [materialDeltas, setMaterialDeltas] = useState<Map<string, number>>(new Map());
   const [atlasOpen, setAtlasOpen] = useState(false);
   const [soloKey, setSoloKey] = useState<string | null>(null);
+  /** Material whose density tuner is open from the texture tab. */
+  const [tunerKey, setTunerKey] = useState<string | null>(null);
   const sourcePose = useRef('0|0');
   const armRig = useRef<ArmRig | null>(null);
   const humanoidRig = useRef<HumanoidRig | null>(null);
@@ -452,7 +457,6 @@ export function ModelStudio({
       setResultKey(key);
       setWarnings([...new Set([...merged, ...converted.warnings])]);
       setViewMode('output');
-      if (compact) setMobileTab('export');
     } catch (cause) {
       if (run === convertRun.current)
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -571,6 +575,28 @@ export function ModelStudio({
       };
     });
   }, [source, result, weights, included, includedParts, soloKey, materialDeltas, materialLabels, studioParts, materialThumbs]);
+  const selectedStudioMaterial = useMemo(
+    () => studioMaterials.find((material) => material.id === soloKey) ?? null,
+    [studioMaterials, soloKey],
+  );
+  const tunerMaterial = useMemo(
+    () => studioMaterials.find((material) => material.id === tunerKey) ?? null,
+    [studioMaterials, tunerKey],
+  );
+  const setMaterialWeight = (id: string, value: number) => {
+    setWeights((previous) => ({ ...previous, [id]: value }));
+  };
+  const resetMaterialWeight = (id: string) => {
+    setWeights((previous) => {
+      const next = { ...previous };
+      delete next[id];
+      return next;
+    });
+  };
+  const resetAllMaterialWeights = () => setWeights({});
+  useEffect(() => {
+    setPartsOpen(studioParts.length <= 12);
+  }, [studioParts.length]);
   const atlasRegions = result?.textureReport.regions ?? [];
   const atlasMaterials = useMemo(() => {
     if (!result) return [];
@@ -802,7 +828,11 @@ export function ModelStudio({
           </div>
         </fieldset>
         <div className="settings-section" data-section="parts">
-          <details className="fold" open>
+          <details
+            className="fold"
+            open={partsOpen}
+            onToggle={(event) => setPartsOpen(event.currentTarget.open)}
+          >
             <summary>
               <span>模型部件</span>
               <small>{includedParts.size}/{studioParts.length} 保留</small>
@@ -841,30 +871,51 @@ export function ModelStudio({
             {result && result.textureUrl ? (
               <>
                 <div className="texture-tab-head">
-                  输出贴图 {result.textureReport.size} × {result.textureReport.size} PNG
+                  <span>
+                    输出贴图 {result.textureReport.size} × {result.textureReport.size} PNG
+                  </span>
+                  <button
+                    type="button"
+                    className="texture-adjust-button"
+                    disabled={!selectedStudioMaterial || busy || loading}
+                    title={
+                      selectedStudioMaterial
+                        ? `调整 ${selectedStudioMaterial.name} 的相对纹理密度`
+                        : '点击图集或占比图选择材质'
+                    }
+                    onClick={() => {
+                      if (selectedStudioMaterial) setTunerKey(selectedStudioMaterial.id);
+                    }}
+                  >
+                    <Icon name="settings" size={13} />
+                    调整清晰度
+                  </button>
                 </div>
-                <AtlasInspector
-                  src={result.textureUrl}
-                  size={result.textureReport.size}
-                  regions={inspectorRegions}
-                  materials={atlasMaterials}
-                  selected={soloKey}
-                  onSelect={(id) => setSoloKey(id)}
-                  showList={false}
-                  showAdvanced={false}
-                  zoomable={false}
-                  {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
-                />
-                <MaterialDonut
-                  materials={result.textureReport.materials.map((material) => ({
-                    key: material.key,
-                    name: materialLabels.get(material.key) ?? material.name,
-                    pixels: material.pixels,
-                  }))}
-                  total={result.textureReport.size * result.textureReport.size}
-                  selected={soloKey}
-                  onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
-                />
+                <div className="texture-overview">
+                  <AtlasInspector
+                    src={result.textureUrl}
+                    size={result.textureReport.size}
+                    regions={inspectorRegions}
+                    materials={atlasMaterials}
+                    selected={soloKey}
+                    onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
+                    showList={false}
+                    showAdvanced={false}
+                    zoomable={false}
+                    {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
+                  />
+                  <MaterialDonut
+                    materials={result.textureReport.materials.map((material) => ({
+                      key: material.key,
+                      name: materialLabels.get(material.key) ?? material.name,
+                      pixels: material.uvPixels ?? material.rectPixels ?? material.pixels,
+                    }))}
+                    total={result.textureReport.size * result.textureReport.size}
+                    selected={soloKey}
+                    onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
+                    coverage={result.textureReport.uvUtilization ?? result.textureCoverage}
+                  />
+                </div>
               </>
             ) : (
               <p className="field-help">转换后在这里查看可点击的贴图和材质占比。</p>
@@ -914,7 +965,11 @@ export function ModelStudio({
                   </div>
                   <div>
                     <dt>分配方式</dt>
-                    <dd>纹理预算 · 密度</dd>
+                    <dd>
+                      {result.textureReport.target === 'retention'
+                        ? '纹理预算 · 保留'
+                        : '纹理预算 · 密度'}
+                    </dd>
                   </div>
                   <div>
                     <dt>有效 UV 覆盖</dt>
@@ -985,17 +1040,9 @@ export function ModelStudio({
                     });
                     if (!willInclude && soloKey === id) setSoloKey(null);
                   }}
-                  onWeight={(id, value) => {
-                    setWeights((previous) => ({ ...previous, [id]: value }));
-                  }}
-                  onResetWeight={(id) => {
-                    setWeights((previous) => {
-                      const next = { ...previous };
-                      delete next[id];
-                      return next;
-                    });
-                  }}
-                  onResetAllWeights={() => setWeights({})}
+                  onWeight={setMaterialWeight}
+                  onResetWeight={resetMaterialWeight}
+                  onResetAllWeights={resetAllMaterialWeights}
                   disabled={loading || busy}
                   note="纹理预算 · 密度 · 相对清晰度 0.1–20×"
                 />
@@ -1263,6 +1310,17 @@ export function ModelStudio({
             <button type="button" className="primary" onClick={loadPending}>加载所选模型</button>
           </div>
         </Dialog>
+      )}
+
+      {tunerMaterial && (
+        <MaterialTuner
+          material={tunerMaterial}
+          disabled={loading || busy}
+          onWeight={setMaterialWeight}
+          onResetWeight={resetMaterialWeight}
+          onResetAllWeights={resetAllMaterialWeights}
+          onClose={() => setTunerKey(null)}
+        />
       )}
     </div>
   );

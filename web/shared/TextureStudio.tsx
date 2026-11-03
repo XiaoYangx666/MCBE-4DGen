@@ -237,6 +237,152 @@ export function StudioParts({
   );
 }
 
+export interface MaterialTunerProps {
+  material: StudioMaterial;
+  disabled?: boolean;
+  onWeight: (id: string, value: number) => void;
+  onResetWeight: (id: string) => void;
+  onResetAllWeights: () => void;
+  onClose: () => void;
+}
+
+/**
+ * Density tuner for one material. Shared by the material list and the compact
+ * texture tab so both paths open the same bottom sheet.
+ */
+export function MaterialTuner({
+  material: adjusting,
+  disabled = false,
+  onWeight,
+  onResetWeight,
+  onResetAllWeights,
+  onClose,
+}: MaterialTunerProps) {
+  /** Dragging only moves a local draft; the host commits on release. */
+  const [draft, setDraft] = useState<number | null>(null);
+  useEffect(() => {
+    setDraft(null);
+  }, [adjusting.id, adjusting.quality]);
+
+  const sliderValue = draft ?? qualityToSlider(adjusting.quality);
+  const draftQuality =
+    draft === null
+      ? adjusting.quality
+      : (TICKS.find((tick) => tick.slider === draft)?.quality ?? sliderToQuality(draft));
+
+  const commitDraft = () => {
+    if (draft === null) return;
+    const tick = TICKS.find((item) => item.slider === draft);
+    const value = Math.round((tick ? tick.quality : sliderToQuality(draft)) * 100) / 100;
+    setDraft(null);
+    if (Math.abs(value - adjusting.quality) < 0.001) return;
+    onWeight(adjusting.id, value);
+  };
+
+  return (
+    <Dialog
+      title={`调整 ${adjusting.name}`}
+      label="材质调整"
+      className="material-adjust-dialog"
+      closeLabel="关闭材质调整"
+      variant="sheet"
+      closeOnBackdrop
+      onClose={onClose}
+    >
+      <div className="texture-quality-tuner">
+        <div className="texture-quality-head">
+          <b title={adjusting.name}>{adjusting.name}</b>
+          <span>{formatQuality(draftQuality)}×</span>
+        </div>
+        <div className="texture-quality-slider">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={sliderValue}
+            disabled={disabled || !adjusting.included}
+            aria-label={`${adjusting.name} 相对清晰度`}
+            title="0.1–20×；拖动时只调整数值，松手后应用"
+            onChange={(event) => setDraft(snapSlider(Number(event.target.value)))}
+            onPointerUp={commitDraft}
+            onPointerCancel={commitDraft}
+            onKeyUp={commitDraft}
+            onBlur={commitDraft}
+          />
+          <div className="texture-quality-ticks" aria-hidden="true">
+            {TICKS.map((tick) => (
+              <i key={tick.quality} style={{ left: `${tick.slider}%` }} />
+            ))}
+          </div>
+        </div>
+        <div className="texture-quality-actions">
+          <WeightInput
+            value={draftQuality}
+            label={adjusting.name}
+            disabled={disabled || !adjusting.included}
+            title="0.1–20×，可直接输入"
+            onCommit={(value) => onWeight(adjusting.id, value)}
+          />
+          {PRESETS.map((value) => (
+            <button
+              type="button"
+              key={value}
+              className={Math.abs(adjusting.quality - value) < 0.001 ? 'active' : ''}
+              disabled={disabled || !adjusting.included}
+              onClick={() => onWeight(adjusting.id, value)}
+            >
+              {formatQuality(value)}×
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onResetWeight(adjusting.id)}
+          >
+            恢复此材质
+          </button>
+        </div>
+        <div className="texture-quality-result">
+          {adjusting.lastPixels != null ? (
+            <>
+              <span>
+                上次分配 {adjusting.lastPixels.toLocaleString('zh-CN')} px
+                {adjusting.flat ? ' · 纯色采样' : ''}
+              </span>
+              {adjusting.deltaPixels != null && adjusting.deltaPixels !== 0 && (
+                <em className={adjusting.deltaPixels > 0 ? 'up' : 'down'}>
+                  {adjusting.deltaPixels > 0 ? '+' : ''}
+                  {adjusting.deltaPixels.toLocaleString('zh-CN')} px
+                </em>
+              )}
+              {adjusting.floorCharts && adjusting.floorCharts > 0 ? (
+                <small className="limited">
+                  有 {adjusting.floorCharts} 个 UV 岛已到最小尺寸，继续降低不会更小。
+                </small>
+              ) : (
+                <small>未触发最小尺寸限制。</small>
+              )}
+            </>
+          ) : (
+            <small>转换后在这里显示实际像素与限制信息。</small>
+          )}
+        </div>
+        <div className="texture-quality-actions footer">
+          <button type="button" disabled={disabled} onClick={onResetAllWeights}>
+            全部恢复默认
+          </button>
+        </div>
+      </div>
+      <div className="pick-actions">
+        <button type="button" className="primary" onClick={onClose}>
+          完成
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
 /** Texture-density controls for the browser model studio. */
 export function TextureStudio({
   materials,
@@ -252,26 +398,6 @@ export function TextureStudio({
 }: TextureStudioProps) {
   const [adjustId, setAdjustId] = useState<string | null>(null);
   const adjusting = materials.find((material) => material.id === adjustId) ?? null;
-  /** Dragging only moves a local draft; the host commits on release. */
-  const [draft, setDraft] = useState<number | null>(null);
-  useEffect(() => {
-    setDraft(null);
-  }, [adjusting?.id, adjusting?.quality]);
-
-  const sliderValue = draft ?? (adjusting ? qualityToSlider(adjusting.quality) : 0);
-  const draftQuality =
-    draft === null
-      ? (adjusting?.quality ?? 1)
-      : (TICKS.find((tick) => tick.slider === draft)?.quality ?? sliderToQuality(draft));
-
-  const commitDraft = () => {
-    if (draft === null || !adjusting) return;
-    const tick = TICKS.find((item) => item.slider === draft);
-    const value = Math.round((tick ? tick.quality : sliderToQuality(draft)) * 100) / 100;
-    setDraft(null);
-    if (Math.abs(value - adjusting.quality) < 0.001) return;
-    onWeight(adjusting.id, value);
-  };
 
   return (
     <div className={`texture-studio${className ? ` ${className}` : ''}`}>
@@ -301,106 +427,14 @@ export function TextureStudio({
       </div>
 
       {adjusting && (
-        <Dialog
-          title={`调整 ${adjusting.name}`}
-          label="材质调整"
-          className="material-adjust-dialog"
-          closeLabel="关闭材质调整"
-          variant="sheet"
-          closeOnBackdrop
+        <MaterialTuner
+          material={adjusting}
+          disabled={disabled}
+          onWeight={onWeight}
+          onResetWeight={onResetWeight}
+          onResetAllWeights={onResetAllWeights}
           onClose={() => setAdjustId(null)}
-        >
-          <div className="texture-quality-tuner">
-            <div className="texture-quality-head">
-              <b title={adjusting.name}>{adjusting.name}</b>
-              <span>{formatQuality(draftQuality)}×</span>
-            </div>
-            <div className="texture-quality-slider">
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={sliderValue}
-                disabled={disabled || !adjusting.included}
-                aria-label={`${adjusting.name} 相对纹理密度`}
-                title="0.1–20×；拖动时只调整数值，松手后应用"
-                onChange={(event) => setDraft(snapSlider(Number(event.target.value)))}
-                onPointerUp={commitDraft}
-                onPointerCancel={commitDraft}
-                onKeyUp={commitDraft}
-                onBlur={commitDraft}
-              />
-              <div className="texture-quality-ticks" aria-hidden="true">
-                {TICKS.map((tick) => (
-                  <i key={tick.quality} style={{ left: `${tick.slider}%` }} />
-                ))}
-              </div>
-            </div>
-            <div className="texture-quality-actions">
-              <WeightInput
-                value={draftQuality}
-                label={adjusting.name}
-                disabled={disabled || !adjusting.included}
-                title="0.1–20×，可直接输入"
-                onCommit={(value) => onWeight(adjusting.id, value)}
-              />
-              {PRESETS.map((value) => (
-                <button
-                  type="button"
-                  key={value}
-                  className={Math.abs(adjusting.quality - value) < 0.001 ? 'active' : ''}
-                  disabled={disabled || !adjusting.included}
-                  onClick={() => onWeight(adjusting.id, value)}
-                >
-                  {formatQuality(value)}×
-                </button>
-              ))}
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={() => onResetWeight(adjusting.id)}
-              >
-                恢复此材质
-              </button>
-            </div>
-            <div className="texture-quality-result">
-              {adjusting.lastPixels != null ? (
-                <>
-                  <span>
-                    上次分配 {adjusting.lastPixels.toLocaleString('zh-CN')} px
-                    {adjusting.flat ? ' · 纯色采样' : ''}
-                  </span>
-                  {adjusting.deltaPixels != null && adjusting.deltaPixels !== 0 && (
-                    <em className={adjusting.deltaPixels > 0 ? 'up' : 'down'}>
-                      {adjusting.deltaPixels > 0 ? '+' : ''}
-                      {adjusting.deltaPixels.toLocaleString('zh-CN')} px
-                    </em>
-                  )}
-                  {adjusting.floorCharts && adjusting.floorCharts > 0 ? (
-                    <small className="limited">
-                      有 {adjusting.floorCharts} 个 UV 岛已到最小尺寸，继续降低不会更小。
-                    </small>
-                  ) : (
-                    <small>未触发最小尺寸限制。</small>
-                  )}
-                </>
-              ) : (
-                <small>转换后在这里显示实际像素与限制信息。</small>
-              )}
-            </div>
-            <div className="texture-quality-actions footer">
-              <button type="button" disabled={disabled} onClick={onResetAllWeights}>
-                全部恢复默认
-              </button>
-            </div>
-          </div>
-          <div className="pick-actions">
-            <button type="button" className="primary" onClick={() => setAdjustId(null)}>
-              完成
-            </button>
-          </div>
-        </Dialog>
+        />
       )}
     </div>
   );

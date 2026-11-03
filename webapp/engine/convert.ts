@@ -1,6 +1,13 @@
 import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 import { buildSkinPack } from '../../src/skin-pack-files.ts';
-import { planAtlas, remapUvs, renderAtlas, measureAtlasUsage, type AtlasInput } from './atlas.ts';
+import {
+  fillAtlasHoles,
+  planAtlas,
+  remapUvs,
+  renderAtlas,
+  measureAtlasUsage,
+  type AtlasInput,
+} from './atlas.ts';
 import {
   buildBedrockGeometry,
   type DoubleSidedPolicy,
@@ -203,6 +210,7 @@ export async function convertBatches(
         }
       : {},
   );
+  fillAtlasHoles(layout.charts, inputByKey, layout.size);
   report('绘制 128×128 贴图图集…', `${layout.charts.length} 个 UV 岛`);
   await nextFrame();
   const atlas = renderAtlas(inputs, layout);
@@ -305,7 +313,7 @@ export async function convertBatches(
           key: material.materialKey,
           name: material.material,
           pixels: measured?.pixels ?? material.uvPixels,
-          uvPixels: material.uvPixels,
+          uvPixels: measured?.uvPixels ?? material.uvPixels,
           sharedPixels: material.sharedPixels,
           uniquePixels: material.uniquePixels,
           rectPixels: material.rectPixels,
@@ -328,10 +336,12 @@ export async function convertBatches(
   const textureReport: TextureReport = {
     allocatedUtilization: allocatedPixels / totalPixels,
     sampledUtilization: usage.sampledUtilization,
-    uvUtilization: summary ? summary.uvUtilization : usage.uvUtilization,
+    // Hole filling moves and scales charts after the plan report is built, so
+    // the measured final atlas is the authoritative UV coverage.
+    uvUtilization: usage.uvUtilization,
     contentUtilization: contentPixels / totalPixels,
     sampledPixels: usage.sampledPixels,
-    uvPixels: summary ? summary.uvPixels : usage.uvPixels,
+    uvPixels: usage.uvPixels,
     contentPixels,
     allocatedPixels,
     gutterPixels,

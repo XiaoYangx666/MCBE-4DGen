@@ -19,11 +19,14 @@ export function MaterialDonut({
   total,
   selected,
   onSelect,
+  coverage,
 }: {
   materials: readonly MaterialDonutEntry[];
   total: number;
   selected?: string | null;
   onSelect?: (id: string | null) => void;
+  /** Overall effective UV coverage, including transparent texels. */
+  coverage?: number;
 }) {
   const items = materials
     .filter((material) => material.pixels > 0)
@@ -34,7 +37,7 @@ export function MaterialDonut({
     .sort((a, b) => b.pixels - a.pixels);
   if (!items.length) return null;
   const used = items.reduce((sum, item) => sum + item.pixels, 0);
-  const usedShare = total > 0 ? used / total : 0;
+  const usedShare = coverage ?? (total > 0 ? used / total : 0);
   const active = items.find((item) => item.key === selected) ?? null;
 
   let offset = 0;
@@ -57,7 +60,9 @@ export function MaterialDonut({
         材质占比 · 已用 {(usedShare * 100).toFixed(1)}% · {items.length} 个
       </figcaption>
       <div className="material-donut-ring">
-        <svg viewBox="0 0 120 120" role="group" aria-label="材质占图集比例">
+        {/* Leave room for the thicker hover/selected stroke; a 0..120 box
+            clips the 62-unit outer edge. */}
+        <svg viewBox="-3 -3 126 126" role="group" aria-label="材质占图集比例">
           <circle
             className="material-donut-track"
             cx="60"

@@ -64,11 +64,9 @@ export function ConversionSummary({
       {timing && <p>{timing}</p>}
       {atlas && (
         <p>
-          包间空白 {(Math.max(0, 1 - atlas.allocatedUtilization) * 100).toFixed(1)}%
           {atlas.uvUtilization !== undefined && atlas.uvUtilization !== null
-            ? ` · 有效 UV 覆盖 ${(atlas.uvUtilization * 100).toFixed(1)}%`
-            : ''}
-          {' · '}非透明 UV 覆盖 {((atlas.sampledUtilization ?? 0) * 100).toFixed(1)}%
+            ? `有效 UV 覆盖 ${(atlas.uvUtilization * 100).toFixed(1)}%`
+            : `图集利用 ${(atlas.allocatedUtilization * 100).toFixed(1)}%`}
         </p>
       )}
       {facts && <p>{facts}</p>}

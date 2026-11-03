@@ -21,7 +21,9 @@ export function ConversionReport({
   const size = report.size || 128;
   const area = size * size;
   const removed = result.excludedMaterials ?? [];
-  const materials = [...report.materials].sort((a, b) => b.pixels - a.pixels);
+  const materials = [...report.materials].sort(
+    (a, b) => (b.uvPixels ?? b.pixels) - (a.uvPixels ?? a.pixels),
+  );
   const ratio = result.report.sourceTriangles > 0
     ? `${Math.round((result.report.triangles / result.report.sourceTriangles) * 100)}%`
     : '—';
@@ -47,7 +49,7 @@ export function ConversionReport({
         ...materials.map((material) => ({
           id: material.key,
           name: materialLabels?.get(material.key) ?? material.name,
-          pixels: material.pixels,
+          pixels: material.uvPixels ?? material.pixels,
         })),
         ...removed.map((name, index) => ({
           id: result.excludedMaterialKeys?.[index] ?? `removed:${index}`,

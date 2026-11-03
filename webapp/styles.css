@@ -2293,13 +2293,51 @@ footer a { color: var(--accent); }
   padding-top: 0;
   border-top: 0;
 }
+/* Complex models can expose dozens of primitives; scroll the expanded list in
+   place so the material editor stays within reach. */
+.studio-layout.compact .texture-studio-parts {
+  max-height: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.studio-layout.compact .texture-studio-actions {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-top: 4px;
+  background: var(--surface);
+}
 
 /* Texture tab: clickable atlas plus allocation donut. */
 .texture-tab-head {
-  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
   color: var(--muted);
   font-size: 10.5px;
 }
+.texture-adjust-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.texture-adjust-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.texture-adjust-button:disabled { opacity: 0.45; cursor: default; }
 .texture-section .atlas-inspector { margin: 0; gap: 8px; }
 .texture-section .atlas-inspector-head {
   flex-direction: row;
@@ -2314,6 +2352,47 @@ footer a { color: var(--accent); }
   max-width: 180px;
   cursor: pointer;
   touch-action: auto;
+}
+/* Keep the allocation ring beside the atlas instead of below it, so the
+   texture tab fits above the fixed footer on phones and short windows. */
+.texture-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 240px);
+  gap: 14px;
+  align-items: start;
+  justify-content: start;
+}
+.texture-overview .atlas-inspector { min-width: 0; }
+/* The 180px preview cannot host the desktop hover card without clipping it. */
+.texture-overview .atlas-region-tip { display: none; }
+.texture-overview .material-donut {
+  margin: 0;
+  align-items: stretch;
+}
+.texture-overview .material-donut figcaption { align-self: auto; }
+.texture-overview .material-donut-ring {
+  width: 100%;
+  max-width: 156px;
+  margin: 0 auto;
+}
+/* Models can carry dozens of materials; keep the list scrollable so the
+   atlas and ring stay in view instead of pushing the whole tab down. */
+.texture-overview .material-donut-legend {
+  grid-template-columns: minmax(0, 1fr);
+  max-height: 100px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+@media (max-width: 340px) {
+  .texture-overview {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .texture-overview .material-donut { margin-top: 6px; }
+  .texture-overview .material-donut-legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .material-donut {
   display: flex;

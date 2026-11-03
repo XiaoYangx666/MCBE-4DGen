@@ -2,7 +2,7 @@ export interface MaterialCoverageItem {
   /** Stable material key; falls back to the display name for legacy callers. */
   id?: string;
   name: string;
-  /** Measured atlas pixels; null/undefined when not measured yet. */
+  /** Measured UV pixels; null/undefined when not measured yet. */
   pixels?: number | null;
   excluded?: boolean;
 }
@@ -28,7 +28,7 @@ export function MaterialCoverage({
   if (!materials.length) return null;
   return (
     <div className="material-allocation">
-      <h3>材质像素覆盖</h3>
+      <h3>材质 UV 覆盖</h3>
       {materials.map((material) => {
         const id = material.id ?? material.name;
         const percent = total > 0 && material.pixels != null
@@ -51,7 +51,7 @@ export function MaterialCoverage({
               {material.excluded
                 ? '已移除'
                 : material.pixels != null
-                  ? `${material.pixels.toLocaleString()} 像素 · ${percent.toFixed(1)}%`
+                  ? `${material.pixels.toLocaleString()} UV 像素 · ${percent.toFixed(1)}%`
                   : '待统计'}
             </span>
           </button>

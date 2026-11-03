@@ -26,9 +26,11 @@ describe('shared conversion summary', () => {
     expect(markup).toContain('已移除 2 个材质');
     expect(markup).toContain('参数已修改，请重新转换');
     expect(markup).toContain('完整生成用时 1.2 秒');
-    expect(markup).toContain('包间空白 50.0%');
     expect(markup).toContain('有效 UV 覆盖 30.0%');
-    expect(markup).toContain('非透明 UV 覆盖 25.0%');
+    expect(markup).not.toContain('包间空白');
+    expect(markup).not.toContain('非透明');
+    expect(markup).toContain('材质 UV 覆盖');
+    expect(markup).toContain('100 UV 像素');
     expect(markup).toContain('源三角面 2,000');
     expect(markup).toContain('body');
     expect(markup).toContain('额外明细');
