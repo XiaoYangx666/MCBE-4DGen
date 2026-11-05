@@ -23,7 +23,7 @@ Importer -> IntermediateModel -> Optimizer -> BoneMapper -> BedrockExporter -> S
 
 - `importer.ts`、`avatar-import.ts`、`tga.ts`、`pmx-metadata.ts`：读取 GLB/glTF、Assimp 格式与 PMX/VRM 元数据。
 - `prepare-model.ts`、`optimizer.ts`、`mesh-optimizer.ts`、`rigid-mesh-reducer.ts`：变换、姿势冻结、减面。
-- `texture-optimizer.ts`、`texture-charts.ts`、`image-template.ts`、`image-skin-geometry.ts`：图集、UV 连通分岛、图片模板与两端共用的平面皮肤几何。
+- `texture-optimizer.ts`、`texture-charts.ts`、`image-template.ts`、`image-skin-geometry.ts`、`image-cutout.ts`：图集、UV 连通分岛、图片模板、两端共用的平面皮肤几何，以及纯色背景抠图（边缘洪水填充、容差与羽化）。
 - `bone-mapper.ts`、`humanoid.ts`、`humanoid-binding.ts`、`auto-profile.ts`：Static 与六部位人形绑定；`humanoid-binding.ts` 提供两端共用的角色映射、玩家骨架、轴心拟合与三角面归属规则。
 - `bedrock-exporter.ts`、`bedrock-types.ts`、`geometry-validator.ts`、`poly-mesh-writer.ts`：Bedrock 1.8.0 poly_mesh 导出与校验。`poly-mesh-writer.ts` 提供两端共用的顶点去重、X 镜像与可见包围盒计算。
 - `skin-pack.ts`、`skin-pack-files.ts`、`skin-pack-zip.ts`、`pack-cli.ts`、`import-skin-pack.ts`：ZIP、皮肤包校验、不可变库与可恢复部署。`skin-pack-files.ts` 只依赖 Web 标准 API，桌面版与网页版共用皮肤包构建器、PNG 签名/尺寸与 UUID 校验；`skin-pack-zip.ts` 共用平铺 ZIP 的写入与压缩策略。
@@ -105,15 +105,15 @@ npm run test:node
 - `engine/atlas.ts`：128 × 128 图集规划、绘制、UV 重映射。
 - `engine/bedrock.ts`：静态整体绑定或六部位玩家骨架、镜像与 `poly_mesh` 导出。
 - `engine/convert.ts`：图集 → 几何 → 皮肤包 → ZIP 流程。
-- `engine/image-skin.ts`：图片平面皮肤。
+- `engine/image-skin.ts`：图片平面皮肤、抠图预览与 `skin0.png` 生成。
 - `engine/model-zip.ts`、`engine/pmx.ts`、`engine/textures.ts`、`engine/resources.ts`、`engine/pose.ts`、`engine/reduce.ts`、`engine/model-job.ts`、`engine/types.ts`：模型 ZIP、PMX→GLB、TGA→PNG、资源映射、手臂姿势、按材质/部位减面、导入/转换编排与转换数据类型。
 - `engine/frame.ts`、`engine/canvas.ts`、`engine/names.ts`、`engine/geometry-math.ts`、`engine/vrm-materials.ts`、`engine/preview-materials.ts`、`engine/progress.ts`：帧让步、Canvas PNG 编码、皮肤名称校验、几何辅助、VRM 材质转换、预览材质规则与导入/转换阶段进度。
 - `lib/output-preview.ts`：共享 poly_mesh 预览的薄封装，自动识别皮肤包里的几何标识。
 - `lib/pack-types.ts`、`lib/pack-store.ts`、`lib/pack-context.tsx`：单包数据结构、IndexedDB 持久化与 React 状态。
 - `lib/pack-import.ts`：读取 legacy poly_mesh 皮肤包 ZIP 并转换成单包里的皮肤。
-- `lib/download.ts`、`lib/theme.ts`、`lib/links.ts`、`lib/use-compact-viewport.ts`、`lib/material-visibility.ts`：保存/分享、主题、外链、紧凑视口和预览材质显隐等应用基础设施。
-- `components/`：图片模式、模型模式、`ModelSourcesPage`（获取模型独立页）、`SettingsStudio`（主题、配色与本地数据）、`AboutStudio`（构建号、更新日志与许可）、`ConversionReport`（转换结果摘要）、单包管理、`SkinPreview`（皮肤卡片的三维预览弹窗）、视口、拖放与下载。
-- 共享 `src/skin-pack-files.ts`、`src/skin-pack-zip.ts`、`src/poly-mesh-writer.ts`、`src/geometry-validator.ts`、`src/image-skin-geometry.ts`、`src/tga.ts` 与 `src/pmx-metadata.ts`；不导入 `sharp`、`node:fs` 或 `libassimp`。
+- `lib/download.ts`、`lib/theme.ts`、`lib/links.ts`、`lib/use-compact-viewport.ts`、`lib/material-visibility.ts`、`lib/use-cutout-preview.ts`、`lib/image-skin-options.ts`：保存/分享、主题、外链、紧凑视口、预览材质显隐、抠图预览防抖与图片皮肤高度范围等应用基础设施。
+- `components/`：图片模式、模型模式、`ImageSourcePicker`（图片选择、抠图开关与容差）、`ModelSourcesPage`（获取模型独立页）、`SettingsStudio`（主题、配色与本地数据）、`AboutStudio`（构建号、更新日志与许可）、`ConversionReport`（转换结果摘要）、单包管理、`SkinPreview`（皮肤卡片的三维预览弹窗）、视口、拖放与下载。
+- 共享 `src/skin-pack-files.ts`、`src/skin-pack-zip.ts`、`src/poly-mesh-writer.ts`、`src/geometry-validator.ts`、`src/image-skin-geometry.ts`、`src/image-cutout.ts`、`src/tga.ts` 与 `src/pmx-metadata.ts`；不导入 `sharp`、`node:fs` 或 `libassimp`。
 - 共享展示层 `web/shared/`：配色元数据与主题写入（`palettes`、`appearance`）、模型站点目录、`formatBytes` / `safeFilename` / ZIP 文件名与浏览器下载（`format`、`file-save`）、弹窗 Esc/背景点击行为、姿势控件（`PoseControls`）、材质列表与像素覆盖（`MaterialList`、`MaterialCoverage`）、转换报告摘要（`ConversionSummary`）、保留面数比例（`RatioField`），以及预览外壳（`preview-viewport`、`poly-mesh-preview`、`preview-lighting`、`preview-orientation`、`demand-render`、`viewport-appearance`）。`webapp/lib/theme.ts` 保留主题持久化并再导出共享写入逻辑。
 - 样式复用 `web/styles/theme.css` 的明暗主题变量与 `web/styles/shared.css` 的站点目录、姿势控件和材质行样式，页面布局遵循本地工作台的顶栏、三栏卡片与紧凑表单。
 

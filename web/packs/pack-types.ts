@@ -13,6 +13,15 @@ export type {
   SkinOrigin,
 } from "../../src/pack-types";
 
+/**
+ * Model exports mirror X for Bedrock's handedness, so their previews mirror it
+ * back. Flat image skins are authored directly in Bedrock coordinates and must
+ * keep their original orientation.
+ */
+export function previewMirrorX(template: "image" | undefined): boolean {
+  return template !== "image";
+}
+
 export type SlotStatus = {
   slot: string;
   name?: string;

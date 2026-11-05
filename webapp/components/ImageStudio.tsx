@@ -1,18 +1,19 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { DropZone } from './DropZone';
+import { ImageSourcePicker } from './ImageSourcePicker';
 import { DownloadButtons } from './Common';
 import { Icon } from '../../web/shared/Icons';
-import {
-  createImageSkin,
-  previewImageCutout,
-  type CutoutPreview,
-  type ImageSkinResult,
-} from '../engine/image-skin';
+import { createImageSkin, type ImageSkinResult } from '../engine/image-skin';
 import { nextFrame } from '../engine/frame';
 import { useSkinPack } from '../lib/pack-context';
-import { formatBytes } from '../../web/shared/format';
 import { SKIN_NAME_MAX_LENGTH } from '../../src/skin-pack-files.ts';
 import { isCompactViewport } from '../lib/viewport';
+import { useCutoutPreview } from '../lib/use-cutout-preview';
+import {
+  IMAGE_SKIN_HEIGHT_DEFAULT,
+  IMAGE_SKIN_HEIGHT_MAX,
+  IMAGE_SKIN_HEIGHT_MIN,
+  clampImageSkinHeight,
+} from '../lib/image-skin-options';
 
 const GeometryPreview = lazy(async () => {
   const module = await import('./SkinPreview');
@@ -23,13 +24,11 @@ const DEFAULT_NAME = '我的 4D 皮肤';
 
 export function ImageStudio() {
   const [file, setFile] = useState<File | null>(null);
-  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [name, setName] = useState(DEFAULT_NAME);
-  const [height, setHeight] = useState(32);
+  const [height, setHeight] = useState(IMAGE_SKIN_HEIGHT_DEFAULT);
   const [cutout, setCutout] = useState(false);
   const [tolerance, setTolerance] = useState(30);
-  const [cutoutPreview, setCutoutPreview] = useState<CutoutPreview | null>(null);
-  const [cutoutBusy, setCutoutBusy] = useState(false);
+  const { preview: cutoutPreview, busy: cutoutBusy } = useCutoutPreview(file, cutout, tolerance);
   const [result, setResult] = useState<ImageSkinResult | null>(null);
   const [resultKey, setResultKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -41,42 +40,6 @@ export function ImageStudio() {
   const customName = useRef(false);
   const resultRef = useRef<HTMLElement>(null);
   const { addSkin } = useSkinPack();
-
-  useEffect(() => {
-    if (!file) {
-      setSourceUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setSourceUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-
-  useEffect(() => {
-    if (!file || !cutout) {
-      setCutoutPreview(null);
-      setCutoutBusy(false);
-      return;
-    }
-    let active = true;
-    setCutoutBusy(true);
-    const timer = window.setTimeout(() => {
-      void previewImageCutout(file, { tolerance })
-        .then((preview) => {
-          if (active) setCutoutPreview(preview);
-        })
-        .catch(() => {
-          if (active) setCutoutPreview(null);
-        })
-        .finally(() => {
-          if (active) setCutoutBusy(false);
-        });
-    }, 160);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [file, cutout, tolerance]);
 
   useEffect(() => {
     setPackMessage('');
@@ -91,14 +54,7 @@ export function ImageStudio() {
 
   const key = `${name.trim()}|${height}|${cutout ? `cutout-${tolerance}` : 'original'}`;
   const stale = !!result && resultKey !== key;
-  const previewSrc = cutout && cutoutPreview ? cutoutPreview.url : sourceUrl;
-  const updateHeight = (value: number) => {
-    if (!Number.isFinite(value) || value <= 0) {
-      setHeight(32);
-      return;
-    }
-    setHeight(Math.min(64, Math.max(8, Math.round(value))));
-  };
+  const updateHeight = (value: number) => setHeight(clampImageSkinHeight(value));
 
   const addToPack = async () => {
     if (!result || packBusy) return;
@@ -171,71 +127,17 @@ export function ImageStudio() {
           <h2>图片 · 平面皮肤</h2>
 
           <fieldset disabled={busy}>
-            {file && sourceUrl ? (
-              <div className="image-pick">
-                <div className="image-preview-wrap">
-                  <img
-                    className="image-source-preview"
-                    src={previewSrc ?? sourceUrl}
-                    alt={cutout ? '去除背景后的图片' : '待转换的图片'}
-                  />
-                  {cutout && cutoutBusy && (
-                    <span className="image-preview-status"><span className="spinner" /> 识别背景…</span>
-                  )}
-                </div>
-                <div className="image-pick-meta">
-                  <span title={file.name}>{file.name}</span>
-                  <small>{formatBytes(file.size)}</small>
-                  <button type="button" className="text-button" onClick={() => setFile(null)}>更换图片</button>
-                </div>
-                {cutout && cutoutPreview && (
-                  <p className={`cutout-status${cutoutPreview.detected ? '' : ' is-muted'}`} role="status">
-                    {cutoutPreview.detected
-                      ? cutoutPreview.removedRatio > 0.98
-                        ? '几乎整张图片都被识别为背景，请降低容差。'
-                        : `已去除背景 ${Math.round(cutoutPreview.removedRatio * 100)}%`
-                      : '没有识别到可去除的纯色背景，图片将保持原样。'}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <DropZone
-                accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.avif"
-                title="拖入图片，或点击选择"
-                hint="PNG / JPEG / WebP / GIF / SVG · 最大 40 MB"
-                icon="image"
-                onFiles={choose}
-              />
-            )}
-
-            <label className="cutout-toggle">
-              <input
-                type="checkbox"
-                checked={cutout}
-                onChange={(event) => setCutout(event.target.checked)}
-              />
-              <span>
-                <b>自动去除纯色背景</b>
-                <small>白底、绿幕或单色背景会变成透明</small>
-              </span>
-            </label>
-            {cutout && (
-              <div className="field-label cutout-tolerance">
-                <span className="cutout-tolerance-head">
-                  抠图容差
-                  <output>{tolerance}%</output>
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={tolerance}
-                  onChange={(event) => setTolerance(Number(event.target.value))}
-                />
-                <span className="field-help">边缘残留背景时调高；主体被误删时调低。</span>
-              </div>
-            )}
+            <ImageSourcePicker
+              file={file}
+              cutout={cutout}
+              tolerance={tolerance}
+              cutoutPreview={cutoutPreview}
+              cutoutBusy={cutoutBusy}
+              onFiles={choose}
+              onClear={() => setFile(null)}
+              onCutoutChange={setCutout}
+              onToleranceChange={setTolerance}
+            />
 
             <label className="field-label">
               皮肤名称
@@ -254,8 +156,8 @@ export function ImageStudio() {
               平面高度
               <input
                 type="number"
-                min={8}
-                max={64}
+                min={IMAGE_SKIN_HEIGHT_MIN}
+                max={IMAGE_SKIN_HEIGHT_MAX}
                 value={height}
                 onChange={(event) => updateHeight(Number(event.target.value))}
               />
@@ -263,8 +165,8 @@ export function ImageStudio() {
             <input
               className="height-range"
               type="range"
-              min={8}
-              max={64}
+              min={IMAGE_SKIN_HEIGHT_MIN}
+              max={IMAGE_SKIN_HEIGHT_MAX}
               step={1}
               value={height}
               aria-label="平面高度"

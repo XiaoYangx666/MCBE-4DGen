@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { LibraryPack } from "../packs/pack-types";
+import { previewMirrorX, type LibraryPack } from "../packs/pack-types";
 import { PackPreview } from "../packs/PackPreview";
 import { SaveSkinDialog } from "../packs/SaveSkinDialog";
 
@@ -233,7 +233,7 @@ export function TemplatesPage() {
               <PackPreview
                 packId={result.id}
                 baseUrl={"/api/job/" + result.id}
-                mirrorX={false}
+                mirrorX={previewMirrorX("image")}
               />
               <div className="template-result-actions">
                 {dirty && <p role="status">图片或参数已修改，请重新生成。</p>}

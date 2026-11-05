@@ -1,11 +1,12 @@
 import type { MouseEvent } from "react";
 import { InlineName } from "../ui/InlineName";
 import { PackPreview } from "./PackPreview";
-import type {
-  Contents,
-  LibraryPack,
-  SkinItem,
-  SlotStatus,
+import {
+  previewMirrorX,
+  type Contents,
+  type LibraryPack,
+  type SkinItem,
+  type SlotStatus,
 } from "./pack-types";
 import type { InlineEdit, PackRow } from "./pack-ui";
 
@@ -135,7 +136,7 @@ export function SkinDetail({
             baseUrl={baseUrl}
             skinIndex={skinIndex}
             revision={contents?.revision ?? row.revision}
-            mirrorX={skin.origin?.template !== "image"}
+            mirrorX={previewMirrorX(skin.origin?.template)}
           />
           {row.preset ? (
             <details className="preset-sources">

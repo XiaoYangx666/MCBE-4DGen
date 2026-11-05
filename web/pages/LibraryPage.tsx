@@ -4,7 +4,7 @@ import { ModelSources } from "./ModelSources";
 import { PackPreview } from "../packs/PackPreview";
 import { Viewer } from "../workbench/Viewer";
 import { findActivePack } from "../packs/pack-state";
-import type { LibraryPack, Packs } from "../packs/pack-types";
+import { previewMirrorX, type LibraryPack, type Packs } from "../packs/pack-types";
 import type { EditSettings } from "../../src/api-types";
 import type { Session } from "../workbench/types";
 import { DeleteModelDialog } from "../library/DeleteModelDialog";
@@ -384,7 +384,7 @@ export function LibraryPage({
                           <>
                             <PackPreview
                               packId={pack.id}
-                              mirrorX={pack.meta?.template !== "image"}
+                              mirrorX={previewMirrorX(pack.meta?.template)}
                             />
                             <div className="detail-stats">
                               <div>
