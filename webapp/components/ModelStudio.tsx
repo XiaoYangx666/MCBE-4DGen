@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { DropZone } from './DropZone';
 import { DownloadButtons, WarningList } from './Common';
@@ -35,13 +35,13 @@ import {
   type ModelFormat,
 } from '../../src/model-candidates.ts';
 import { Dialog } from '../../web/shared/Dialog';
+import { ConversionReport } from './ConversionReport';
 import { AtlasInspector } from '../../web/shared/AtlasInspector';
 import { ModelCandidateList } from '../../web/shared/ModelCandidateList';
 import { buildGeometryPreview } from '../lib/output-preview';
 import { useSkinPack } from '../lib/pack-context';
 import type { TextureSource } from '../engine/types';
 import { RatioField } from '../../web/shared/RatioField';
-import { ConversionReport } from './ConversionReport';
 import { MaterialDonut } from './MaterialDonut';
 import { formatBytes } from '../../web/shared/format';
 import { PoseControls } from '../../web/shared/PoseControls';
@@ -55,6 +55,7 @@ import {
 import { createPartPreview } from '../lib/part-visibility';
 import { extractedParts } from '../engine/parts';
 import { partDisplayNames, partGroupNames } from '../../web/shared/part-labels';
+import { useCompactViewport } from '../lib/use-compact-viewport';
 
 const DEFAULT_NAME = '我的 4D 皮肤';
 /** Formats the browser build cannot open; the picker lists them as unavailable. */
@@ -105,12 +106,14 @@ export function ModelStudio({
   const [source, setSource] = useState<ExtractedModel | null>(null);
   const [included, setIncluded] = useState<Set<string>>(new Set());
   const [mobileTab, setMobileTab] = useState<'basic' | 'edit' | 'texture' | 'export'>('basic');
+  /** Wide-screen inspector tabs; the preview and material rail stay visible. */
+  const [desktopTab, setDesktopTab] = useState<'settings' | 'texture' | 'export'>('settings');
   /** CSS fullscreen for the 3D stage: keeps the floating buttons visible. */
   const [stageFullscreen, setStageFullscreen] = useState(false);
   /** Full-page drop target; the compact sheet has no dedicated drop zone. */
   const [dragging, setDragging] = useState(false);
-  /** The web app keeps its own sheet layout at every width, not the desktop rails. */
-  const compact = true;
+  /** Phones keep the sheet; wide screens use the three-column workbench. */
+  const compact = useCompactViewport();
   const [previewRoot, setPreviewRoot] = useState<THREE.Group | null>(null);
   const [weights, setWeights] = useState<Record<string, number>>({});
   const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
@@ -121,7 +124,6 @@ export function ModelStudio({
   const [materialsOpen, setMaterialsOpen] = useState(true);
   /** Pixel difference versus the previous conversion of the same model. */
   const [materialDeltas, setMaterialDeltas] = useState<Map<string, number>>(new Map());
-  const [atlasOpen, setAtlasOpen] = useState(false);
   const [soloKey, setSoloKey] = useState<string | null>(null);
   /** Material whose density tuner is open from the texture tab. */
   const [tunerKey, setTunerKey] = useState<string | null>(null);
@@ -163,12 +165,6 @@ export function ModelStudio({
   /** 用户手动改过朝向之后，加载新模型不再自动套用默认旋转。 */
   const customRotation = useRef(false);
   const modelInput = useRef<HTMLInputElement>(null);
-
-  /** Both desktop and mobile route to the standalone 获取模型 page. */
-  const gotoSources = useCallback(() => {
-    history.replaceState(null, '', '#sources');
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
-  }, []);
 
   // Leaving the model page must not keep the stage fullscreen.
   useEffect(() => {
@@ -689,9 +685,191 @@ export function ModelStudio({
     [result],
   );
 
+  const texturePanel = result && result.textureUrl ? (
+    <>
+      <div className="texture-tab-head">
+        <span>
+          输出贴图 {result.textureReport.size} × {result.textureReport.size} PNG
+        </span>
+        <button
+          type="button"
+          className="texture-adjust-button"
+          disabled={!selectedStudioMaterial || busy || loading}
+          title={
+            selectedStudioMaterial
+              ? `调整 ${selectedStudioMaterial.name} 的相对纹理密度`
+              : '点击图集或占比图选择材质'
+          }
+          onClick={() => {
+            if (selectedStudioMaterial) setTunerKey(selectedStudioMaterial.id);
+          }}
+        >
+          <Icon name="settings" size={13} />
+          调整清晰度
+        </button>
+      </div>
+      <div className="texture-overview">
+        <AtlasInspector
+          src={result.textureUrl}
+          size={result.textureReport.size}
+          regions={inspectorRegions}
+          materials={atlasMaterials}
+          selected={soloKey}
+          onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
+          showList={false}
+          showAdvanced={false}
+          zoomable={false}
+          {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
+        />
+        <MaterialDonut
+          materials={result.textureReport.materials.map((material) => ({
+            key: material.key,
+            name: materialLabels.get(material.key) ?? material.name,
+            pixels: material.rectPixels ?? material.uvPixels ?? material.pixels,
+          }))}
+          total={result.textureReport.size * result.textureReport.size}
+          selected={soloKey}
+          onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
+          coverage={result.textureReport.allocatedUtilization ?? result.textureReport.contentUtilization}
+          uvCoverage={result.textureReport.uvUtilization ?? result.textureCoverage}
+        />
+      </div>
+    </>
+  ) : (
+    <p className="field-help">转换后在这里查看可点击的贴图和材质占比。</p>
+  );
+
+  const exportPanel = result ? (
+    <>
+      <div className="mobile-result-actions">
+        <button
+          type="button"
+          className="button-link"
+          disabled={packBusy || stale}
+          onClick={() => void addToPack()}
+        >
+          <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
+          {packBusy ? '正在加入…' : '加入皮肤包'}
+        </button>
+        <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
+      </div>
+      {packMessage && (
+        <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
+      )}
+      {packError && (
+        <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
+      )}
+      {compact ? (
+        <>
+          <dl className="result-stats">
+            <div>
+              <dt>输出三角面</dt>
+              <dd>{result.report.triangles.toLocaleString('zh-CN')}</dd>
+            </div>
+            <div>
+              <dt>转换用时</dt>
+              <dd>{result.elapsedMs !== undefined ? `${(result.elapsedMs / 1000).toFixed(1)} 秒` : '—'}</dd>
+            </div>
+            <div>
+              <dt>源三角面</dt>
+              <dd>{result.report.sourceTriangles.toLocaleString('zh-CN')}</dd>
+            </div>
+            <div>
+              <dt>材质</dt>
+              <dd>{result.report.materials.length}</dd>
+            </div>
+            <div>
+              <dt>绑定</dt>
+              <dd>{result.binding === 'humanoid' ? '六部位人形' : '静态整体'}</dd>
+            </div>
+            <div>
+              <dt>分配方式</dt>
+              <dd>
+                {result.textureReport.target === 'retention'
+                  ? '纹理预算 · 保留'
+                  : '纹理预算 · 密度'}
+              </dd>
+            </div>
+            <div>
+              <dt>有效 UV 覆盖</dt>
+              <dd>{Math.round((result.textureReport.uvUtilization ?? result.textureCoverage) * 100)}%</dd>
+            </div>
+            {!!result.excludedMaterials?.length && (
+              <div>
+                <dt>已移除材质</dt>
+                <dd>{result.excludedMaterials.length}</dd>
+              </div>
+            )}
+          </dl>
+          <WarningList warnings={warnings} />
+        </>
+      ) : (
+        <ConversionReport
+          result={result}
+          warnings={warnings}
+          stale={stale}
+          selectedMaterial={selectedMaterial}
+          materialLabels={materialLabels}
+          onSelectMaterial={(materialKey) => {
+            const batch = source?.batches.find((item) => item.key === materialKey);
+            if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
+          }}
+        />
+      )}
+    </>
+  ) : (
+    <>
+      <WarningList warnings={warnings} />
+      <p className="field-help">转换后在这里加入或下载皮肤包。</p>
+    </>
+  );
+
+  const partsPanel = (
+    <div className="settings-section" data-section="parts">
+      <div className="field-group">
+        <button
+          type="button"
+          className="field-group-title group-toggle"
+          aria-expanded={partsOpen}
+          onClick={() => setPartsOpen((open) => !open)}
+        >
+          <span>模型部件</span>
+          <small>{includedParts.size}/{studioParts.length} 保留</small>
+        </button>
+        {partsOpen &&
+          (source ? (
+            <StudioParts
+              parts={studioParts}
+              includedParts={includedParts}
+              onTogglePart={(id) => {
+                setIncludedParts((previous) => {
+                  const next = new Set(previous);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  return next;
+                });
+                if (selectedPart === id) setSelectedPart(null);
+              }}
+              onSetParts={(ids) => {
+                setIncludedParts(new Set(ids));
+                if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
+              }}
+              selectedPart={selectedPart}
+              onSelectPart={setSelectedPart}
+              showKeptOnly={showKeptParts}
+              onShowKeptOnly={setShowKeptParts}
+              disabled={loading || busy}
+            />
+          ) : (
+            <p className="field-help">导入模型后可以在这里选择要保留的部件。</p>
+          ))}
+      </div>
+    </div>
+  );
+
   return (
     <div
-      className={`studio-layout model-layout ${compact ? 'compact' : ''} ${stageFullscreen ? 'stage-hidden' : ''}`}
+      className={`studio-layout model-layout ${compact ? 'compact' : `desktop-tab-${desktopTab}`} ${stageFullscreen ? 'stage-hidden' : ''}`}
       onDragOver={(event) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'copy';
@@ -728,6 +906,35 @@ export function ModelStudio({
           <span>GLB / VRM / PMX / 含贴图的 ZIP</span>
         </div>
       )}
+      {!compact && (
+        <header className="model-desktop-header">
+          <div className="model-desktop-project">
+            <span className="eyebrow">4DGen / 模型编辑</span>
+            <h2>{model?.name ?? '模型工作台'}</h2>
+            <small>
+              {model
+                ? `${model.stats.triangles.toLocaleString('zh-CN')} 三角面 · ${model.stats.materials} 材质 · ${formatBytes(totalBytes)}`
+                : '导入模型后开始编辑；切换预览不会丢失当前配置'}
+            </small>
+          </div>
+          <nav className="model-desktop-tabs" aria-label="模型工作区">
+            {([
+              ['settings', '设置'],
+              ['texture', '纹理'],
+              ['export', '导出'],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={desktopTab === key ? 'active' : ''}
+                onClick={() => setDesktopTab(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </header>
+      )}
       <div className="studio-sheet">
         {compact && (
           <div className="mobile-settings-tabs" role="tablist" aria-label="模型设置">
@@ -754,9 +961,13 @@ export function ModelStudio({
           <aside className="studio-inspector">
             <div className="panel-heading">
               <div className="template-icon"><Icon name="cube" size={26} /></div>
-              <h2>转换设置</h2>
+              <h2>
+                {desktopTab === 'settings' ? '转换设置' : desktopTab === 'texture' ? '纹理' : '导出'}
+              </h2>
             </div>
             <div className="panel-scroll">
+        {(compact || desktopTab === 'settings') && (
+          <>
         <fieldset disabled={loading || busy}>
           <div className="settings-section" data-section="basic">
             <div className="settings-section-title">基础配置</div>
@@ -877,173 +1088,19 @@ export function ModelStudio({
 
           </div>
         </fieldset>
-        <div className="settings-section" data-section="parts">
-          <div className="field-group">
-            <button
-              type="button"
-              className="field-group-title group-toggle"
-              aria-expanded={partsOpen}
-              onClick={() => setPartsOpen((open) => !open)}
-            >
-              <span>模型部件</span>
-              <small>{includedParts.size}/{studioParts.length} 保留</small>
-            </button>
-            {partsOpen &&
-              (source ? (
-                <StudioParts
-                  parts={studioParts}
-                  includedParts={includedParts}
-                  onTogglePart={(id) => {
-                    setIncludedParts((previous) => {
-                      const next = new Set(previous);
-                      if (next.has(id)) next.delete(id);
-                      else next.add(id);
-                      return next;
-                    });
-                    if (selectedPart === id) setSelectedPart(null);
-                  }}
-                  onSetParts={(ids) => {
-                    setIncludedParts(new Set(ids));
-                    if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
-                  }}
-                  selectedPart={selectedPart}
-                  onSelectPart={setSelectedPart}
-                  showKeptOnly={showKeptParts}
-                  onShowKeptOnly={setShowKeptParts}
-                  disabled={loading || busy}
-                />
-              ) : (
-                <p className="field-help">导入模型后可以在这里选择要保留的部件。</p>
-              ))}
-          </div>
-        </div>
+        {compact && partsPanel}
+          </>
+        )}
+        {!compact && desktopTab === 'texture' && (
+          <div className="settings-section texture-section">{texturePanel}</div>
+        )}
+        {!compact && desktopTab === 'export' && (
+          <div className="settings-section result-section">{exportPanel}</div>
+        )}
       {compact && (
         <>
-          <div className="settings-section texture-section" data-section="texture">
-            {result && result.textureUrl ? (
-              <>
-                <div className="texture-tab-head">
-                  <span>
-                    输出贴图 {result.textureReport.size} × {result.textureReport.size} PNG
-                  </span>
-                  <button
-                    type="button"
-                    className="texture-adjust-button"
-                    disabled={!selectedStudioMaterial || busy || loading}
-                    title={
-                      selectedStudioMaterial
-                        ? `调整 ${selectedStudioMaterial.name} 的相对纹理密度`
-                        : '点击图集或占比图选择材质'
-                    }
-                    onClick={() => {
-                      if (selectedStudioMaterial) setTunerKey(selectedStudioMaterial.id);
-                    }}
-                  >
-                    <Icon name="settings" size={13} />
-                    调整清晰度
-                  </button>
-                </div>
-                <div className="texture-overview">
-                  <AtlasInspector
-                    src={result.textureUrl}
-                    size={result.textureReport.size}
-                    regions={inspectorRegions}
-                    materials={atlasMaterials}
-                    selected={soloKey}
-                    onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
-                    showList={false}
-                    showAdvanced={false}
-                    zoomable={false}
-                    {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
-                  />
-                  <MaterialDonut
-                    materials={result.textureReport.materials.map((material) => ({
-                      key: material.key,
-                      name: materialLabels.get(material.key) ?? material.name,
-                      pixels: material.rectPixels ?? material.uvPixels ?? material.pixels,
-                    }))}
-                    total={result.textureReport.size * result.textureReport.size}
-                    selected={soloKey}
-                    onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
-                    coverage={result.textureReport.allocatedUtilization ?? result.textureReport.contentUtilization}
-                    uvCoverage={result.textureReport.uvUtilization ?? result.textureCoverage}
-                  />
-                </div>
-              </>
-            ) : (
-              <p className="field-help">转换后在这里查看可点击的贴图和材质占比。</p>
-            )}
-          </div>
-          <div className="settings-section result-section" data-section="export">
-            {result ? (
-              <>
-                <div className="mobile-result-actions">
-                  <button
-                    type="button"
-                    className="button-link"
-                    disabled={packBusy || stale}
-                    onClick={() => void addToPack()}
-                  >
-                    <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
-                    {packBusy ? '正在加入…' : '加入皮肤包'}
-                  </button>
-                  <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
-                </div>
-                {packMessage && (
-                  <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
-                )}
-                {packError && (
-                  <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>
-                )}
-                <dl className="result-stats">
-                  <div>
-                    <dt>输出三角面</dt>
-                    <dd>{result.report.triangles.toLocaleString('zh-CN')}</dd>
-                  </div>
-                  <div>
-                    <dt>转换用时</dt>
-                    <dd>{result.elapsedMs !== undefined ? `${(result.elapsedMs / 1000).toFixed(1)} 秒` : '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>源三角面</dt>
-                    <dd>{result.report.sourceTriangles.toLocaleString('zh-CN')}</dd>
-                  </div>
-                  <div>
-                    <dt>材质</dt>
-                    <dd>{result.report.materials.length}</dd>
-                  </div>
-                  <div>
-                    <dt>绑定</dt>
-                    <dd>{result.binding === 'humanoid' ? '六部位人形' : '静态整体'}</dd>
-                  </div>
-                  <div>
-                    <dt>分配方式</dt>
-                    <dd>
-                      {result.textureReport.target === 'retention'
-                        ? '纹理预算 · 保留'
-                        : '纹理预算 · 密度'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>有效 UV 覆盖</dt>
-                    <dd>{Math.round((result.textureReport.uvUtilization ?? result.textureCoverage) * 100)}%</dd>
-                  </div>
-                  {!!result.excludedMaterials?.length && (
-                    <div>
-                      <dt>已移除材质</dt>
-                      <dd>{result.excludedMaterials.length}</dd>
-                    </div>
-                  )}
-                </dl>
-                <WarningList warnings={warnings} />
-              </>
-            ) : (
-              <>
-                <WarningList warnings={warnings} />
-                <p className="field-help">转换后在这里加入或下载皮肤包。</p>
-              </>
-            )}
-          </div>
+          <div className="settings-section texture-section" data-section="texture">{texturePanel}</div>
+          <div className="settings-section result-section" data-section="export">{exportPanel}</div>
         </>
       )}
             </div>
@@ -1064,13 +1121,10 @@ export function ModelStudio({
                     onFiles={(next) => void choose(next)}
                     disabled={loading || busy}
                   />
-                  <div className="model-source-entry">
-                    <button type="button" className="button-link" onClick={() => gotoSources()}>
-                      获取模型 <Icon name="arrow" size={13} />
-                    </button>
-                  </div>
                 </>
               )}
+
+          {!compact && partsPanel}
 
           <div className="settings-section" data-section="material">
             <div className="field-group">
@@ -1151,22 +1205,42 @@ export function ModelStudio({
                     : '导入模型后在这里预览。'}
               </p>
             </div>
-            <div className="tabs">
-              {model && (
-                <button type="button" className={viewMode === 'source' ? 'active' : ''} onClick={() => setViewMode('source')}>
-                  源模型
-                </button>
-              )}
-              {result && (
-                <button type="button" className={viewMode === 'output' ? 'active' : ''} onClick={() => setViewMode('output')}>
-                  4D 输出
-                </button>
-              )}
+            <div className="result-header-actions">
+              <div className="tabs">
+                {model && (
+                  <button type="button" className={viewMode === 'source' ? 'active' : ''} onClick={() => setViewMode('source')}>
+                    源模型
+                  </button>
+                )}
+                {result && (
+                  <button type="button" className={viewMode === 'output' ? 'active' : ''} onClick={() => setViewMode('output')}>
+                    4D 输出
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={stageFullscreen ? '退出全屏' : '全屏预览'}
+                title={stageFullscreen ? '退出全屏' : '全屏预览'}
+                onClick={() => setStageFullscreen((value) => !value)}
+              >
+                <Icon name={stageFullscreen ? 'shrink' : 'expand'} size={16} />
+              </button>
             </div>
           </div>
         )}
 
-        <div className="model-stage">
+        <div className={`model-stage${stageFullscreen ? ' fullscreen' : ''}`}>
+          {!compact && stageFullscreen && (
+            <button
+              type="button"
+              className="stage-fullscreen-exit"
+              onClick={() => setStageFullscreen(false)}
+            >
+              <Icon name="shrink" size={16} /> 退出全屏
+            </button>
+          )}
           {compact && (
             <div className="stage-side-buttons">
               {showMenu && (
@@ -1244,16 +1318,12 @@ export function ModelStudio({
                   <Icon name="cube" size={42} />
                   <h2>还没有导入模型</h2>
                   <p>{compact ? '选择模型文件，或从侧边栏「获取模型」进入站点目录。' : '拖入模型或 ZIP，或从「获取模型」页进入站点目录。'}</p>
-                  {compact ? (
+                  {compact && (
                     <div className="empty-actions">
                       <button type="button" className="button-link" onClick={() => modelInput.current?.click()}>
                         选择模型文件
                       </button>
                     </div>
-                  ) : (
-                    <button type="button" className="button-link" onClick={() => gotoSources()}>
-                      获取模型 <Icon name="arrow" size={13} />
-                    </button>
                   )}
                 </>
               )}
@@ -1271,83 +1341,32 @@ export function ModelStudio({
           )}
         </div>
 
-        <div className="result-body model-details">
-          {result ? (
-            <ConversionReport
-              result={result}
-              warnings={warnings}
-              stale={stale}
-              selectedMaterial={selectedMaterial}
-              materialLabels={materialLabels}
-              onSelectMaterial={(materialKey) => {
-                const batch = source?.batches.find((item) => item.key === materialKey);
-                if (batch) setSoloKey(soloKey === batch.key ? null : batch.key);
-              }}
-            />
-          ) : (
-            <>
-              <WarningList warnings={warnings} />
-              <div className="inline-note">转换后显示转换报告、材质像素覆盖和贴图利用率。</div>
-            </>
-          )}
-        </div>
-        {result && (
-          <div className="result-footer">
-            {stale && (
-              <p className="stale-note" role="status"><Icon name="alert" size={14} /> 参数已修改，请重新转换。</p>
-            )}
-            <div className="pack-add-row">
-              <button type="button" className="button-link" disabled={packBusy || stale} onClick={() => void addToPack()}>
-                <Icon name={packBusy ? 'reset' : 'cube'} size={14} className={packBusy ? 'spin' : undefined} />
-                {packBusy ? '正在加入…' : '加入皮肤包'}
-              </button>
-              {packMessage && (
-                <span className="pack-save-status">{packMessage} <a href="#pack">查看</a></span>
-              )}
-            </div>
-            <button type="button" className="button-link" onClick={() => setAtlasOpen(true)}>
-              <Icon name="image" size={14} /> 查看贴图分区
-            </button>
-            {packError && <p className="error-message" role="alert"><Icon name="alert" size={15} />{packError}</p>}
-            <DownloadButtons files={result.files} name={name.trim()} compact disabled={stale} />
-          </div>
-        )}
       </section>
 
-      {atlasOpen && result?.textureReport.regions?.length ? (
-        <Dialog
-          title="贴图分区"
-          label="贴图分区"
-          className="atlas-inspector-dialog"
-          closeLabel="关闭贴图分区"
-          onClose={() => setAtlasOpen(false)}
-        >
-          <AtlasInspector
-            src={result.textureUrl}
-            size={result.textureReport.size}
-            regions={result.textureReport.regions.map((region) => ({
-              id: region.key,
-              material: region.name,
-              ...(region.materialKey ? { materialKey: region.materialKey } : {}),
-              ...(region.materialKeys ? { materialKeys: region.materialKeys } : {}),
-              ...(region.materials ? { materials: region.materials } : {}),
-              x: region.x,
-              y: region.y,
-              width: region.width,
-              height: region.height,
-              contentPixels: region.contentPixels,
-              shared: (region.materialKeys?.length ?? 0) > 1,
-              ...(region.sourceWidth
-                ? { source: `${region.sourceWidth}×${region.sourceHeight}` }
-                : {}),
-            }))}
-            materials={atlasMaterials}
-            selected={soloKey}
-            onSelect={(id) => setSoloKey(id)}
-            {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
-          />
-        </Dialog>
-      ) : null}
+      {!compact && (
+        <div className="model-desktop-status" role="status">
+          {error ? (
+            <span className="error-text">{error}</span>
+          ) : busy || loading ? (
+            <>
+              <span className="spinner" />
+              {progress?.label ?? (busy ? '正在转换…' : '正在读取文件…')}
+              {progress?.detail ? ` · ${progress.detail}` : ''}
+            </>
+          ) : stale ? (
+            <span className="workspace-stale">参数已修改，请重新转换</span>
+          ) : (
+            <span>{model ? '就绪' : '等待导入模型'}</span>
+          )}
+          <span className="grow" />
+          {result && (
+            <span>
+              输出 {result.report.triangles.toLocaleString('zh-CN')} 三角面 ·{' '}
+              {result.textureReport.size} × {result.textureReport.size} 贴图
+            </span>
+          )}
+        </div>
+      )}
 
       {pending && (
         <Dialog

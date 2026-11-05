@@ -3,8 +3,11 @@ import { COMPACT_QUERY } from './viewport';
 
 function isCompact() {
   if (typeof window === 'undefined') return false;
-  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('mobile'))
-    return true;
+  if (import.meta.env.DEV) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('mobile')) return true;
+    if (params.has('desktop')) return false;
+  }
   return window.matchMedia(COMPACT_QUERY).matches;
 }
 

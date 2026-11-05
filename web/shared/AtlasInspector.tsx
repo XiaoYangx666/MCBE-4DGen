@@ -99,7 +99,13 @@ export function AtlasInspector({
   const [showCoverage, setShowCoverage] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [hover, setHover] = useState<{ region: AtlasInspectorRegion; x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<{
+    region: AtlasInspectorRegion;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const imageRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
@@ -288,6 +294,8 @@ export function AtlasInspector({
                             region,
                             x: event.clientX - box.left,
                             y: event.clientY - box.top,
+                            width: box.width,
+                            height: box.height,
                           });
                         }}
                         onMouseMove={(event) => {
@@ -297,6 +305,8 @@ export function AtlasInspector({
                             region,
                             x: event.clientX - box.left,
                             y: event.clientY - box.top,
+                            width: box.width,
+                            height: box.height,
                           });
                         }}
                         onMouseLeave={() => setHover(null)}
@@ -317,8 +327,8 @@ export function AtlasInspector({
                   <div
                     className="atlas-region-tip"
                     style={{
-                      left: Math.max(4, Math.min(hover.x + 12, 168)),
-                      top: hover.y + 12,
+                      left: Math.max(4, Math.min(hover.x + 12, Math.max(4, hover.width - 204))),
+                      top: Math.max(4, Math.min(hover.y + 12, Math.max(4, hover.height - 64))),
                     }}
                   >
                     <b>{hoverRow?.name ?? hover.region.material}</b>

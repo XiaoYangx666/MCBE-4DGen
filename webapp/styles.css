@@ -243,9 +243,98 @@ code {
 
 /* Model workbench on desktop: materials | preview | settings, flush like the app. */
 .studio-layout.model-layout:not(.compact) {
-  grid-template-columns: 280px minmax(0, 1fr) 280px;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: 280px minmax(0, 1fr) 300px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.studio-layout.model-layout.desktop-tab-texture:not(.compact) {
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
+}
+.studio-layout.model-layout.desktop-tab-export:not(.compact) {
+  grid-template-columns: 280px minmax(0, 1fr) 380px;
+}
+.model-desktop-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-height: 58px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.model-desktop-project {
+  flex: 0 1 460px;
+  min-width: 0;
+}
+.model-desktop-project .eyebrow {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+.model-desktop-project h2 {
+  margin: 2px 0 1px;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-desktop-project small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-desktop-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.model-desktop-tabs button {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.model-desktop-tabs button:hover { color: var(--ink); background: var(--hover); }
+.model-desktop-tabs button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--selected);
+}
+.model-desktop-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  grid-column: 1 / -1;
+  grid-row: 4;
+  min-height: 30px;
+  padding: 4px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+}
+.model-desktop-status .grow { flex: 1 1 auto; }
+.model-desktop-status .spinner { width: 12px; height: 12px; }
+.result-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 .studio-layout.model-layout:not(.compact) .studio-sheet,
 .studio-layout.model-layout:not(.compact) .sheet-body {
@@ -264,24 +353,24 @@ code {
 }
 .studio-layout.model-layout:not(.compact) .studio-materials {
   grid-column: 1;
-  grid-row: 1 / span 2;
+  grid-row: 2 / span 2;
   border-right: 1px solid var(--line);
 }
 .studio-layout.model-layout:not(.compact) .studio-result {
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 2 / span 2;
   border: 0;
   border-radius: 0;
   background: var(--canvas);
 }
 .studio-layout.model-layout:not(.compact) .studio-inspector {
   grid-column: 3;
-  grid-row: 1;
+  grid-row: 2;
   border-left: 1px solid var(--line);
 }
 .studio-layout.model-layout:not(.compact) .settings-footer {
   grid-column: 3;
-  grid-row: 2;
+  grid-row: 3;
   padding: 10px 14px;
   border: 0;
   border-left: 1px solid var(--line);
@@ -796,9 +885,6 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
   font-size: 11px;
 }
 .text-button:hover:not(:disabled) { background: transparent; color: var(--ink); }
-
-.model-source-entry { display: flex; justify-content: flex-end; margin-top: 8px; }
-.model-source-entry .button-link { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; font-size: 11px; }
 
 .button-link {
   display: inline-flex;
@@ -1804,6 +1890,12 @@ footer a { color: var(--accent); }
   .studio-layout.model-layout:not(.compact) {
     grid-template-columns: 270px minmax(0, 1fr) 270px;
   }
+  .studio-layout.model-layout.desktop-tab-texture:not(.compact) {
+    grid-template-columns: 240px minmax(0, 1fr) 300px;
+  }
+  .studio-layout.model-layout.desktop-tab-export:not(.compact) {
+    grid-template-columns: 240px minmax(0, 1fr) 320px;
+  }
 }
 
 @media (max-width: 860px) {
@@ -2204,6 +2296,24 @@ footer a { color: var(--accent); }
   border-radius: 0;
   background: var(--canvas);
 }
+.stage-fullscreen-exit {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 81;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
 .export-side-inner { display: flex; flex-direction: column; min-height: 0; width: 100%; }
 .export-side-inner .export-report { padding: 10px 14px; }
 .export-side-inner .export-atlas { padding: 10px 14px 16px; border-top: 1px solid var(--line); }
@@ -2509,8 +2619,6 @@ footer a { color: var(--accent); }
   justify-content: start;
 }
 .texture-overview .atlas-inspector { min-width: 0; }
-/* The 180px preview cannot host the desktop hover card without clipping it. */
-.texture-overview .atlas-region-tip { display: none; }
 .texture-overview .material-donut {
   margin: 0;
   align-items: stretch;
@@ -2539,6 +2647,27 @@ footer a { color: var(--accent); }
   .texture-overview .material-donut-legend {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+/* Desktop texture tab: atlas first, allocation ring underneath. */
+.studio-layout.model-layout:not(.compact) .texture-overview {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+.studio-layout.model-layout:not(.compact) .texture-overview .atlas-inspector-image,
+.studio-layout.model-layout:not(.compact) .texture-overview .atlas-inspector.variant-panel .atlas-inspector-image {
+  max-width: 100%;
+}
+.studio-layout.model-layout:not(.compact) .texture-overview .material-donut {
+  width: 100%;
+  margin-top: 2px;
+  align-items: stretch;
+}
+.studio-layout.model-layout:not(.compact) .texture-overview .material-donut-ring {
+  max-width: 180px;
+}
+.studio-layout.model-layout:not(.compact) .texture-overview .material-donut-legend {
+  max-height: 160px;
 }
 .material-donut {
   display: flex;
