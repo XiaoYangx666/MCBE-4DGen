@@ -1042,8 +1042,12 @@ export function renderAtlas(inputs: readonly AtlasInput[], layout: AtlasLayout):
       continue;
     }
 
-    const masked = !isFastRect(bounds, texture) || !!chart.overlap;
-    const innerMask = masked ? chartInnerMask(chart, input) : null;
+    // Only hole-filled charts need a mask: their rectangle overlaps another
+    // chart, so the paint must stay inside their own triangles. A normal chart
+    // owns its whole rectangle; masking it leaves transparent cracks between
+    // the UV triangles, which shows up as seams in wrapped (tiling) materials
+    // such as hair. The fast path above already paints the full rectangle.
+    const innerMask = chart.overlap ? chartInnerMask(chart, input) : null;
     if (!isFastRect(bounds, texture)) {
       const pixels = texturePixels(texture);
       if (!pixels) {
