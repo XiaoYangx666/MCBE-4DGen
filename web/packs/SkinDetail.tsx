@@ -135,6 +135,7 @@ export function SkinDetail({
             baseUrl={baseUrl}
             skinIndex={skinIndex}
             revision={contents?.revision ?? row.revision}
+            mirrorX={skin.origin?.template !== "image"}
           />
           {row.preset ? (
             <details className="preset-sources">

@@ -23,6 +23,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    build: '#16',
+    date: '2026-11-05',
+    title: '图片皮肤自动抠图',
+    changes: [
+      { tag: '新增', text: '网页版「图片皮肤」新增「自动去除纯色背景」：从图片边缘识别白底、绿幕或单色背景并转为透明，容差可调，适合没有透明通道的照片和截图。' },
+      { tag: '优化', text: '抠图只删除与边缘连通的背景，封闭的背景色空洞和已有透明边距的 PNG 不会被误删；预览使用棋盘格直接显示抠图结果。' },
+      { tag: '修复', text: '修正图片皮肤三维预览的左右镜像：平面皮肤本身已在 Bedrock 坐标系中，预览不再二次镜像；同时修正平面高度拖动条只有默认宽度的问题。' },
+    ],
+  },
+  {
     build: 'v0.2.1',
     date: '2026-10-31',
     title: 'v0.2.1 发布',

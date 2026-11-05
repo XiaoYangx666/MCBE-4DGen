@@ -15,11 +15,14 @@ import {
 export function buildGeometryPreview(
   geometry: BedrockGeometryFile,
   textureUrl: string,
-  identifier: `geometry.${string}` = firstGeometryIdentifier(geometry),
+  options: { identifier?: `geometry.${string}`; mirrorX?: boolean } = {},
 ): PolyMeshPreview {
   return buildPolyMeshPreview(geometry, textureUrl, {
-    identifier,
-    mirrorX: true,
+    identifier: options.identifier ?? firstGeometryIdentifier(geometry),
+    // Model exports mirror X for Bedrock's handedness, so their previews mirror
+    // it back. Flat image skins are authored directly in Bedrock coordinates
+    // and must keep their original orientation.
+    mirrorX: options.mirrorX ?? true,
     side: THREE.DoubleSide,
     alphaTest: 0.01,
     transparent: true,

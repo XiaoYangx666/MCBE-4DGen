@@ -2,7 +2,12 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { DropZone } from './DropZone';
 import { DownloadButtons } from './Common';
 import { Icon } from '../../web/shared/Icons';
-import { createImageSkin, type ImageSkinResult } from '../engine/image-skin';
+import {
+  createImageSkin,
+  previewImageCutout,
+  type CutoutPreview,
+  type ImageSkinResult,
+} from '../engine/image-skin';
 import { nextFrame } from '../engine/frame';
 import { useSkinPack } from '../lib/pack-context';
 import { formatBytes } from '../../web/shared/format';
@@ -21,6 +26,10 @@ export function ImageStudio() {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [name, setName] = useState(DEFAULT_NAME);
   const [height, setHeight] = useState(32);
+  const [cutout, setCutout] = useState(false);
+  const [tolerance, setTolerance] = useState(30);
+  const [cutoutPreview, setCutoutPreview] = useState<CutoutPreview | null>(null);
+  const [cutoutBusy, setCutoutBusy] = useState(false);
   const [result, setResult] = useState<ImageSkinResult | null>(null);
   const [resultKey, setResultKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -44,6 +53,32 @@ export function ImageStudio() {
   }, [file]);
 
   useEffect(() => {
+    if (!file || !cutout) {
+      setCutoutPreview(null);
+      setCutoutBusy(false);
+      return;
+    }
+    let active = true;
+    setCutoutBusy(true);
+    const timer = window.setTimeout(() => {
+      void previewImageCutout(file, { tolerance })
+        .then((preview) => {
+          if (active) setCutoutPreview(preview);
+        })
+        .catch(() => {
+          if (active) setCutoutPreview(null);
+        })
+        .finally(() => {
+          if (active) setCutoutBusy(false);
+        });
+    }, 160);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [file, cutout, tolerance]);
+
+  useEffect(() => {
     setPackMessage('');
     setPackError('');
   }, [result]);
@@ -54,8 +89,16 @@ export function ImageStudio() {
     requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior, block: 'start' }));
   }, [result]);
 
-  const key = `${name.trim()}|${height}`;
+  const key = `${name.trim()}|${height}|${cutout ? `cutout-${tolerance}` : 'original'}`;
   const stale = !!result && resultKey !== key;
+  const previewSrc = cutout && cutoutPreview ? cutoutPreview.url : sourceUrl;
+  const updateHeight = (value: number) => {
+    if (!Number.isFinite(value) || value <= 0) {
+      setHeight(32);
+      return;
+    }
+    setHeight(Math.min(64, Math.max(8, Math.round(value))));
+  };
 
   const addToPack = async () => {
     if (!result || packBusy) return;
@@ -105,7 +148,11 @@ export function ImageStudio() {
     setPhase('读取图片…');
     try {
       await nextFrame();
-      const created = await createImageSkin(file, { name: name.trim(), height });
+      const created = await createImageSkin(file, {
+        name: name.trim(),
+        height,
+        cutout: { enabled: cutout, tolerance },
+      });
       setResult(created);
       setResultKey(key);
     } catch (cause) {
@@ -126,12 +173,30 @@ export function ImageStudio() {
           <fieldset disabled={busy}>
             {file && sourceUrl ? (
               <div className="image-pick">
-                <img className="image-source-preview" src={sourceUrl} alt="待转换的图片" />
+                <div className="image-preview-wrap">
+                  <img
+                    className="image-source-preview"
+                    src={previewSrc ?? sourceUrl}
+                    alt={cutout ? '去除背景后的图片' : '待转换的图片'}
+                  />
+                  {cutout && cutoutBusy && (
+                    <span className="image-preview-status"><span className="spinner" /> 识别背景…</span>
+                  )}
+                </div>
                 <div className="image-pick-meta">
                   <span title={file.name}>{file.name}</span>
                   <small>{formatBytes(file.size)}</small>
                   <button type="button" className="text-button" onClick={() => setFile(null)}>更换图片</button>
                 </div>
+                {cutout && cutoutPreview && (
+                  <p className={`cutout-status${cutoutPreview.detected ? '' : ' is-muted'}`} role="status">
+                    {cutoutPreview.detected
+                      ? cutoutPreview.removedRatio > 0.98
+                        ? '几乎整张图片都被识别为背景，请降低容差。'
+                        : `已去除背景 ${Math.round(cutoutPreview.removedRatio * 100)}%`
+                      : '没有识别到可去除的纯色背景，图片将保持原样。'}
+                  </p>
+                )}
               </div>
             ) : (
               <DropZone
@@ -141,6 +206,35 @@ export function ImageStudio() {
                 icon="image"
                 onFiles={choose}
               />
+            )}
+
+            <label className="cutout-toggle">
+              <input
+                type="checkbox"
+                checked={cutout}
+                onChange={(event) => setCutout(event.target.checked)}
+              />
+              <span>
+                <b>自动去除纯色背景</b>
+                <small>白底、绿幕或单色背景会变成透明</small>
+              </span>
+            </label>
+            {cutout && (
+              <div className="field-label cutout-tolerance">
+                <span className="cutout-tolerance-head">
+                  抠图容差
+                  <output>{tolerance}%</output>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={tolerance}
+                  onChange={(event) => setTolerance(Number(event.target.value))}
+                />
+                <span className="field-help">边缘残留背景时调高；主体被误删时调低。</span>
+              </div>
             )}
 
             <label className="field-label">
@@ -163,7 +257,7 @@ export function ImageStudio() {
                 min={8}
                 max={64}
                 value={height}
-                onChange={(event) => setHeight(Number(event.target.value) || 32)}
+                onChange={(event) => updateHeight(Number(event.target.value))}
               />
             </label>
             <input
@@ -174,7 +268,7 @@ export function ImageStudio() {
               step={1}
               value={height}
               aria-label="平面高度"
-              onChange={(event) => setHeight(Number(event.target.value))}
+              onChange={(event) => updateHeight(Number(event.target.value))}
             />
           </fieldset>
         </div>
@@ -194,7 +288,11 @@ export function ImageStudio() {
             <h2>{result ? name.trim() : '成品预览'}</h2>
             <p>
               {result
-                ? `${result.width.toFixed(1)} × ${result.height} · 4 三角面 · 双面 · 源图 ${result.sourceWidth}×${result.sourceHeight}`
+                ? `${result.width.toFixed(1)} × ${result.height} · 4 三角面 · 双面 · 源图 ${result.sourceWidth}×${result.sourceHeight}${
+                    result.backgroundDetected
+                      ? ` · 已去除背景 ${Math.round(result.backgroundRemoved * 100)}%`
+                      : ''
+                  }`
                 : '生成后在这里显示 3D 预览。'}
             </p>
           </div>
@@ -212,13 +310,13 @@ export function ImageStudio() {
                   </div>
                 )}
               >
-                <GeometryPreview geometry={result.geometry} textureUrl={result.pngUrl} />
+                <GeometryPreview geometry={result.geometry} textureUrl={result.pngUrl} mirrorX={false} />
               </Suspense>
             </div>
           </div>
           <div className="result-footer">
             {stale && (
-              <p className="stale-note" role="status"><Icon name="alert" size={14} /> 名称或高度已修改，请重新生成。</p>
+              <p className="stale-note" role="status"><Icon name="alert" size={14} /> 名称、高度或抠图设置已修改，请重新生成。</p>
             )}
             <div className="pack-add-row">
               <button type="button" className="button-link" disabled={packBusy || stale} onClick={() => void addToPack()}>
@@ -237,7 +335,7 @@ export function ImageStudio() {
           <div className="empty-state">
             <Icon name="image" size={42} />
             <h2>选择一张图片</h2>
-            <p>立绘、表情包、透明 PNG 都可以。</p>
+            <p>立绘、表情包、透明 PNG 都可以；纯色背景也能一键抠掉。</p>
           </div>
         )}
       </section>

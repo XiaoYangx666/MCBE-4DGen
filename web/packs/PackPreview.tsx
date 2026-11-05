@@ -17,11 +17,14 @@ export function PackPreview({
   skinIndex = 0,
   revision = "",
   baseUrl,
+  mirrorX = true,
 }: {
   packId: string;
   skinIndex?: number;
   revision?: string;
   baseUrl?: string;
+  /** Model exports mirror X; flat image skins are already in Bedrock coordinates. */
+  mirrorX?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<PreviewViewport | null>(null);
@@ -84,7 +87,7 @@ export function PackPreview({
       preview = buildPolyMeshPreview(scene.geometry, scene.texture, {
         identifier: scene.identifier as `geometry.${string}`,
         groupByBone: true,
-        mirrorX: true,
+        mirrorX,
         side: THREE.FrontSide,
         alphaTest: 0.5,
         onTextureLoad: () => view?.invalidate(),
@@ -116,7 +119,7 @@ export function PackPreview({
       view = null;
       preview = null;
     };
-  }, [scene]);
+  }, [scene, mirrorX]);
 
   const toggleLighting = (next: boolean) => {
     setUnlit(next);

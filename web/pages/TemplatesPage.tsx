@@ -233,6 +233,7 @@ export function TemplatesPage() {
               <PackPreview
                 packId={result.id}
                 baseUrl={"/api/job/" + result.id}
+                mirrorX={false}
               />
               <div className="template-result-actions">
                 {dirty && <p role="status">图片或参数已修改，请重新生成。</p>}

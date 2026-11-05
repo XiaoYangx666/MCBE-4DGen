@@ -10,17 +10,24 @@ interface GeometryPreviewProps {
   geometry: StoredSkin['geometry'];
   textureUrl: string;
   grid?: boolean;
+  /** Model exports mirror X; flat image skins are already in Bedrock coordinates. */
+  mirrorX?: boolean;
 }
 
 /** Rebuild the exported poly_mesh in three.js; shared by the pack and image studios. */
-export function GeometryPreview({ geometry, textureUrl, grid = false }: GeometryPreviewProps) {
+export function GeometryPreview({
+  geometry,
+  textureUrl,
+  grid = false,
+  mirrorX = true,
+}: GeometryPreviewProps) {
   const [object, setObject] = useState<THREE.Object3D | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let created: ReturnType<typeof buildGeometryPreview> | null = null;
     try {
-      created = buildGeometryPreview(geometry, textureUrl);
+      created = buildGeometryPreview(geometry, textureUrl, { mirrorX });
       setObject(created.object);
       setError('');
     } catch (cause) {
@@ -30,7 +37,7 @@ export function GeometryPreview({ geometry, textureUrl, grid = false }: Geometry
       created?.dispose();
       setObject(null);
     };
-  }, [geometry, textureUrl]);
+  }, [geometry, textureUrl, mirrorX]);
 
   if (error) {
     return (
@@ -104,7 +111,14 @@ export function SkinPreviewDialog({ skin, onClose }: SkinPreviewDialogProps) {
           </button>
         </header>
         <div className="preview-stage">
-          {textureUrl && <GeometryPreview geometry={skin.geometry} textureUrl={textureUrl} grid />}
+          {textureUrl && (
+            <GeometryPreview
+              geometry={skin.geometry}
+              textureUrl={textureUrl}
+              grid
+              mirrorX={skin.source !== 'image'}
+            />
+          )}
         </div>
         <footer className="preview-footer">
           实际导出的 poly_mesh · 点击背景或按 Esc 关闭

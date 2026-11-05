@@ -43,4 +43,17 @@ describe('webapp output preview', () => {
     expect(positions.getY(0)).toBe(0);
     preview.dispose();
   });
+
+  it('keeps Bedrock coordinates for flat image skins', () => {
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockReturnValue(new THREE.Texture());
+    const preview = buildGeometryPreview(triangleFile(), 'unused', { mirrorX: false });
+    let mesh: THREE.Mesh | null = null;
+    preview.object.traverse((object) => {
+      if (!mesh && (object as THREE.Mesh).isMesh) mesh = object as THREE.Mesh;
+    });
+    expect(mesh).not.toBeNull();
+    const positions = mesh!.geometry.getAttribute('position');
+    expect(positions.getX(0)).toBe(2);
+    preview.dispose();
+  });
 });

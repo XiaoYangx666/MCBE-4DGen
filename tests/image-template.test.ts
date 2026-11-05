@@ -25,6 +25,18 @@ test('image template preserves portrait ratio, alpha, front orientation and vali
   expect(mesh.uvs[2]![1]).toBeGreaterThan(mesh.uvs[1]![1]);
 });
 
+test('image template can remove a solid background before export',async()=>{
+  const white=await sharp({create:{width:40,height:80,channels:4,background:{r:255,g:255,b:255,alpha:1}}}).png().toBuffer();
+  const red=await sharp({create:{width:16,height:32,channels:4,background:{r:220,g:30,b:20,alpha:1}}}).png().toBuffer();
+  const composed=await sharp(white).composite([{input:red,left:12,top:24}]).png().toBuffer();
+  const image=await createImageSkin(composed,{name:'抠图皮肤',height:32,cutout:{tolerance:30}});
+  expect(image.backgroundDetected).toBe(true);
+  expect(image.backgroundRemoved).toBeGreaterThan(0.5);
+  const pixels=await sharp(image.png).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+  expect(pixels.data[3]).toBe(0); // Top-left of the 128 atlas is outside the image.
+  expect(pixels.data[(64*128+64)*4+3]).toBe(255); // Red rectangle stays opaque.
+});
+
 test('image template rejects invalid data and unreasonable dimensions',async()=>{
   const bytes=await sharp({create:{width:16,height:16,channels:4,background:'#fff'}}).png().toBuffer();
   await expect(createImageSkin(bytes,{name:'test',height:0})).rejects.toThrow('高度');

@@ -18,6 +18,7 @@
     "../src/assimp-import.ts",
     "../src/geometry-validator.ts",
     "../src/humanoid-roles.ts",
+    "../src/image-cutout.ts",
     "../src/model-candidates.ts",
     "../src/model-orientation.ts",
     "../src/mtoon-materials.ts",

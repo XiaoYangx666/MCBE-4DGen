@@ -382,7 +382,10 @@ export function LibraryPage({
                         </div>
                         {pack && (
                           <>
-                            <PackPreview packId={pack.id} />
+                            <PackPreview
+                              packId={pack.id}
+                              mirrorX={pack.meta?.template !== "image"}
+                            />
                             <div className="detail-stats">
                               <div>
                                 <b>{num(pack.stats?.triangles)}</b>
