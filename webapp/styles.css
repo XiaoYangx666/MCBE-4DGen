@@ -504,6 +504,71 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   padding-top: 0;
   border-top: 0;
 }
+/* Logical groups inside a settings section; a small accent bar replaces the
+   old nested card frames and keeps long mobile forms scannable. */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.field-group + .field-group {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.field-group-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.field-group-title::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 3px;
+  height: 13px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.field-group-title small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.field-group > .field-label { margin-top: 0; }
+/* Frameless collapse headers for long lists that are rarely adjusted. */
+.group-toggle {
+  width: 100%;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.group-toggle:hover { color: var(--accent); }
+.group-toggle::after {
+  content: '';
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin: -3px 2px 0 2px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.16s ease;
+}
+.group-toggle[aria-expanded="true"]::after {
+  margin-top: 3px;
+  transform: rotate(-135deg);
+}
 .mobile-result-actions {
   display: flex;
   flex-wrap: wrap;
@@ -663,7 +728,7 @@ body:has(.app.mode-model .studio-layout.compact) { overflow: hidden; }
 .studio-layout.compact .settings-section-title { display: none; }
 .studio-layout.compact .settings-footer {
   flex: 0 0 auto;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  padding: 8px 16px calc(5px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
@@ -2136,7 +2201,7 @@ footer a { color: var(--accent); }
   left: 0;
   right: 0;
   top: 0;
-  bottom: calc(var(--sheet-height) + env(safe-area-inset-bottom));
+  bottom: var(--sheet-height);
   height: auto;
   min-height: 0;
   border: 0;
@@ -2148,7 +2213,7 @@ footer a { color: var(--accent); }
   position: fixed;
   left: 0;
   right: 0;
-  bottom: env(safe-area-inset-bottom);
+  bottom: 0;
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -2204,7 +2269,18 @@ footer a { color: var(--accent); }
   border-radius: 0;
   background: transparent;
 }
-.studio-layout.compact .studio-inspector + .studio-materials { margin-top: 8px; }
+.studio-layout.compact .studio-inspector + .studio-materials {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+/* A collapsed parts header is just one row; do not reserve a large separator
+   before the material list. */
+.studio-layout.compact .studio-inspector + .studio-materials.collapsed-parts {
+  margin-top: 6px;
+  padding-top: 0;
+  border-top: 0;
+}
 .studio-layout.compact .sheet-body[data-tab="basic"] .settings-section:not([data-section="basic"]),
 .studio-layout.compact .sheet-body[data-tab="edit"] .settings-section:not([data-section="parts"]):not([data-section="material"]),
 .studio-layout.compact .sheet-body[data-tab="texture"] .settings-section:not([data-section="texture"]),
@@ -2216,7 +2292,7 @@ footer a { color: var(--accent); }
 .studio-layout.compact .sheet-body[data-tab="export"] .studio-materials { display: none; }
 .studio-layout.compact .settings-footer {
   flex: 0 0 auto;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  padding: 8px 16px calc(5px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
@@ -2293,12 +2369,11 @@ footer a { color: var(--accent); }
   padding-top: 0;
   border-top: 0;
 }
-/* Complex models can expose dozens of primitives; scroll the expanded list in
-   place so the material editor stays within reach. */
+/* Complex models can expose dozens of primitives; the sheet itself scrolls so
+   the part list is not forced into a nested scroll area on phones. */
 .studio-layout.compact .texture-studio-parts {
-  max-height: 340px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  max-height: none;
+  overflow: visible;
 }
 .studio-layout.compact .texture-studio-actions {
   position: sticky;

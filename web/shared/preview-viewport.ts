@@ -75,6 +75,11 @@ export interface PreviewViewportOptions {
   /** Initial lit state. Defaults to true. */
   lit?: boolean;
   /**
+   * Let the previewed model receive its own shadows. Mobile hosts disable this
+   * because shadow acne can make the whole model black.
+   */
+  selfShadow?: boolean;
+  /**
    * Strip metalness while unlit so flat mode keeps the authored texture
    * colours. Defaults to true; harmless when the preview is always lit.
    */
@@ -227,6 +232,7 @@ export function createPreviewViewport(
 
   const lighting = createPreviewLighting(renderer, scene, {
     onChange: invalidate,
+    ...(options.selfShadow === undefined ? {} : { selfShadow: options.selfShadow }),
   });
 
   let grid: THREE.GridHelper | null = null;

@@ -26,6 +26,8 @@ let lastYield = 0;
  * current stage keeps moving instead of looking hung.
  */
 export async function yieldToBrowser(intervalMs = 40) {
+  // Hidden tabs have nothing to repaint; yielding would only slow the job down.
+  if (typeof document !== 'undefined' && document.hidden) return;
   const now = performance.now();
   if (now - lastYield < intervalMs) return;
   lastYield = now;

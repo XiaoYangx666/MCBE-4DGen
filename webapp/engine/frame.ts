@@ -10,6 +10,12 @@ export const nextFrame = () => new Promise<void>((resolve) => {
     settled = true;
     resolve();
   };
+  // A hidden tab never paints, so waiting for rAF only adds the fallback delay
+  // to every stage. Let background conversions finish at full speed instead.
+  if (typeof document !== 'undefined' && document.hidden) {
+    setTimeout(done, 0);
+    return;
+  }
   if (typeof requestAnimationFrame === 'function') {
     requestAnimationFrame(() => setTimeout(done, 0));
   } else {

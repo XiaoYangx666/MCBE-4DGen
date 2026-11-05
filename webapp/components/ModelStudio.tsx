@@ -20,12 +20,13 @@ import { nextFrame } from '../engine/frame';
 import { preparePreviewMaterials } from '../engine/preview-materials';
 import type { TaskProgress } from '../engine/progress';
 import {
-  convertExtractedModel,
   loadModelJob,
   materialLabels as buildMaterialLabels,
   modelResultKey,
   ModelJobCancelled,
+  prepareConvertedBatches,
   prepareModelInput,
+  renderConvertedBatches,
   sourceTriangleCount,
   type PreparedModelInput,
 } from '../engine/model-job';
@@ -53,6 +54,7 @@ import {
 } from '../../web/shared/TextureStudio';
 import { createPartPreview } from '../lib/part-visibility';
 import { extractedParts } from '../engine/parts';
+import { partDisplayNames, partGroupNames } from '../../web/shared/part-labels';
 
 const DEFAULT_NAME = '我的 4D 皮肤';
 /** Formats the browser build cannot open; the picker lists them as unavailable. */
@@ -114,8 +116,9 @@ export function ModelStudio({
   const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [showKeptParts, setShowKeptParts] = useState(true);
-  /** Long primitive lists start folded so the material editor stays reachable. */
-  const [partsOpen, setPartsOpen] = useState(true);
+  /** Parts are rarely adjusted; keep the long list collapsed by default. */
+  const [partsOpen, setPartsOpen] = useState(false);
+  const [materialsOpen, setMaterialsOpen] = useState(true);
   /** Pixel difference versus the previous conversion of the same model. */
   const [materialDeltas, setMaterialDeltas] = useState<Map<string, number>>(new Map());
   const [atlasOpen, setAtlasOpen] = useState(false);
@@ -128,6 +131,15 @@ export function ModelStudio({
   const previewRootRef = useRef<THREE.Group | null>(null);
   const partPreview = useRef<ReturnType<typeof createPartPreview> | null>(null);
   const convertRun = useRef(0);
+  /**
+   * Filtered/reduced batches keyed by geometry-affecting settings only. Texture
+   * density changes reuse this instead of re-running the reducer.
+   */
+  const preparedCache = useRef<{
+    extracted: ExtractedModel;
+    key: string;
+    prepared: Awaited<ReturnType<typeof prepareConvertedBatches>>;
+  } | null>(null);
   const originalVisibility = useRef(new Map<THREE.Material, boolean>());
   const [result, setResult] = useState<ConvertResult | null>(null);
   const [resultKey, setResultKey] = useState('');
@@ -244,6 +256,7 @@ export function ModelStudio({
     originalVisibility.current = new Map();
     armRig.current = null;
     humanoidRig.current = null;
+    preparedCache.current = null;
     previewRootRef.current = null;
     setPreviewRoot(null);
     // The import already extracted the bind pose without rotation or arm spread,
@@ -366,6 +379,12 @@ export function ModelStudio({
 
   const convert = async () => {
     if (!model || busy) return;
+    // Key already matches the current settings: re-running would reproduce the
+    // same bytes, so keep the existing result (and its preview/downloads).
+    if (result && resultKey === key) {
+      setViewMode('output');
+      return;
+    }
     const run = ++convertRun.current;
     const before = result;
     setBusy(true);
@@ -421,7 +440,27 @@ export function ModelStudio({
       if (armSpread !== 0) merged.push(`已按 ${armSpread}° 调整手臂，并烘焙到静态网格。`);
       setWarnings(merged);
 
-      const converted = await convertExtractedModel(extracted, {
+      const geometryKey = [
+        [...included].sort().join(','),
+        [...includedParts].sort().join(','),
+        ratio,
+        maxError,
+      ].join('|');
+      const cached = preparedCache.current;
+      const reuse = cached?.extracted === extracted && cached.key === geometryKey;
+      const prepared = reuse
+        ? cached.prepared
+        : await prepareConvertedBatches(extracted, {
+            included,
+            includedParts,
+            ratio,
+            maxError,
+            onProgress: setProgress,
+          });
+      if (!reuse) preparedCache.current = { extracted, key: geometryKey, prepared };
+      else setProgress({ label: '复用减面结果…', detail: '仅重做贴图与 UV' });
+
+      const converted = await renderConvertedBatches(prepared, {
         name: name.trim(),
         height,
         doubleSided,
@@ -434,6 +473,7 @@ export function ModelStudio({
         textureMode: 'budget',
         textureTarget: 'density',
         atlasSharing: true,
+        rig: binding === 'humanoid' ? extracted.rig : null,
         onProgress: setProgress,
       });
       if (run !== convertRun.current) return;
@@ -510,28 +550,36 @@ export function ModelStudio({
   const studioParts = useMemo<StudioPart[]>(() => {
     if (!source) return [];
     const parts = extractedParts(source);
-    const byMaterial = new Map<string, { id: string; name: string }[]>();
-    for (const part of parts) {
+    const partInputs = parts.map((part) => ({
+      name: part.name,
+      mesh: part.mesh,
+      material: part.materialName,
+    }));
+    const names = partDisplayNames(partInputs);
+    const groups = partGroupNames(partInputs);
+    const byMaterial = new Map<string, string[]>();
+    parts.forEach((part, index) => {
       const list = byMaterial.get(part.materialKey) ?? [];
-      list.push({ id: part.id, name: part.name });
+      list.push(names[index]!);
       byMaterial.set(part.materialKey, list);
-    }
-    return parts.map((part) => {
+    });
+    return parts.map((part, index) => {
       const label = materialLabels.get(part.materialKey) ?? part.materialName;
+      const name = names[index]!;
       return {
         id: part.id,
-        name: part.name,
-        group: part.mesh?.trim() || '模型结构',
-        meta: `${part.triangles.toLocaleString('zh-CN')} 面 · ${label}`,
+        name,
+        group: groups[index]!,
+        meta: `${part.triangles.toLocaleString('zh-CN')} 面${
+          name === label ? '' : ` · ${label}`
+        }`,
         materials: [label],
         materialKey: part.materialKey,
         thumbnail: materialThumbs.get(part.materialKey) ?? null,
-        sharedWith: (byMaterial.get(part.materialKey) ?? [])
-          .filter((entry) => entry.id !== part.id)
-          .map((entry) => entry.name),
+        sharedWith: (byMaterial.get(part.materialKey) ?? []).filter((entry) => entry !== name),
       };
     });
-  }, [source, materialLabels]);
+  }, [source, materialLabels, materialThumbs]);
   const studioMaterials = useMemo<StudioMaterial[]>(() => {
     if (!source) return [];
     const measured = new Map(
@@ -594,9 +642,6 @@ export function ModelStudio({
     });
   };
   const resetAllMaterialWeights = () => setWeights({});
-  useEffect(() => {
-    setPartsOpen(studioParts.length <= 12);
-  }, [studioParts.length]);
   const atlasRegions = result?.textureReport.regions ?? [];
   const atlasMaterials = useMemo(() => {
     if (!result) return [];
@@ -716,154 +761,161 @@ export function ModelStudio({
           <div className="settings-section" data-section="basic">
             <div className="settings-section-title">基础配置</div>
 
-          <label className="field-label">
-            皮肤名称
-            <input
-              value={name}
-              maxLength={SKIN_NAME_MAX_LENGTH}
-              onChange={(event) => {
-                customName.current = true;
-                setName(event.target.value);
-              }}
-              placeholder="输入皮肤名称"
-            />
-          </label>
-
-          <label className="field-label">
-            绑定方式
-            <select
-              value={binding}
-              disabled={!rigAvailable}
-              onChange={(event) => setBinding(event.target.value as BindingMode)}
-            >
-              <option value="humanoid" disabled={!rigAvailable}>六部位人形（随动作摆动）</option>
-              <option value="static">静态整体（不与动作联动）</option>
-            </select>
-          </label>
-          <p className="field-help">
-            {rigAvailable
-              ? binding === 'humanoid'
-                ? '已识别完整人形骨骼：头、躯干、双臂、双腿会跟随玩家动作。'
-                : '当前按静态整体导出；切换为六部位后需要重新转换。'
-              : '未识别到完整的 VRM / 常见 MMD 人形骨骼，只能按静态整体导出。'}
-          </p>
-
-          <label className="field-label">
-            模型高度
-            <input
-              type="number"
-              min={1}
-              max={128}
-              value={heightText}
-              aria-invalid={!heightValid}
-              onChange={(event) => {
-                const next = event.target.value;
-                setHeightText(next);
-                const value = Number(next);
-                if (next.trim() !== '' && Number.isFinite(value) && value >= 1 && value <= 128)
-                  setHeight(value);
-              }}
-            />
-          </label>
-          {!heightValid && <p className="field-help error-text">模型高度需为 1–128</p>}
-
-          <PoseControls
-            rotationY={rotationY}
-            onRotationY={(value) => {
-              customRotation.current = true;
-              setRotationY(value);
-            }}
-            armSpread={armSpread}
-            onArmSpread={setArmSpread}
-            showArm={!!model}
-            armAvailable={armAvailable}
-            disabled={loading || busy}
-            rotationHelp="源模型实时旋转，转换时按这个朝向导出；用「正面检查」确认角色朝向绿色箭头。"
-          />
-
-          <label className="field-label">
-            双面渲染
-            <select
-              value={doubleSided}
-              onChange={(event) => setDoubleSided(event.target.value as DoubleSidedPolicy)}
-            >
-              <option value="source">跟随源材质</option>
-              <option value="all">全部双面</option>
-              <option value="front">全部单面</option>
-            </select>
-          </label>
-
-          <details className="fold">
-            <summary>
-              <span>减面与形状</span>
-              <small>保留 {Math.round(ratio * 100)}%</small>
-            </summary>
-            <div className="fold-body">
-              <RatioField
-                ratio={ratio}
-                onChange={setRatio}
-                sourceTriangles={sourceTriangles}
-                targetFaces={targetFaces}
-                actualFaces={actualFaces}
-                disabled={loading || busy}
-                showBudget={!!model}
+          <div className="field-group">
+            <div className="field-group-title">名称与绑定</div>
+            <label className="field-label">
+              皮肤名称
+              <input
+                value={name}
+                maxLength={SKIN_NAME_MAX_LENGTH}
+                onChange={(event) => {
+                  customName.current = true;
+                  setName(event.target.value);
+                }}
+                placeholder="输入皮肤名称"
               />
-              <label className="field-label">
-                形状变化容限
-                <input
-                  type="number"
-                  min={0}
-                  max={1}
-                  step={0.005}
-                  value={maxError}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    if (Number.isFinite(value) && value >= 0 && value <= 1) setMaxError(value);
-                  }}
-                />
-              </label>
-              <p className="field-help">默认 0.03。调小更保形，可能减不到目标；调大减得更多，但更容易丢轮廓。</p>
-            </div>
-          </details>
+            </label>
+
+            <label className="field-label">
+              绑定方式
+              <select
+                value={binding}
+                disabled={!rigAvailable}
+                onChange={(event) => setBinding(event.target.value as BindingMode)}
+              >
+                <option value="humanoid" disabled={!rigAvailable}>六部位人形（随动作摆动）</option>
+                <option value="static">静态整体（不与动作联动）</option>
+              </select>
+            </label>
+            <p className="field-help">
+              {rigAvailable
+                ? binding === 'humanoid'
+                  ? '已识别完整人形骨骼：头、躯干、双臂、双腿会跟随玩家动作。'
+                  : '当前按静态整体导出；切换为六部位后需要重新转换。'
+                : '未识别到完整的 VRM / 常见 MMD 人形骨骼，只能按静态整体导出。'}
+            </p>
+          </div>
+
+          <div className="field-group">
+            <div className="field-group-title">尺寸与姿态</div>
+            <label className="field-label">
+              模型高度
+              <input
+                type="number"
+                min={1}
+                max={128}
+                value={heightText}
+                aria-invalid={!heightValid}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setHeightText(next);
+                  const value = Number(next);
+                  if (next.trim() !== '' && Number.isFinite(value) && value >= 1 && value <= 128)
+                    setHeight(value);
+                }}
+              />
+            </label>
+            {!heightValid && <p className="field-help error-text">模型高度需为 1–128</p>}
+
+            <PoseControls
+              rotationY={rotationY}
+              onRotationY={(value) => {
+                customRotation.current = true;
+                setRotationY(value);
+              }}
+              armSpread={armSpread}
+              onArmSpread={setArmSpread}
+              showArm={!!model}
+              armAvailable={armAvailable}
+              disabled={loading || busy}
+              rotationHelp="源模型实时旋转，转换时按这个朝向导出；用「正面检查」确认角色朝向绿色箭头。"
+            />
+          </div>
+
+          <div className="field-group">
+            <div className="field-group-title">网格简化</div>
+            <RatioField
+              ratio={ratio}
+              onChange={setRatio}
+              sourceTriangles={sourceTriangles}
+              targetFaces={targetFaces}
+              actualFaces={actualFaces}
+              disabled={loading || busy}
+              showBudget={!!model}
+            />
+            <label className="field-label">
+              形状变化容限
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.005}
+                value={maxError}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (Number.isFinite(value) && value >= 0 && value <= 1) setMaxError(value);
+                }}
+              />
+            </label>
+            <p className="field-help">默认 0.03。调小更保形，可能减不到目标；调大减得更多，但更容易丢轮廓。</p>
+          </div>
+
+          <div className="field-group">
+            <div className="field-group-title">渲染</div>
+            <label className="field-label">
+              双面渲染
+              <select
+                value={doubleSided}
+                onChange={(event) => setDoubleSided(event.target.value as DoubleSidedPolicy)}
+              >
+                <option value="source">跟随源材质</option>
+                <option value="all">全部双面</option>
+                <option value="front">全部单面</option>
+              </select>
+            </label>
+          </div>
+
           </div>
         </fieldset>
         <div className="settings-section" data-section="parts">
-          <details
-            className="fold"
-            open={partsOpen}
-            onToggle={(event) => setPartsOpen(event.currentTarget.open)}
-          >
-            <summary>
+          <div className="field-group">
+            <button
+              type="button"
+              className="field-group-title group-toggle"
+              aria-expanded={partsOpen}
+              onClick={() => setPartsOpen((open) => !open)}
+            >
               <span>模型部件</span>
               <small>{includedParts.size}/{studioParts.length} 保留</small>
-            </summary>
-            {source ? (
-              <StudioParts
-                parts={studioParts}
-                includedParts={includedParts}
-                onTogglePart={(id) => {
-                  setIncludedParts((previous) => {
-                    const next = new Set(previous);
-                    if (next.has(id)) next.delete(id);
-                    else next.add(id);
-                    return next;
-                  });
-                  if (selectedPart === id) setSelectedPart(null);
-                }}
-                onSetParts={(ids) => {
-                  setIncludedParts(new Set(ids));
-                  if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
-                }}
-                selectedPart={selectedPart}
-                onSelectPart={setSelectedPart}
-                showKeptOnly={showKeptParts}
-                onShowKeptOnly={setShowKeptParts}
-                disabled={loading || busy}
-              />
-            ) : (
-              <p className="field-help">导入模型后可以在这里选择要保留的部件。</p>
-            )}
-          </details>
+            </button>
+            {partsOpen &&
+              (source ? (
+                <StudioParts
+                  parts={studioParts}
+                  includedParts={includedParts}
+                  onTogglePart={(id) => {
+                    setIncludedParts((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    });
+                    if (selectedPart === id) setSelectedPart(null);
+                  }}
+                  onSetParts={(ids) => {
+                    setIncludedParts(new Set(ids));
+                    if (selectedPart && !ids.includes(selectedPart)) setSelectedPart(null);
+                  }}
+                  selectedPart={selectedPart}
+                  onSelectPart={setSelectedPart}
+                  showKeptOnly={showKeptParts}
+                  onShowKeptOnly={setShowKeptParts}
+                  disabled={loading || busy}
+                />
+              ) : (
+                <p className="field-help">导入模型后可以在这里选择要保留的部件。</p>
+              ))}
+          </div>
         </div>
       {compact && (
         <>
@@ -908,12 +960,13 @@ export function ModelStudio({
                     materials={result.textureReport.materials.map((material) => ({
                       key: material.key,
                       name: materialLabels.get(material.key) ?? material.name,
-                      pixels: material.uvPixels ?? material.rectPixels ?? material.pixels,
+                      pixels: material.rectPixels ?? material.uvPixels ?? material.pixels,
                     }))}
                     total={result.textureReport.size * result.textureReport.size}
                     selected={soloKey}
                     onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
-                    coverage={result.textureReport.uvUtilization ?? result.textureCoverage}
+                    coverage={result.textureReport.allocatedUtilization ?? result.textureReport.contentUtilization}
+                    uvCoverage={result.textureReport.uvUtilization ?? result.textureCoverage}
                   />
                 </div>
               </>
@@ -996,7 +1049,7 @@ export function ModelStudio({
             </div>
           </aside>
 
-          <aside className="studio-materials">
+          <aside className={`studio-materials${partsOpen ? '' : ' collapsed-parts'}`}>
             <div className="panel-heading">模型 / 材质</div>
             <div className="panel-scroll">
               {!compact && (
@@ -1020,36 +1073,42 @@ export function ModelStudio({
               )}
 
           <div className="settings-section" data-section="material">
-            <details className="fold" open>
-              <summary>
+            <div className="field-group">
+              <button
+                type="button"
+                className="field-group-title group-toggle"
+                aria-expanded={materialsOpen}
+                onClick={() => setMaterialsOpen((open) => !open)}
+              >
                 <span>材质与清晰度</span>
                 <small>{studioMaterials.length} 项</small>
-              </summary>
-              {source ? (
-                <TextureStudio
-                  materials={studioMaterials}
-                  selectedMaterial={soloKey}
-                  onSelectMaterial={(id) => setSoloKey(id)}
-                  onToggleMaterial={(id) => {
-                    const willInclude = !included.has(id);
-                    setIncluded((previous) => {
-                      const next = new Set(previous);
-                      if (willInclude) next.add(id);
-                      else next.delete(id);
-                      return next;
-                    });
-                    if (!willInclude && soloKey === id) setSoloKey(null);
-                  }}
-                  onWeight={setMaterialWeight}
-                  onResetWeight={resetMaterialWeight}
-                  onResetAllWeights={resetAllMaterialWeights}
-                  disabled={loading || busy}
-                  note="纹理预算 · 密度 · 相对清晰度 0.1–20×"
-                />
-              ) : (
-                <p className="field-help">导入模型后可以在这里调整材质清晰度。</p>
-              )}
-            </details>
+              </button>
+              {materialsOpen &&
+                (source ? (
+                  <TextureStudio
+                    materials={studioMaterials}
+                    selectedMaterial={soloKey}
+                    onSelectMaterial={(id) => setSoloKey(id)}
+                    onToggleMaterial={(id) => {
+                      const willInclude = !included.has(id);
+                      setIncluded((previous) => {
+                        const next = new Set(previous);
+                        if (willInclude) next.add(id);
+                        else next.delete(id);
+                        return next;
+                      });
+                      if (!willInclude && soloKey === id) setSoloKey(null);
+                    }}
+                    onWeight={setMaterialWeight}
+                    onResetWeight={resetMaterialWeight}
+                    onResetAllWeights={resetAllMaterialWeights}
+                    disabled={loading || busy}
+                    note="纹理预算 · 密度 · 相对清晰度 0.1–20×"
+                  />
+                ) : (
+                  <p className="field-help">导入模型后可以在这里调整材质清晰度。</p>
+                ))}
+            </div>
           </div>
             </div>
           </aside>
@@ -1170,6 +1229,7 @@ export function ModelStudio({
               grid={viewMode === 'output'}
               facing={viewMode === 'source' ? 'source' : 'output'}
               showFrontCheck={false}
+              fitKey={result ?? model}
             />
           ) : (
             <div className="empty-state compact">

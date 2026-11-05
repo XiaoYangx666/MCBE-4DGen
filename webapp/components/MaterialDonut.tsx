@@ -20,13 +20,16 @@ export function MaterialDonut({
   selected,
   onSelect,
   coverage,
+  uvCoverage,
 }: {
   materials: readonly MaterialDonutEntry[];
   total: number;
   selected?: string | null;
   onSelect?: (id: string | null) => void;
-  /** Overall effective UV coverage, including transparent texels. */
+  /** Overall allocated (packed) atlas area, including unused texels inside charts. */
   coverage?: number;
+  /** UV triangle coverage of the final atlas, shown alongside the packed area. */
+  uvCoverage?: number;
 }) {
   const items = materials
     .filter((material) => material.pixels > 0)
@@ -57,7 +60,11 @@ export function MaterialDonut({
   return (
     <figure className="material-donut">
       <figcaption>
-        材质占比 · 已用 {(usedShare * 100).toFixed(1)}% · {items.length} 个
+        材质占比 · 已用 {(usedShare * 100).toFixed(1)}%
+        {uvCoverage !== undefined && (
+          <> · UV 覆盖 {(uvCoverage * 100).toFixed(1)}%</>
+        )}{' '}
+        · {items.length} 个
       </figcaption>
       <div className="material-donut-ring">
         {/* Leave room for the thicker hover/selected stroke; a 0..120 box

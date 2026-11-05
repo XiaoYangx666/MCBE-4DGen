@@ -36,6 +36,11 @@ export interface PreviewLightingOptions {
    * WebGL). Lights and shadows still work, just without reflections.
    */
   environment?: boolean;
+  /**
+   * Let the previewed model receive its own shadow map. Disable on mobile
+   * previews where self-shadow acne can turn the whole mesh black.
+   */
+  selfShadow?: boolean;
   /** Called after `apply()` / `fit()` changed what the scene should show. */
   onChange?: () => void;
 }
@@ -66,6 +71,7 @@ export function createPreviewLighting(
   options: PreviewLightingOptions = {},
 ): PreviewLighting {
   const useEnvironment = options.environment ?? true;
+  const selfShadow = options.selfShadow ?? true;
 
   if (renderer) {
     renderer.shadowMap.enabled = true;
@@ -205,7 +211,7 @@ export function createPreviewLighting(
       const mesh = child as THREE.Mesh;
       if (!mesh.isMesh) return;
       mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      mesh.receiveShadow = selfShadow;
     });
 
     notify();

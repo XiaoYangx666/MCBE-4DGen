@@ -165,6 +165,21 @@ describe('shared preview lighting', () => {
     rig.dispose();
   });
 
+  it('can keep the preview out of its own shadow map', () => {
+    const scene = new THREE.Scene();
+    const rig = createPreviewLighting(null, scene, {
+      environment: false,
+      selfShadow: false,
+    });
+    const object = mesh([4, 4, 4]);
+
+    expect(rig.fit(object)).toBe(true);
+    expect(object.castShadow).toBe(true);
+    expect(object.receiveShadow).toBe(false);
+
+    rig.dispose();
+  });
+
   it('follows an off-centre object and ignores empty objects', () => {
     const scene = new THREE.Scene();
     const rig = createPreviewLighting(null, scene, { environment: false });

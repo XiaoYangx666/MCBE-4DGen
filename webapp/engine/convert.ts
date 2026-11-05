@@ -1,7 +1,6 @@
 import type { BedrockGeometryFile } from '../../src/bedrock-types.ts';
 import { buildSkinPack } from '../../src/skin-pack-files.ts';
 import {
-  fillAtlasHoles,
   planAtlas,
   remapUvs,
   renderAtlas,
@@ -210,7 +209,10 @@ export async function convertBatches(
         }
       : {},
   );
-  fillAtlasHoles(layout.charts, inputByKey, layout.size);
+  // Hole filling is intentionally disabled for now: moving charts into other
+  // charts' holes produced opaque black patches in the exported texture when
+  // an unrelated material was removed. Re-enable once that remap is fixed.
+  // fillAtlasHoles(layout.charts, inputByKey, layout.size);
   report('绘制 128×128 贴图图集…', `${layout.charts.length} 个 UV 岛`);
   await nextFrame();
   const atlas = renderAtlas(inputs, layout);
