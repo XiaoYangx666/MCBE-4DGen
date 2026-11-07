@@ -217,7 +217,13 @@ a[aria-disabled="true"] { opacity:.4; cursor:default; }
 .usage-breakdown b { font-weight:500; font-variant-numeric:tabular-nums; }
 .usage-breakdown i { width:8px; height:8px; display:inline-block; border-radius:2px; }
 .storage-usage .help { color:var(--accent); font-size:11px; line-height:1.8; margin:16px 0 0; }
-@media(max-width:600px) { .directory-input { flex-wrap:wrap; }.directory-input input { flex-basis:100%; }.usage-breakdown { grid-template-columns:1fr; } }
+.cache-actions { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-top:18px; padding-top:16px; border-top:1px solid var(--line); }
+.cache-actions>div:first-child { display:flex; flex-direction:column; gap:5px; }
+.cache-actions b { font-size:12px; font-weight:550; }
+.cache-actions small { color:var(--accent); font-size:11px; line-height:1.7; }
+.cache-buttons { display:flex; flex:none; gap:8px; }
+.cache-buttons button { font-size:12px; white-space:nowrap; }
+@media(max-width:600px) { .directory-input { flex-wrap:wrap; }.directory-input input { flex-basis:100%; }.usage-breakdown { grid-template-columns:1fr; }.cache-actions { flex-direction:column; }.cache-buttons { flex-wrap:wrap; } }
 
 /* Desktop chrome shares one compact bar with the navigation. */
 .desktop-shell .app { border:1px solid var(--line); border-radius:12px; background:var(--canvas); }

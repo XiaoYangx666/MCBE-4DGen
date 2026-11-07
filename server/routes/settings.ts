@@ -7,6 +7,7 @@ import {
 } from '../../src/workspace-storage.ts';
 import { json } from '../http.ts';
 import { route } from '../route.ts';
+import { cleanDerivedCache } from '../cache-clean.ts';
 import { storageUsage } from '../storage-usage.ts';
 
 export const settingsRoutes = [
@@ -77,5 +78,10 @@ export const settingsRoutes = [
       restartRequired: true,
       message: '数据目录已设置，重启后自动复制数据。旧目录保留。',
     });
+  }),
+
+  route('POST', '/api/settings/cache/clean', async ({ req }) => {
+    const body = (await req.json().catch(() => ({}))) as { mode?: string };
+    return json(await cleanDerivedCache(body.mode === 'all' ? 'all' : 'unused'));
   }),
 ];

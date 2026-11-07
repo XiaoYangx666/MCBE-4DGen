@@ -13,7 +13,18 @@ import { route, type RouteContext } from '../route.ts';
 import { importLocal } from '../source-archive.ts';
 
 export const modelRoutes = [
-  route('GET', '/api/models', async () => json(await listModels())),
+  route('GET', '/api/models', async ({ studio }) =>
+    json(
+      await Promise.all(
+        (await listModels()).map(async (entry) =>
+          entry.previewKey &&
+          !(await fileExists(studio.previewCachePath(entry.previewKey)))
+            ? { ...entry, previewKey: undefined }
+            : entry,
+        ),
+      ),
+    ),
+  ),
 
   route('GET', '/api/activity', async ({ studio }) =>
     json({ activity: studio.activity }),
@@ -71,8 +82,12 @@ export const modelRoutes = [
 
   route('GET', '/api/models/:id/preview', async ({ studio, params }) => {
     const entry = (await listModels()).find((model) => model.id === params.id);
-    if (!entry?.previewKey) throw Error('请先打开模型生成预览');
-    return fileResponse(studio.previewCachePath(entry.previewKey), {
+    if (!entry?.previewKey)
+      throw new HttpError('请先打开模型生成预览', 404);
+    const file = studio.previewCachePath(entry.previewKey);
+    if (!(await fileExists(file)))
+      throw new HttpError('预览缓存已过期，请重新打开模型生成预览', 404);
+    return fileResponse(file, {
       headers: { 'Content-Type': 'model/gltf-binary' },
     });
   }),

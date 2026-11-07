@@ -77,6 +77,8 @@ export function SettingsPage({ onAbout }: { onAbout: () => void }) {
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [scanning, setScanning] = useState(false);
   const [usageError, setUsageError] = useState("");
+  const [cleaning, setCleaning] = useState<"" | "unused" | "all">("");
+  const [confirmClean, setConfirmClean] = useState(false);
 
   async function scan() {
     setScanning(true);
@@ -87,6 +89,29 @@ export function SettingsPage({ onAbout }: { onAbout: () => void }) {
       setUsageError(String(scanError));
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function clean(mode: "unused" | "all") {
+    setCleaning(mode);
+    setError("");
+    setNotice("");
+    try {
+      const result = (await post("/api/settings/cache/clean", { mode })) as {
+        bytes: number;
+        files: number;
+      };
+      setNotice(
+        result.files
+          ? `已清理 ${result.files.toLocaleString("zh-CN")} 个缓存文件，释放 ${formatSize(result.bytes)}`
+          : "没有可清理的缓存",
+      );
+      setConfirmClean(false);
+      await scan();
+    } catch (cleanError) {
+      setError(errorMessage(cleanError));
+    } finally {
+      setCleaning("");
     }
   }
 
@@ -377,6 +402,55 @@ export function SettingsPage({ onAbout }: { onAbout: () => void }) {
                     {data.pendingDataRoot ? "，迁移完成后可重新统计" : ""}。
                   </p>
                 </>
+              )}
+              <div className="cache-actions">
+                <div>
+                  <b>派生缓存</b>
+                  <small>
+                    预览和中间模型都可以重建。默认只清未被模型库引用的部分，不影响源模型和皮肤包。
+                  </small>
+                </div>
+                <div className="cache-buttons">
+                  <button
+                    type="button"
+                    disabled={!!cleaning}
+                    onClick={() => void clean("unused")}
+                  >
+                    {cleaning === "unused" ? "正在清理…" : "清理未使用缓存"}
+                  </button>
+                  {confirmClean ? (
+                    <>
+                      <button
+                        type="button"
+                        className="danger-button"
+                        disabled={!!cleaning}
+                        onClick={() => void clean("all")}
+                      >
+                        {cleaning === "all" ? "正在清理…" : "确认全部清理"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!!cleaning}
+                        onClick={() => setConfirmClean(false)}
+                      >
+                        取消
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={!!cleaning}
+                      onClick={() => setConfirmClean(true)}
+                    >
+                      全部清理…
+                    </button>
+                  )}
+                </div>
+              </div>
+              {confirmClean && (
+                <p className="help">
+                  全部清理会删除所有预览和中间模型，下次打开模型时重新生成；源模型、编辑配置和皮肤包不受影响。
+                </p>
               )}
               {usageError && (
                 <p className="error" role="alert">

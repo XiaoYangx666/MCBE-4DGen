@@ -212,10 +212,18 @@ export class Studio {
   /** Preview caches are keyed by source version; drop ones no longer reachable. */
   async cleanPreviewCache(maxAgeMs = 14 * 24 * 60 * 60 * 1000): Promise<void> {
     const cutoff = Date.now() - maxAgeMs;
+    // Previews referenced by a library entry stay reachable even when the cache
+    // file itself is old; deleting them would make the library show a 404.
+    const referenced = new Set(
+      (await listModels())
+        .map((entry) => entry.previewKey)
+        .filter((key): key is string => !!key)
+        .map((key) => key + '.glb'),
+    );
     for (const name of await readdir(this.previewCacheDir).catch(
       () => [] as string[],
     )) {
-      if (!name.endsWith('.glb')) continue;
+      if (!name.endsWith('.glb') || referenced.has(name)) continue;
       const file = resolve(this.previewCacheDir, name);
       const info = await stat(file).catch(() => null);
       if (info && info.mtimeMs < cutoff)
