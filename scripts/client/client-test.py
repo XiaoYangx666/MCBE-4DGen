@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKS = Path(os.environ.get('SKIN_PACKS_ROOT', r'<skin-packs>'))
+PACKS = Path(os.environ['SKIN_PACKS_ROOT'])
 def digest(p):
     return hashlib.sha256(p.read_bytes()).hexdigest()
 def inventory(folder):

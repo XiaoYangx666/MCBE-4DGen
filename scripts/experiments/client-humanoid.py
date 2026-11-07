@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-TARGET = Path(os.environ.get('SKIN_PACKS_ROOT', r'<skin-packs>')) / 'persona'
+TARGET = Path(os.environ['SKIN_PACKS_ROOT']) / 'persona'
 RECEIPT = Path(os.environ.get('CLIENT_RECEIPT', str(ROOT / '.cache/client-backups/current-persona/receipt.json')))
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--sample', choices=['shino-humanoid', 'shino-tuned', 'shino-source-owned', 'shino-natural'], default='shino-humanoid')

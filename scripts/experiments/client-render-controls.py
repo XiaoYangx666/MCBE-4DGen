@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKS = Path(os.environ.get('SKIN_PACKS_ROOT', r'<skin-packs>'))
+PACKS = Path(os.environ['SKIN_PACKS_ROOT'])
 def inventory(folder):
     return {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in folder.rglob('*') if p.is_file()}
