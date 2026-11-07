@@ -1,6 +1,6 @@
 # 客户端试验脚本归档
 
-此目录保留历次 UUID、贴图尺寸、归属与姿势试验的复现脚本，供历史对照。不要把它们作为日常部署入口。游戏目录默认指向 `<skin-packs>`，可用环境变量 `SKIN_PACKS_ROOT` 覆盖。
+此目录保留历次 UUID、贴图尺寸、归属与姿势试验的复现脚本，供历史对照。不要把它们作为日常部署入口。游戏目录默认读取本机 Minecraft 的 `skin_packs`，可用环境变量 `SKIN_PACKS_ROOT` 覆盖。
 
 日常流程使用仓库根目录的 `npm run workflow`、`npm run packs` 与 [使用文档](../../docs/workflow.md)。
 

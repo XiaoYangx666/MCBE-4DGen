@@ -1,7 +1,7 @@
 # 纹理工作室 v1：真实模型验证与交付
 
 > 分支 `feat/texture-studio-v1`，基于 `origin/research/texture-allocation-v3`
-> 未合并 main/v2/v3，未发布 Release，未自动部署，未触碰 `<release-dir>`。
+> 未合并 main/v2/v3，未发布 Release，未自动部署，未触碰仓库外的发布目录。
 
 ## 1. 本轮提交
 

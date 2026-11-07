@@ -33,7 +33,7 @@
 
 ### shino-source
 
-`<repo>\video\remotion\public\models\shino-source.glb`
+`video/remotion/public/models/shino-source.glb`
 
 SHA-256 `b7ca82d01c0f51a534f1b58a45be1833acd28a85489c80d4c7d8f7a19131d3d3`
 
@@ -99,7 +99,7 @@ SHA-256 `b7ca82d01c0f51a534f1b58a45be1833acd28a85489c80d4c7d8f7a19131d3d3`
 
 ### mingyin-source
 
-`<repo>\video\remotion\public\models\mingyin-source.glb`
+`video/remotion/public/models/mingyin-source.glb`
 
 SHA-256 `cae17e8500b615ffb2b4a0ed379394d1bdb9c54f373d6f4400205ef80f672433`
 
@@ -165,7 +165,7 @@ SHA-256 `cae17e8500b615ffb2b4a0ed379394d1bdb9c54f373d6f4400205ef80f672433`
 
 ### girl-source
 
-`<repo>\video\remotion\public\models\girl-source.glb`
+`video/remotion/public/models/girl-source.glb`
 
 SHA-256 `62c2a3196f02fa53a06c359f556a9b3160f8f2a0e3edfdc7288d210d6dce73ad`
 
@@ -232,7 +232,7 @@ SHA-256 `62c2a3196f02fa53a06c359f556a9b3160f8f2a0e3edfdc7288d210d6dce73ad`
 
 ### nana-source
 
-`<repo>\video\remotion\public\models\nana-source.glb`
+`video/remotion/public/models/nana-source.glb`
 
 SHA-256 `0db3528ca54598c2b7c4c995c3a51efbc0443f5ac9bfbb196d29cc1e29d1388c`
 
@@ -295,7 +295,7 @@ SHA-256 `0db3528ca54598c2b7c4c995c3a51efbc0443f5ac9bfbb196d29cc1e29d1388c`
 
 ### lumine-source
 
-`<repo>\video\remotion\public\models\lumine-source.glb`
+`video/remotion/public/models/lumine-source.glb`
 
 SHA-256 `a2ee041baa979a2a97e8f63ae7bf63e043e7fec978bc3b044dc3d389ddc1463d`
 
@@ -358,7 +358,7 @@ SHA-256 `a2ee041baa979a2a97e8f63ae7bf63e043e7fec978bc3b044dc3d389ddc1463d`
 
 ### furina-source
 
-`<repo>\video\remotion\public\models\furina-source.glb`
+`video/remotion/public/models/furina-source.glb`
 
 SHA-256 `ffb41cf74c2b8969906eabee10ff331cdd30f54610cc93e27d6dc0d66eb8c167`
 
