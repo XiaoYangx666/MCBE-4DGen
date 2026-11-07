@@ -43,7 +43,7 @@ npm run webapp:deploy       # 构建并部署
    - Root directory：`/`
    - Build command：`npm run webapp:build`
    - Deploy command：`npx wrangler deploy`
-   - Preview command：保持默认 `npx wrangler preview`（启用 PR 预览时使用）
+   - Preview command：保持默认 `npx wrangler preview`（启用 PR 预览时使用）。纯静态资源 Worker 需要 `wrangler.jsonc` 里有空的 `"previews": {}`，否则预览构建会报 missing previews block。
 5. 保存后推送到 `main` 即自动构建和部署
 
 Workers Builds 会自动安装依赖，并在 Cloudflare 侧生成/复用自己的构建 Token。只有想用自定义权限的 Token 时才需要在 Workers Builds 设置里手动指定。

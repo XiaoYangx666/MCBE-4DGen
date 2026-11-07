@@ -2,6 +2,9 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   // Assets-only Worker: Cloudflare serves the built Vite app directly.
   "name": "4dgen-web",
+  // Required by `wrangler preview` for Workers Builds PR previews. The block
+  // can stay empty because assets and compatibility settings live at the top level.
+  "previews": {},
   // Keep this aligned with the date the Worker runtime is validated against.
   "compatibility_date": "2026-10-26",
   "assets": {
