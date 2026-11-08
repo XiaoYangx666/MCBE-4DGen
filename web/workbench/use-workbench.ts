@@ -215,7 +215,7 @@ export function useWorkbench() {
           }
           break;
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 150));
       }
     } catch (reason) {
       if (token === run.current) {
