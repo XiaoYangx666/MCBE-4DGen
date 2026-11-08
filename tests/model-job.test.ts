@@ -95,5 +95,14 @@ describe('browser model job helpers', () => {
     expect(modelResultKey(base)).not.toBe(
       modelResultKey({ ...base, textureMode: 'legacy' }),
     );
+    // Per-part overrides are part of the geometry signature, order-independent.
+    expect(
+      modelResultKey({ ...base, partRatios: { head: 0.5, body: 0.1 } }),
+    ).toBe(
+      modelResultKey({ ...base, partRatios: { body: 0.1, head: 0.5 } }),
+    );
+    expect(modelResultKey(base)).not.toBe(
+      modelResultKey({ ...base, partRatios: { head: 0.5 } }),
+    );
   });
 });

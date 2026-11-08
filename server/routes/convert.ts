@@ -6,6 +6,7 @@ import type { HumanoidProfile } from '../../src/humanoid.ts';
 import { optimizeModel } from '../../src/optimizer.ts';
 import { filterMaterialKeys, filterParts } from '../../src/parts.ts';
 import { normalizeSelection } from '../../src/selection.ts';
+import { sanitizePartRatios } from '../../src/reduce-policy.ts';
 import { buildSkinPack } from '../../src/skin-pack-files.ts';
 import { zipSkinPack } from '../../src/skin-pack.ts';
 import { HttpError, json, stableJson } from '../http.ts';
@@ -25,6 +26,8 @@ export const convertRoutes = [
       binding: string;
       ratio: number;
       maxError: number;
+      /** Per-part retention overrides keyed by stable part id. */
+      partRatios?: Record<string, number>;
       height: number;
       profile: HumanoidProfile | null;
       textureMode?: 'legacy' | 'budget';
@@ -51,6 +54,17 @@ export const convertRoutes = [
       (body.includedParts !== undefined &&
         (!Array.isArray(body.includedParts) ||
           body.includedParts.some((id) => typeof id !== 'string'))) ||
+      (body.partRatios !== undefined &&
+        (!body.partRatios ||
+          typeof body.partRatios !== 'object' ||
+          Array.isArray(body.partRatios) ||
+          Object.values(body.partRatios).some(
+            (value) =>
+              typeof value !== 'number' ||
+              !Number.isFinite(value) ||
+              value <= 0 ||
+              value > 1,
+          ))) ||
       (body.textureMode !== undefined &&
         !['legacy', 'budget'].includes(body.textureMode)) ||
       (body.textureTarget !== undefined &&
@@ -73,6 +87,14 @@ export const convertRoutes = [
       ? selection.includedParts ?? []
       : session.parts.map((part) => part.id);
     if (!keepParts.length) throw Error('请至少保留一个模型部件');
+    // Overrides for dropped or unknown parts are ignored rather than rejected:
+    // a stale saved selection must not block an otherwise valid conversion.
+    const keepPartSet = new Set(keepParts);
+    const partRatios = Object.fromEntries(
+      Object.entries(sanitizePartRatios(body.partRatios)).filter(([id]) =>
+        keepPartSet.has(id),
+      ),
+    );
     const textureMode = body.textureMode ?? 'legacy';
     const textureTarget = body.textureTarget ?? 'texel-retention';
     const preview = body.preview === true;
@@ -84,6 +106,7 @@ export const convertRoutes = [
       binding: body.binding,
       ratio: body.ratio,
       maxError: body.maxError,
+      partRatios,
       height: body.height,
       profile: body.profile,
       materialWeights,
@@ -98,6 +121,7 @@ export const convertRoutes = [
       binding: body.binding,
       ratio: body.ratio,
       maxError: body.maxError,
+      partRatios,
       height: body.height,
       profile: body.profile,
     });
@@ -113,6 +137,7 @@ export const convertRoutes = [
           binding: body.binding,
           ratio: body.ratio,
           maxError: body.maxError,
+          partRatios,
           height: body.height,
           excluded,
           materialWeights,
@@ -144,6 +169,7 @@ export const convertRoutes = [
         binding: body.binding,
         ratio: body.ratio,
         maxError: body.maxError,
+        partRatios,
         height: body.height,
         excluded,
         profile: body.profile,
@@ -208,7 +234,11 @@ export const convertRoutes = [
                 }
               : {}),
             ...(body.profile ? { profile: body.profile } : {}),
-            reduction: { ratio: body.ratio, maxError: body.maxError },
+            reduction: {
+              ratio: body.ratio,
+              maxError: body.maxError,
+              ...(Object.keys(partRatios).length ? { partRatios } : {}),
+            },
           });
           exported = result;
           details = result.binding;
@@ -222,7 +252,11 @@ export const convertRoutes = [
               center: 'ground',
               rotation: [0, body.profile?.rotationYDegrees ?? 0, 0],
             },
-            mesh: { ratio: body.ratio, maxError: body.maxError },
+            mesh: {
+              ratio: body.ratio,
+              maxError: body.maxError,
+              ...(Object.keys(partRatios).length ? { partRatios } : {}),
+            },
             texture: {
               compactSize: 128,
               padding: atlasPadding,

@@ -86,6 +86,34 @@ describe('webapp mesh reduction', () => {
     expect(reduced.sourcePartTable).toBeUndefined();
   });
 
+  it('applies per-part retention and preserves part ids for the kept groups', async () => {
+    const source = grid(8);
+    const half = source.triangles / 2;
+    source.sourceParts = Uint16Array.from(
+      { length: source.triangles },
+      (_, index) => (index < half ? 0 : 1),
+    );
+    source.sourcePartTable = [
+      { id: 'head', name: '头部' },
+      { id: 'body', name: '身体' },
+    ];
+    const result = await reduceBatches([source], {
+      ratio: 0.5,
+      maxError: 0.03,
+      partRatios: { head: 1, body: 0.1 },
+    });
+    const reduced = result.batches[0]!;
+    expect(reduced.sourcePartTable?.map((part) => part.id)).toEqual(['head', 'body']);
+    expect(reduced.sourceParts).toHaveLength(reduced.triangles);
+    const counts = [0, 0];
+    for (const index of reduced.sourceParts!) counts[index]!++;
+    // The head override keeps every triangle; only the body is simplified.
+    expect(counts[0]).toBe(half);
+    expect(counts[1]).toBeGreaterThan(0);
+    expect(counts[1]).toBeLessThan(half);
+    expect(result.after).toBeLessThan(result.before);
+  });
+
   it('reports per-material progress for the UI', async () => {
     const calls: [number, number, string][] = [];
     await reduceBatches([grid(4), { ...grid(4), key: 'mat2', name: '第二材质' }], {

@@ -20,6 +20,7 @@ import { nextFrame } from '../engine/frame';
 import { preparePreviewMaterials } from '../engine/preview-materials';
 import type { TaskProgress } from '../engine/progress';
 import {
+  backMultiplier,
   loadModelJob,
   materialLabels as buildMaterialLabels,
   modelResultKey,
@@ -27,7 +28,6 @@ import {
   prepareConvertedBatches,
   prepareModelInput,
   renderConvertedBatches,
-  sourceTriangleCount,
   type PreparedModelInput,
 } from '../engine/model-job';
 import {
@@ -42,6 +42,7 @@ import { buildGeometryPreview } from '../lib/output-preview';
 import { useSkinPack } from '../lib/pack-context';
 import type { TextureSource } from '../engine/types';
 import { RatioField } from '../../web/shared/RatioField';
+import { PartRatioList } from '../../web/shared/PartRatioList';
 import { MaterialDonut } from './MaterialDonut';
 import { formatBytes } from '../../web/shared/format';
 import { PoseControls } from '../../web/shared/PoseControls';
@@ -113,6 +114,8 @@ export function ModelStudio({
   const [height, setHeight] = useState(32);
   const [heightText, setHeightText] = useState('32');
   const [ratio, setRatio] = useState(0.2);
+  /** Per-part retention overrides keyed by stable part id; absent = global ratio. */
+  const [partRatios, setPartRatios] = useState<Record<string, number>>({});
   const [maxError, setMaxError] = useState(0.03);
   const [doubleSided, setDoubleSided] = useState<DoubleSidedPolicy>('source');
   const [rotationY, setRotationY] = useState(0);
@@ -248,6 +251,16 @@ export function ModelStudio({
     return map;
   }, [source]);
 
+  const setPartRatio = (id: string, value: number | null) => {
+    setPartRatios((current) => {
+      const next = { ...current };
+      if (value === null) delete next[id];
+      else next[id] = value;
+      return next;
+    });
+  };
+  const resetPartRatios = () => setPartRatios({});
+
   const resetLoadState = () => {
     setResult(null);
     setViewMode('source');
@@ -255,6 +268,7 @@ export function ModelStudio({
     setSource(null);
     setSourceBytes(0);
     setIncluded(new Set());
+    setPartRatios({});
     setRotationY(0);
     setArmSpread(0);
     setArmAvailable(false);
@@ -382,6 +396,7 @@ export function ModelStudio({
       doubleSided,
       ratio,
       maxError,
+      partRatios,
       included,
       includedParts,
       weights,
@@ -390,7 +405,7 @@ export function ModelStudio({
       atlasSharing: true,
       modelTriangles: model?.stats.triangles ?? 0,
     }),
-  ].join('|'), [binding, name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, includedParts, weights, textureTarget, model?.stats.triangles]);
+  ].join('|'), [binding, name, height, rotationY, armSpread, doubleSided, ratio, maxError, partRatios, included, includedParts, weights, textureTarget, model?.stats.triangles]);
 
   const convert = async () => {
     if (!model || busy) return;
@@ -460,6 +475,10 @@ export function ModelStudio({
         [...includedParts].sort().join(','),
         ratio,
         maxError,
+        Object.entries(partRatios)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([id, value]) => `${id}:${value.toFixed(2)}`)
+          .join(','),
       ].join('|');
       const cached = preparedCache.current;
       const reuse = cached?.extracted === extracted && cached.key === geometryKey;
@@ -470,6 +489,7 @@ export function ModelStudio({
             includedParts,
             ratio,
             maxError,
+            ...(Object.keys(partRatios).length ? { partRatios } : {}),
             onProgress: setProgress,
           });
       if (!reuse) preparedCache.current = { extracted, key: geometryKey, prepared };
@@ -552,10 +572,38 @@ export function ModelStudio({
   const totalBytes = sourceBytes;
   const heightValue = Number(heightText);
   const heightValid = heightText.trim() !== '' && Number.isFinite(heightValue) && heightValue >= 1 && heightValue <= 128;
-  const sourceTriangles = source
-    ? sourceTriangleCount(source.batches, included, doubleSided)
-    : model?.stats.triangles ?? 0;
-  const targetFaces = Math.max(1, Math.round(sourceTriangles * ratio));
+  const triangleBudget = useMemo(() => {
+    if (!source)
+      return {
+        source: model?.stats.triangles ?? 0,
+        target: Math.max(1, Math.round((model?.stats.triangles ?? 0) * ratio)),
+      };
+    let sourceFaces = 0;
+    let targetFaces = 0;
+    for (const batch of source.batches) {
+      if (!included.has(batch.key)) continue;
+      const multiplier = backMultiplier(batch, doubleSided);
+      if (batch.sourceParts && batch.sourcePartTable) {
+        const counts = new Map<number, number>();
+        for (const index of batch.sourceParts)
+          counts.set(index, (counts.get(index) ?? 0) + 1);
+        for (const [index, count] of counts) {
+          const part = batch.sourcePartTable[index];
+          if (!part || !includedParts.has(part.id)) continue;
+          const faces = count * multiplier;
+          sourceFaces += faces;
+          targetFaces += faces * (partRatios[part.id] ?? ratio);
+        }
+      } else {
+        const faces = batch.triangles * multiplier;
+        sourceFaces += faces;
+        targetFaces += faces * ratio;
+      }
+    }
+    return { source: Math.round(sourceFaces), target: Math.max(1, Math.round(targetFaces)) };
+  }, [source, included, includedParts, doubleSided, partRatios, ratio, model?.stats.triangles]);
+  const sourceTriangles = triangleBudget.source;
+  const targetFaces = triangleBudget.target;
   const actualFaces = result && !stale ? result.report.triangles : null;
   const selectedMaterial = source?.batches.find((batch) => batch.key === soloKey)?.name ?? null;
   const materialLabels = useMemo(
@@ -595,6 +643,11 @@ export function ModelStudio({
       };
     });
   }, [source, materialLabels, materialThumbs]);
+  const partTriangles = useMemo(() => {
+    const map = new Map<string, number>();
+    if (source) for (const part of extractedParts(source)) map.set(part.id, part.triangles);
+    return map;
+  }, [source]);
   const studioMaterials = useMemo<StudioMaterial[]>(() => {
     if (!source) return [];
     const measured = new Map(
@@ -1108,6 +1161,20 @@ export function ModelStudio({
               />
             </label>
             <p className="field-help">默认 0.03。调小更保形，可能减不到目标；调大减得更多，但更容易丢轮廓。</p>
+            <PartRatioList
+              parts={studioParts.map((part) => ({
+                id: part.id,
+                name: part.name,
+                group: part.group,
+                triangles: partTriangles.get(part.id),
+              }))}
+              includedParts={includedParts}
+              ratios={partRatios}
+              defaultRatio={ratio}
+              onChange={setPartRatio}
+              onResetAll={resetPartRatios}
+              disabled={loading || busy}
+            />
           </div>
 
           <div className="field-group">

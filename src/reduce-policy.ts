@@ -17,3 +17,39 @@ export const isValidReduceRatio = (ratio: number): boolean =>
 
 export const isValidReduceMaxError = (maxError: number): boolean =>
   Number.isFinite(maxError) && maxError >= 0;
+
+/** Per-part retention overrides keyed by a stable source-part id. */
+export type ReducePartRatios = Readonly<Record<string, number>>;
+
+/**
+ * Effective retention for one part: its own override when present and valid,
+ * otherwise the global ratio. Shared so the Node and browser reducers agree on
+ * what an empty or invalid override means.
+ */
+export function partReduceRatio(
+  partId: string | undefined,
+  fallback: number,
+  ratios?: ReducePartRatios,
+): number {
+  if (!partId || !ratios) return fallback;
+  const value = ratios[partId];
+  return value !== undefined && isValidReduceRatio(value) ? value : fallback;
+}
+
+/** Drop unknown/invalid entries before they reach a reducer or get persisted. */
+export function sanitizePartRatios(input: unknown): Record<string, number> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const ratios: Record<string, number> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (
+      key &&
+      key !== '__proto__' &&
+      key !== 'constructor' &&
+      key !== 'prototype' &&
+      typeof value === 'number' &&
+      isValidReduceRatio(value)
+    )
+      ratios[key] = value;
+  }
+  return ratios;
+}

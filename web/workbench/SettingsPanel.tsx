@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { HumanoidProfile } from "../../src/humanoid";
 import type { Result, Session } from "./types";
 import { PoseControls } from "../shared/PoseControls";
+import { PartRatioList } from "../shared/PartRatioList";
 import { RatioField } from "../shared/RatioField";
 
 type SettingsPanelProps = {
@@ -13,6 +14,10 @@ type SettingsPanelProps = {
   changed: () => void;
   ratio: number;
   setRatio: Dispatch<SetStateAction<number>>;
+  partRatios: Readonly<Record<string, number>>;
+  setPartRatio: (id: string, ratio: number | null) => void;
+  resetPartRatios: () => void;
+  includedParts: ReadonlySet<string>;
   estimate: { source: number; target: number };
   result: Result | null;
   stale: boolean;
@@ -33,7 +38,9 @@ type SettingsPanelProps = {
 };
 
 export function SettingsPanel(props: SettingsPanelProps) {
-  const { session, busy, binding, setBinding, changed, ratio, setRatio, estimate,
+  const { session, busy, binding, setBinding, changed, ratio, setRatio,
+    partRatios, setPartRatio, resetPartRatios, includedParts,
+    estimate,
     result, stale, maxError, setMaxError, height, setHeight, setMode, profile,
     updateProfile, profileText, setProfileText, setProfile, setError,
     retryPreview, previewBusy, error } = props;
@@ -84,6 +91,20 @@ export function SettingsPanel(props: SettingsPanelProps) {
             showBudget={!!session}
           />
         </div>
+        <PartRatioList
+          parts={(session?.parts ?? []).map((part) => ({
+            id: part.id,
+            name: part.name,
+            group: part.mesh || part.node,
+            triangles: part.triangles,
+          }))}
+          includedParts={includedParts}
+          ratios={partRatios}
+          defaultRatio={ratio}
+          onChange={(id, value) => setPartRatio(id, value)}
+          onResetAll={resetPartRatios}
+          disabled={busy || !session}
+        />
         <details className="advanced-reduction">
           <summary>高级减面设置（通常保持默认）</summary>{" "}
           <label className="field">

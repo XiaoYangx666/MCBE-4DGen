@@ -74,7 +74,12 @@ export async function exportHumanoid(
     atlasBudget?: 'texel-density' | 'texel-retention' | 'texel-balanced';
     atlasSharing?: boolean;
     profile?: HumanoidProfile;
-    reduction?: { ratio: number; maxError: number };
+    reduction?: {
+      ratio: number;
+      maxError: number;
+      /** Per-part retention overrides keyed by stable source-part id. */
+      partRatios?: Record<string, number>;
+    };
     onStage?: (phase: string) => void;
     prepared?: PreparedHumanoid;
     onPrepared?: (prepared: PreparedHumanoid) => void;

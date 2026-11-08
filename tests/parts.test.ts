@@ -103,6 +103,22 @@ test('assignParts distinguishes primitives that share one material', () => {
   assert.deepEqual(assignParts(doc).map((part) => part.id), ids);
 });
 
+test('prepared models keep part ids stable after filtering', async () => {
+  const doc = document();
+  assignParts(doc);
+  filterParts(doc, new Set(['p0.1', 'n1', 'n2']));
+  const prepared = await prepareStaticModel(model(doc));
+  const ids = prepared.model.document
+    .getRoot()
+    .listMeshes()
+    .flatMap((mesh) => mesh.listPrimitives())
+    .map((primitive) => (primitive.getExtras()[PART_EXTRA] as { id: string }).id)
+    .sort();
+  // Filtering must not renumber the kept parts: the UI and per-part reduction
+  // both address parts by the ids assigned before the filter.
+  assert.deepEqual(ids, ['n1', 'n2', 'p0.1']);
+});
+
 test('deleting one part keeps the other part that shares the material', () => {
   const doc = document();
   const report = filterParts(doc, new Set(['p0.1', 'n1', 'n2']));

@@ -221,6 +221,8 @@ export interface ConvertExtractedOptions {
   binding?: BindingMode;
   ratio: number;
   maxError: number;
+  /** Per-part retention overrides keyed by stable source-part id. */
+  partRatios?: Readonly<Record<string, number>>;
   included: ReadonlySet<string>;
   /** Part ids to keep; omitted means every part of the included materials. */
   includedParts?: ReadonlySet<string>;
@@ -249,6 +251,8 @@ export interface PrepareConvertedOptions {
   includedParts?: ReadonlySet<string>;
   ratio: number;
   maxError: number;
+  /** Per-part retention overrides keyed by stable source-part id. */
+  partRatios?: Readonly<Record<string, number>>;
   onProgress?: ProgressHandler;
 }
 
@@ -287,12 +291,15 @@ export async function prepareConvertedBatches(
   const sourceTriangles = batches.reduce((sum, batch) => sum + batch.triangles, 0);
 
   let reductionWarnings: string[] = [];
-  if (options.ratio < 0.999) {
+  const hasOverrides =
+    !!options.partRatios && Object.keys(options.partRatios).length > 0;
+  if (options.ratio < 0.999 || hasOverrides) {
     report('减面…', `${batches.length} 个材质`);
     await nextFrame();
     const reduced = await reduceBatches(batches, {
       ratio: options.ratio,
       maxError: options.maxError,
+      ...(options.partRatios ? { partRatios: options.partRatios } : {}),
       onProgress: (done, total, name) =>
         report(`减面 ${done + 1}/${total}`, name),
     });
@@ -365,6 +372,7 @@ export async function convertExtractedModel(
     ...(options.includedParts ? { includedParts: options.includedParts } : {}),
     ratio: options.ratio,
     maxError: options.maxError,
+    ...(options.partRatios ? { partRatios: options.partRatios } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });
   return renderConvertedBatches(prepared, {
@@ -417,6 +425,8 @@ export interface ModelResultKeyInput {
   doubleSided: DoubleSidedPolicy;
   ratio: number;
   maxError: number;
+  /** Per-part retention overrides; absent entries inherit `ratio`. */
+  partRatios?: Readonly<Record<string, number>>;
   included: Iterable<string>;
   /** Part ids included in the conversion; omitted means all parts. */
   includedParts?: Iterable<string>;
@@ -437,6 +447,12 @@ export function modelResultKey(input: ModelResultKeyInput) {
     input.doubleSided,
     input.ratio.toFixed(2),
     input.maxError.toFixed(3),
+    input.partRatios
+      ? Object.entries(input.partRatios)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, value]) => `${key}:${value.toFixed(2)}`)
+          .join(',')
+      : '',
     [...input.included].sort().join(','),
     input.includedParts ? [...input.includedParts].sort().join(',') : '*',
     input.textureMode ?? 'budget',

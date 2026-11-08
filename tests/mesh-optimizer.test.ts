@@ -114,3 +114,23 @@ test('invalid options and all-degenerate geometry fail', async () => {
   input.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!.getIndices()!.setArray(new Uint16Array([0, 0, 0]));
   await assert.rejects(optimizeMesh(input), /All triangles are degenerate/);
 });
+
+test('per-part targets keep detailed primitives intact and simplify the rest', async () => {
+  const input = grid(), doc = input.document, mesh = doc.getRoot().listMeshes()[0]!;
+  const keep = mesh.listPrimitives()[0]!;
+  keep.setExtras({ _fourdgenPart: { id: 'head', name: 'head' } });
+  const cut = keep.clone()
+    .setMaterial(doc.createMaterial('cut'))
+    .setExtras({ _fourdgenPart: { id: 'body', name: 'body' } });
+  mesh.addPrimitive(cut);
+
+  const result = await optimizeMesh(input, {
+    ratio: 0.5,
+    maxError: 0.01,
+    partRatios: { head: 1, body: 0.1 },
+  });
+  const [kept, reduced] = result.report.primitives;
+  assert.equal(kept!.after, kept!.before);
+  assert.ok(reduced!.after < reduced!.before * 0.2);
+  assert.equal(result.report.target, kept!.target + reduced!.target);
+});

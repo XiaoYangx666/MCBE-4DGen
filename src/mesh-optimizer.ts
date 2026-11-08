@@ -2,6 +2,8 @@ import type { Document, Primitive } from '@gltf-transform/core';
 import { cloneDocument, compactPrimitive, weldPrimitive } from '@gltf-transform/functions';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import type { IntermediateModel } from './model.ts';
+import { readPartExtra } from './parts.ts';
+import { partReduceRatio, type ReducePartRatios } from './reduce-policy.ts';
 import { validateModel } from './validate-model.ts';
 
 export interface MeshOptions {
@@ -10,6 +12,11 @@ export interface MeshOptions {
   triangles?: number;
   /** Relative to each primitive's Meshoptimizer scale, not a Hausdorff bound. */
   maxError?: number;
+  /**
+   * Optional per-part retention overrides keyed by stable source-part id.
+   * Applies to `ratio`/`preset`; an explicit `triangles` budget wins.
+   */
+  partRatios?: ReducePartRatios;
 }
 
 const presets = { original: 1, high: 0.75, balanced: 0.5, performance: 0.25 } as const;
@@ -143,14 +150,28 @@ export async function optimizeMesh(input: IntermediateModel, options: MeshOption
   const cleaned = primitives.reduce((n, p) => n + count(p), 0);
   if (!cleaned) throw new Error('All triangles are degenerate; refusing to emit an empty model');
   const ratio = options.ratio ?? presets[options.preset ?? 'original'];
-  const requested = Math.min(cleaned, options.triangles ?? Math.max(1, Math.floor(cleaned * ratio)));
-  const target = Math.max(primitives.length, requested);
-  const allocations = primitives.map((p) => Math.max(1, Math.floor(count(p) / cleaned * target)));
-  let allocated = allocations.reduce((a, b) => a + b, 0);
-  // Allocate residual budget without permitting any primitive to disappear.
-  for (let i = 0; allocated !== target; i = (i + 1) % allocations.length) {
-    if (allocated < target && allocations[i]! < count(primitives[i]!)) { allocations[i] = allocations[i]! + 1; allocated++; }
-    else if (allocated > target && allocations[i]! > 1) { allocations[i] = allocations[i]! - 1; allocated--; }
+  const hasPartRatios = !!options.partRatios && Object.keys(options.partRatios).length > 0;
+  let requested: number;
+  let allocations: number[];
+  if (hasPartRatios && options.triangles === undefined) {
+    // Per-part targets replace the global budget: a detailed part keeps more
+    // triangles without taking them away from the parts that were cut harder.
+    allocations = primitives.map((p) => {
+      const part = readPartExtra(p.getExtras())?.id;
+      const partRatio = partReduceRatio(part, ratio, options.partRatios);
+      return Math.max(1, Math.min(count(p), Math.floor(count(p) * partRatio)));
+    });
+    requested = allocations.reduce((a, b) => a + b, 0);
+  } else {
+    requested = Math.min(cleaned, options.triangles ?? Math.max(1, Math.floor(cleaned * ratio)));
+    const target = Math.max(primitives.length, requested);
+    allocations = primitives.map((p) => Math.max(1, Math.floor(count(p) / cleaned * target)));
+    let allocated = allocations.reduce((a, b) => a + b, 0);
+    // Allocate residual budget without permitting any primitive to disappear.
+    for (let i = 0; allocated !== target; i = (i + 1) % allocations.length) {
+      if (allocated < target && allocations[i]! < count(primitives[i]!)) { allocations[i] = allocations[i]! + 1; allocated++; }
+      else if (allocated > target && allocations[i]! > 1) { allocations[i] = allocations[i]! - 1; allocated--; }
+    }
   }
   const warnings: string[] = [];
   const details = primitives.map((p, id) => {

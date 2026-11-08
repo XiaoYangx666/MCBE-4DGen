@@ -50,6 +50,9 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     setFocus,
     ratio,
     setRatio,
+    partRatios,
+    setPartRatio,
+    resetPartRatios,
     maxError,
     setMaxError,
     height,
@@ -437,6 +440,10 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                 changed={changed}
                 ratio={ratio}
                 setRatio={setRatio}
+                partRatios={partRatios}
+                setPartRatio={setPartRatio}
+                resetPartRatios={resetPartRatios}
+                includedParts={includedParts}
                 estimate={estimate}
                 result={result}
                 stale={stale}

@@ -41,6 +41,8 @@ export interface EditSettings {
   binding: string;
   ratio: number;
   maxError: number;
+  /** Per-part retention overrides keyed by stable part id; missing parts use `ratio`. */
+  partRatios?: Record<string, number>;
   height: number;
   /** Material keys to exclude. Legacy saves may contain unique names. */
   excluded: string[];

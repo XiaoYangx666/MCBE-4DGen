@@ -32,6 +32,8 @@ export interface PackMeta {
   binding?: string;
   ratio?: number;
   maxError?: number;
+  /** Per-part retention overrides keyed by stable part id. */
+  partRatios?: Record<string, number>;
   height?: number;
   excluded?: string[];
   profile?: HumanoidProfile | null;

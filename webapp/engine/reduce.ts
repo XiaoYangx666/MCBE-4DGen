@@ -2,17 +2,25 @@ import { MeshoptSimplifier } from 'meshoptimizer/simplifier';
 import {
   isValidReduceMaxError,
   isValidReduceRatio,
+  partReduceRatio,
   REDUCE_ATTRIBUTE_WEIGHTS,
   REDUCE_SIMPLIFY_OPTIONS,
+  type ReducePartRatios,
 } from '../../src/reduce-policy.ts';
 import { yieldToBrowser } from './progress.ts';
-import type { SourceBatch } from './types.ts';
+import type { SourceBatch, SourcePart } from './types.ts';
 
 export interface ReduceOptions {
   /** Fraction of triangles to keep, 0.01–1. */
   ratio: number;
   /** Shape error budget; the desktop workbench default is 0.03. */
   maxError: number;
+  /**
+   * Optional per-part retention overrides keyed by stable source-part id.
+   * Parts without an entry inherit `ratio`; providing overrides switches the
+   * reducer to per-part grouping so each part can be simplified independently.
+   */
+  partRatios?: ReducePartRatios;
   /** Called before each material so the UI can show `3/12`. */
   onProgress?: (done: number, total: number, name: string) => void;
 }
@@ -22,6 +30,8 @@ export interface ReduceDetail {
   before: number;
   after: number;
   error: number;
+  /** Triangles requested by the effective (per-part) retention. */
+  target?: number;
 }
 
 export interface ReduceResult {
@@ -54,6 +64,7 @@ export async function reduceBatches(
   const warnings: string[] = [];
   let before = 0;
   let after = 0;
+  const hasOverrides = !!options.partRatios && Object.keys(options.partRatios).length > 0;
 
   for (let index = 0; index < batches.length; index++) {
     const batch = batches[index]!;
@@ -61,7 +72,7 @@ export async function reduceBatches(
     before += triangles;
     options.onProgress?.(index, batches.length, batch.name);
     await yieldToBrowser();
-    if (options.ratio >= 0.999 || triangles <= 1) {
+    if ((!hasOverrides && options.ratio >= 0.999) || triangles <= 1) {
       output.push(batch);
       after += triangles;
       continue;
@@ -71,7 +82,9 @@ export async function reduceBatches(
       output.push(reduced.batch);
       details.push(reduced.detail);
       after += reduced.detail.after;
-      if (reduced.detail.after > reduced.detail.before * options.ratio * 1.15) {
+      const expected =
+        reduced.detail.target ?? reduced.detail.before * options.ratio;
+      if (reduced.detail.after > expected * 1.15) {
         warnings.push(
           `材质「${batch.name}」受形状容限限制，实际保留 ${Math.round((reduced.detail.after / reduced.detail.before) * 100)}% 面数。`,
         );
@@ -96,8 +109,153 @@ export async function reduceBatches(
 }
 
 function reduceBatch(batch: SourceBatch, options: ReduceOptions) {
+  const overrides =
+    options.partRatios && Object.keys(options.partRatios).length
+      ? options.partRatios
+      : null;
+  if (overrides && batch.sourcePartTable?.length && batch.sourceParts?.length)
+    return reduceBySourcePart(batch, options, overrides);
   if (batch.parts?.length) return reduceParts(batch, options);
   return simplifyBatch(batch, options);
+}
+
+/**
+ * Reduce each (source part × player part) group on its own when the caller
+ * supplied per-part retention. Keeping both ids uniform inside a simplified
+ * chunk preserves the UI part identity and the Bedrock bone assignment.
+ */
+function reduceBySourcePart(
+  batch: SourceBatch,
+  options: ReduceOptions,
+  ratios: ReducePartRatios,
+) {
+  const table = batch.sourcePartTable!;
+  const triangles = batch.positions.length / 9;
+  const humanoid = batch.parts;
+  const groups = new Map<
+    string,
+    { source: number; humanoid: number; list: number[] }
+  >();
+  for (let t = 0; t < triangles; t++) {
+    const source = batch.sourceParts![t] ?? 0;
+    const part = humanoid?.[t] ?? 0;
+    const key = `${source}:${part}`;
+    const group = groups.get(key);
+    if (group) group.list.push(t);
+    else groups.set(key, { source, humanoid: part, list: [t] });
+  }
+
+  if (groups.size <= 1) {
+    const first = groups.values().next().value;
+    const source = first?.source ?? 0;
+    const part = table[source] ?? { id: `p${source}`, name: `部件 ${source + 1}` };
+    const ratio = partReduceRatio(part.id, options.ratio, ratios);
+    const simplified =
+      ratio >= 0.999
+        ? {
+            batch,
+            detail: {
+              name: batch.name,
+              before: triangles,
+              after: triangles,
+              error: 0,
+              target: Math.round(triangles * ratio),
+            },
+          }
+        : simplifyBatch(batch, { ...options, ratio });
+    return {
+      batch: {
+        ...simplified.batch,
+        sourceParts: new Uint16Array(simplified.detail.after),
+        sourcePartTable: [part],
+        ...(humanoid
+          ? {
+              parts: new Uint8Array(simplified.detail.after).fill(
+                first?.humanoid ?? 0,
+              ),
+            }
+          : {}),
+      },
+      detail: {
+        ...simplified.detail,
+        target:
+          simplified.detail.target ?? Math.round(triangles * ratio),
+      },
+    };
+  }
+
+  const positionChunks: Float32Array[] = [];
+  const normalChunks: Float32Array[] = [];
+  const uvChunks: Float32Array[] = [];
+  const partChunks: Uint8Array[] = [];
+  const sourceChunks: Uint16Array[] = [];
+  const remap = new Map<number, number>();
+  const newTable: SourcePart[] = [];
+  let before = 0;
+  let after = 0;
+  let target = 0;
+  let error = 0;
+  for (const group of groups.values()) {
+    let mapped = remap.get(group.source);
+    if (mapped === undefined) {
+      mapped = newTable.length;
+      remap.set(group.source, mapped);
+      newTable.push(
+        table[group.source] ?? {
+          id: `p${group.source}`,
+          name: `部件 ${group.source + 1}`,
+        },
+      );
+    }
+    const part = newTable[mapped]!;
+    const ratio = partReduceRatio(part.id, options.ratio, ratios);
+    const simplified =
+      ratio >= 0.999
+        ? {
+            batch: sliceTriangles(batch, group.list),
+            detail: {
+              name: batch.name,
+              before: group.list.length,
+              after: group.list.length,
+              error: 0,
+              target: Math.round(group.list.length * ratio),
+            },
+          }
+        : simplifyBatch(sliceTriangles(batch, group.list), {
+            ...options,
+            ratio,
+          });
+    positionChunks.push(simplified.batch.positions);
+    normalChunks.push(simplified.batch.normals);
+    if (simplified.batch.uvs) uvChunks.push(simplified.batch.uvs);
+    partChunks.push(
+      new Uint8Array(simplified.detail.after).fill(group.humanoid),
+    );
+    sourceChunks.push(new Uint16Array(simplified.detail.after).fill(mapped));
+    before += simplified.detail.before;
+    after += simplified.detail.after;
+    target +=
+      simplified.detail.target ??
+      Math.round(simplified.detail.before * ratio);
+    error = Math.max(error, simplified.detail.error);
+  }
+  const merged = mergeFloat(positionChunks);
+  const { sourceParts: _sourceParts, sourcePartTable: _sourcePartTable, ...rest } =
+    batch;
+  return {
+    batch: {
+      ...rest,
+      positions: merged,
+      normals: mergeFloat(normalChunks),
+      uvs: batch.uvs ? mergeFloat(uvChunks) : null,
+      ...(humanoid ? { parts: mergeBytes(partChunks) } : {}),
+      sourceParts: mergeUint16(sourceChunks),
+      sourcePartTable: newTable,
+      triangles: after,
+      area: surfaceArea(merged),
+    },
+    detail: { name: batch.name, before, after, error, target },
+  };
 }
 
 /** Reduce each player part independently so no triangle crosses a bone seam. */
@@ -128,15 +286,19 @@ function reduceParts(batch: SourceBatch, options: ReduceOptions) {
   const partChunks: Uint8Array[] = [];
   let before = 0;
   let after = 0;
+  let target = 0;
   let error = 0;
   for (const [part, list] of groups) {
-    const simplified = simplifyBatch(sliceTriangles(batch, list, part), options);
+    const simplified = simplifyBatch(sliceTriangles(batch, list), options);
     positionChunks.push(simplified.batch.positions);
     normalChunks.push(simplified.batch.normals);
     if (simplified.batch.uvs) uvChunks.push(simplified.batch.uvs);
     partChunks.push(new Uint8Array(simplified.detail.after).fill(part));
     before += simplified.detail.before;
     after += simplified.detail.after;
+    target +=
+      simplified.detail.target ??
+      Math.round(simplified.detail.before * options.ratio);
     error = Math.max(error, simplified.detail.error);
   }
   const merged = mergeFloat(positionChunks);
@@ -151,7 +313,7 @@ function reduceParts(batch: SourceBatch, options: ReduceOptions) {
       triangles: after,
       area: surfaceArea(merged),
     },
-    detail: { name: batch.name, before, after, error },
+    detail: { name: batch.name, before, after, error, target },
   };
 }
 
@@ -175,7 +337,17 @@ function mergeBytes(chunks: readonly Uint8Array[]) {
   return output;
 }
 
-function sliceTriangles(batch: SourceBatch, indices: readonly number[], part: number) {
+function mergeUint16(chunks: readonly Uint16Array[]) {
+  const output = new Uint16Array(chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return output;
+}
+
+function sliceTriangles(batch: SourceBatch, indices: readonly number[]) {
   const positions = new Float32Array(indices.length * 9);
   const normals = new Float32Array(indices.length * 9);
   const uvs = batch.uvs ? new Float32Array(indices.length * 6) : null;
@@ -191,7 +363,6 @@ function sliceTriangles(batch: SourceBatch, indices: readonly number[], part: nu
     positions,
     normals,
     uvs,
-    parts: new Uint8Array(indices.length).fill(part),
     triangles: indices.length,
     area: surfaceArea(positions),
   };
@@ -258,7 +429,7 @@ function simplifyBatch(batch: SourceBatch, options: ReduceOptions) {
       triangles: count / 3,
       area: surfaceArea(positions),
     },
-    detail: { name: batch.name, before: triangles, after: count / 3, error },
+    detail: { name: batch.name, before: triangles, after: count / 3, error, target },
   };
 }
 

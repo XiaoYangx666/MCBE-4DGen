@@ -40,6 +40,8 @@ export function useWorkbench() {
   const [unlit, setUnlit] = useState(true);
   const [focus, setFocus] = useState("all");
   const [ratio, setRatio] = useState(0.2);
+  /** Per-part retention overrides keyed by stable part id; absent = global ratio. */
+  const [partRatios, setPartRatios] = useState<Record<string, number>>({});
   const [maxError, setMaxError] = useState(0.03);
   const [height, setHeight] = useState(32);
   const [binding, setBinding] = useState("humanoid");
@@ -103,6 +105,13 @@ export function useWorkbench() {
     setMaterialDeltas(new Map());
     setMaterialWeights(saved?.materialWeights ?? {});
     setRatio(saved?.ratio ?? 0.2);
+    setPartRatios(
+      Object.fromEntries(
+        Object.entries(saved?.partRatios ?? {}).filter(([id]) =>
+          availableParts.includes(id),
+        ),
+      ),
+    );
     setMaxError(saved?.maxError ?? 0.03);
     setHeight(saved?.height ?? 32);
     setMode("pose");
@@ -171,6 +180,7 @@ export function useWorkbench() {
         binding,
         ratio,
         maxError,
+        partRatios,
         height,
         profile,
         preview: previewMode,
@@ -271,6 +281,21 @@ export function useWorkbench() {
     changed();
   }
 
+  function setPartRatio(id: string, value: number | null) {
+    setPartRatios((current) => {
+      const next = { ...current };
+      if (value === null) delete next[id];
+      else next[id] = value;
+      return next;
+    });
+    changed();
+  }
+
+  function resetPartRatios() {
+    setPartRatios({});
+    changed();
+  }
+
   const estimate = estimateTriangles(
     session?.materials ?? [],
     excluded,
@@ -278,11 +303,15 @@ export function useWorkbench() {
     binding,
     session?.parts ?? [],
     includedParts,
+    partRatios,
   );
   const settings = {
     binding,
     ratio,
     maxError,
+    partRatios: Object.fromEntries(
+      Object.entries(partRatios).filter(([id]) => includedParts.has(id)),
+    ),
     height,
     excluded,
     materialWeights,
@@ -420,6 +449,9 @@ export function useWorkbench() {
     setFocus,
     ratio,
     setRatio,
+    partRatios,
+    setPartRatio,
+    resetPartRatios,
     maxError,
     setMaxError,
     height,

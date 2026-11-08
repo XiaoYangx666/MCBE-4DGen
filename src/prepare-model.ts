@@ -4,7 +4,7 @@ import { cloneDocument, compactPrimitive, transformPrimitive } from '@gltf-trans
 import { mat3, mat4, vec3 } from 'gl-matrix';
 import type { IntermediateModel } from './model.ts';
 import { validateModel } from './validate-model.ts';
-import { PART_EXTRA } from './parts.ts';
+import { PART_EXTRA, readPartExtra } from './parts.ts';
 
 export interface PrepareOptions {
   scale?: number | Vector;
@@ -287,11 +287,21 @@ export async function prepareStaticModel(input: IntermediateModel, options: Prep
     const primitives = sourceMesh.listPrimitives();
     primitives.forEach((source, primitiveIndex) => {
       const primitive = snapshotPrimitive(doc, source, node, warn);
-      const partId = instanced ? `n${index}` : `p${index}.${primitiveIndex}`;
+      // Preserve ids assigned before filtering: part-based selection and
+      // per-part retention use the ids the UI showed, not the post-filter
+      // instance/primitive indices.
+      const existing = readPartExtra(primitive.getExtras());
+      const nodePart = instanced ? readPartExtra(node.getExtras()) : null;
+      const partId =
+        existing?.id ??
+        nodePart?.id ??
+        (instanced ? `n${index}` : `p${index}.${primitiveIndex}`);
       const partName =
-        !instanced && primitives.length > 1
+        existing?.name ??
+        nodePart?.name ??
+        (!instanced && primitives.length > 1
           ? `${nodeName}#${primitiveIndex}`
-          : nodeName;
+          : nodeName);
       primitive.setExtras({
         ...primitive.getExtras(),
         [PART_EXTRA]: { id: partId, name: partName },
@@ -300,7 +310,8 @@ export async function prepareStaticModel(input: IntermediateModel, options: Prep
     });
     const created = doc.createNode(nodeName).setMesh(mesh);
     const extras = { ...node.getExtras() };
-    if (instanced) extras[PART_EXTRA] = { id: `n${index}`, name: nodeName };
+    if (instanced && !readPartExtra(extras))
+      extras[PART_EXTRA] = { id: `n${index}`, name: nodeName };
     created.setExtras(extras);
     snapshot.addChild(created);
   });

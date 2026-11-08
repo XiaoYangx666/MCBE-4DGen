@@ -208,6 +208,37 @@ test("face target includes duplicated backfaces, exclusions and transparent-shel
     source: 650,
     target: 130,
   });
+  // Per-part overrides apply to kept parts; uncovered geometry keeps the global ratio.
+  assert.deepEqual(
+    estimateTriangles(
+      materials,
+      [],
+      0.2,
+      "static",
+      [
+        { id: "head", materialKey: "skin", triangles: 50 },
+        { id: "body", materialKey: "clothes", triangles: 100 },
+      ],
+      new Set(["head", "body"]),
+      { head: 1, body: 0.1 },
+    ),
+    { source: 650, target: 150 },
+  );
+  assert.deepEqual(
+    estimateTriangles(
+      materials,
+      [],
+      0.2,
+      "humanoid",
+      [
+        { id: "head", materialKey: "skin", triangles: 50 },
+        { id: "body", materialKey: "clothes", triangles: 100 },
+      ],
+      new Set(["head", "body"]),
+      { head: 0.5, body: 1 },
+    ),
+    { source: 250, target: 225 },
+  );
 });
 
 test("live orientation fits actual rotated vertices rather than an oversized rotated bounding rectangle", () => {
