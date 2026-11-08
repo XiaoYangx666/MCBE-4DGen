@@ -1391,9 +1391,8 @@ export function ModelStudio({
             <Viewport
               object={viewObject}
               grid={viewMode === 'output'}
-              facing={viewMode === 'source' ? 'source' : 'output'}
               showFrontCheck={false}
-              fitKey={result ?? model}
+              fitKey={model}
             />
           ) : (
             <div className="empty-state compact">

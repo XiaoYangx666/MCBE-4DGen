@@ -4,6 +4,7 @@ import {
   createPreviewViewport,
   type PreviewViewport,
 } from '../../web/shared/preview-viewport';
+import { mapPreviewPose } from '../lib/preview-pose';
 import { Icon } from '../../web/shared/Icons';
 
 // Lighting starts off on every page load. The toggle is remembered for the
@@ -24,8 +25,6 @@ interface ViewportProps {
   className?: string;
   grid?: boolean;
   autoRotate?: boolean;
-  /** Source models are authored +Z; exported packs and image skins face -Z. */
-  facing?: 'source' | 'output';
   /** The compact workbench drops the front check to keep controls minimal. */
   showFrontCheck?: boolean;
   /** Called with every material under the pointer on a click (not a drag). */
@@ -43,7 +42,6 @@ export function Viewport({
   className,
   grid = false,
   autoRotate = false,
-  facing = 'output',
   showFrontCheck = true,
   onPick,
   fitKey,
@@ -56,14 +54,12 @@ export function Viewport({
   const litRef = useRef(lit);
   const onPickRef = useRef(onPick);
   const gridRef = useRef(grid);
-  const facingRef = useRef(facing);
   const autoRotateRef = useRef(autoRotate);
   const fitKeyRef = useRef<unknown>(undefined);
   objectRef.current = object;
   litRef.current = lit;
   onPickRef.current = onPick;
   gridRef.current = grid;
-  facingRef.current = facing;
   autoRotateRef.current = autoRotate;
 
   useEffect(() => {
@@ -99,9 +95,9 @@ export function Viewport({
           enableZoom: true,
         },
         orientation: { direction: -1, label: '玩家正前方（−Z）' },
-        // Source models are usually authored facing +Z; exported skins use the
-        // Bedrock -Z front, so their default angle must also start there.
-        framing: { angle: { directionZ: facingRef.current === 'source' ? 1 : -1 } },
+        // Every preview resets to the player's front (-Z), regardless of how
+        // the source model was authored.
+        framing: { angle: { directionZ: -1 } },
         onContextLost: () => setFailed(true),
       });
     } catch {
@@ -172,64 +168,67 @@ export function Viewport({
     current.invalidate();
   }, [grid]);
 
-  // Source models face +Z, exported skins face -Z. Rotating the orbit by half a
-  // turn keeps the same side of the character in view when switching modes,
-  // instead of silently showing the back of the exported mesh.
-  const previousFacing = useRef(facing);
-  useEffect(() => {
-    const current = view.current;
-    if (!current) {
-      previousFacing.current = facing;
-      return;
-    }
-    if (previousFacing.current === facing) return;
-    previousFacing.current = facing;
-    const offset = current.camera.position.clone().sub(current.controls.target);
-    offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
-    current.camera.position.copy(current.controls.target).add(offset);
-    current.controls.update();
-    current.invalidate();
-  }, [facing]);
-
+  // Switching source/output swaps the object but must keep the user's camera
+  // pose. Source and exported meshes use different units, so the switch keeps
+  // the same apparent size and angle instead of reframing.
   useEffect(() => {
     const current = view.current;
     if (!current) return;
-    // Only reframe when the content generation changes. Switching source/output
-    // swaps the object but must keep the user's camera pose.
+    // Only reframe when the content generation changes.
     const refit = fitKey === undefined || fitKeyRef.current !== fitKey;
     if (fitKey !== undefined) fitKeyRef.current = fitKey;
-    // Source and exported meshes use very different units (metres vs blocks).
-    // Remember the old bounds so the switch can keep the same apparent size.
     current.content.updateMatrixWorld(true);
-    const previous = new THREE.Box3().setFromObject(current.content);
-    const previousSphere = previous.getBoundingSphere(new THREE.Sphere());
+    const previousSphere = new THREE.Box3()
+      .setFromObject(current.content)
+      .getBoundingSphere(new THREE.Sphere());
     current.setObject(object, { frame: false });
     if (refit && object) {
       current.content.updateMatrixWorld(true);
       current.frameBox(new THREE.Box3().setFromObject(current.content), 'angle', {
-        directionZ: facing === 'source' ? 1 : -1,
+        directionZ: -1,
+        resetZoom: true,
       });
-    } else if (object && previousSphere.radius > 1e-6) {
-      current.content.updateMatrixWorld(true);
-      const next = new THREE.Box3()
-        .setFromObject(current.content)
-        .getBoundingSphere(new THREE.Sphere());
-      if (next.radius > 1e-6) {
-        const offset = current.camera.position.clone().sub(previousSphere.center);
-        offset.multiplyScalar(next.radius / previousSphere.radius);
-        current.controls.target.copy(next.center);
-        current.camera.position.copy(next.center).add(offset);
-        current.controls.update();
-        current.invalidate();
-      }
+      return;
     }
-  }, [object, fitKey, facing]);
+    if (!object || previousSphere.radius <= 1e-6) return;
+    current.content.updateMatrixWorld(true);
+    const nextSphere = new THREE.Box3()
+      .setFromObject(current.content)
+      .getBoundingSphere(new THREE.Sphere());
+    if (nextSphere.radius <= 1e-6) return;
+    // Map camera and target through the same scale/recenter transform. Mapping
+    // both (instead of only the camera) keeps a panned target and makes a
+    // source -> output -> source round trip exact.
+    const mapped = mapPreviewPose(
+      {
+        position: current.camera.position.clone(),
+        target: current.controls.target.clone(),
+      },
+      previousSphere,
+      nextSphere,
+    );
+    current.camera.position.copy(mapped.position);
+    current.controls.target.copy(mapped.target);
+    current.controls.update();
+    current.invalidate();
+  }, [object, fitKey]);
 
   const toggleLighting = () => {
     const next = !lit;
     setLit(next);
     rememberLighting(next);
     view.current?.setLit(next);
+  };
+
+  /** Reset to the player's front, no matter which model is shown. */
+  const resetView = () => {
+    const current = view.current;
+    if (!current) return;
+    current.content.updateMatrixWorld(true);
+    current.frameBox(new THREE.Box3().setFromObject(current.content), 'angle', {
+      directionZ: -1,
+      resetZoom: true,
+    });
   };
 
   return (
@@ -266,7 +265,7 @@ export function Viewport({
             <button
               type="button"
               className="viewport-reset"
-              onClick={() => view.current?.reset()}
+              onClick={resetView}
             >
               重置视角
             </button>
