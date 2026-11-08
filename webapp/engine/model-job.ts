@@ -226,7 +226,7 @@ export interface ConvertExtractedOptions {
   includedParts?: ReadonlySet<string>;
   weights: Readonly<Record<string, number>>;
   textureMode?: 'legacy' | 'budget';
-  textureTarget?: 'density' | 'retention';
+  textureTarget?: 'density' | 'retention' | 'balanced';
   atlasSharing?: boolean;
   /** Stop before assembling the skin-pack ZIP. */
   preview?: boolean;
@@ -423,7 +423,7 @@ export interface ModelResultKeyInput {
   weights: Readonly<Record<string, number>>;
   modelTriangles: number;
   textureMode?: 'legacy' | 'budget';
-  textureTarget?: 'density' | 'retention';
+  textureTarget?: 'density' | 'retention' | 'balanced';
   atlasSharing?: boolean;
 }
 
@@ -440,7 +440,7 @@ export function modelResultKey(input: ModelResultKeyInput) {
     [...input.included].sort().join(','),
     input.includedParts ? [...input.includedParts].sort().join(',') : '*',
     input.textureMode ?? 'budget',
-    input.textureTarget ?? 'density',
+    input.textureTarget ?? 'balanced',
     input.atlasSharing ? 'share' : 'no-share',
     Object.entries(input.weights)
       .sort(([a], [b]) => a.localeCompare(b))

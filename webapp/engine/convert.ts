@@ -33,7 +33,7 @@ export interface ConvertOptions {
   /** Opt into the legacy browser planner; the shared texel-budget planner is the default. */
   textureMode?: 'legacy' | 'budget';
   /** Budget objective; density unless retention is requested. */
-  textureTarget?: 'density' | 'retention';
+  textureTarget?: 'density' | 'retention' | 'balanced';
   /** Relative material quality multipliers, keyed by stable material key. */
   materialWeights?: Readonly<Record<string, number>>;
   /** Reuse rectangles only for bit-identical charts. */
@@ -126,7 +126,7 @@ export interface TextureReport {
   sharedContentPixels?: number;
   /** Planner used for this output. */
   mode?: 'legacy' | 'budget';
-  target?: 'density' | 'retention';
+  target?: 'density' | 'retention' | 'balanced';
   shared?: { charts: number; savedPixels: number };
   size: number;
   /** Pixel count per material key; shared pixels count for every material. */
@@ -201,7 +201,12 @@ export async function convertBatches(
     0,
     budget
       ? {
-          budget: options.textureTarget === 'retention' ? 'texel-retention' : 'texel-density',
+          budget:
+            options.textureTarget === 'density'
+              ? 'texel-density'
+              : options.textureTarget === 'retention'
+                ? 'texel-retention'
+                : 'texel-balanced',
           ...(options.materialWeights && Object.keys(options.materialWeights).length
             ? { weights: options.materialWeights }
             : {}),
@@ -364,7 +369,14 @@ export async function convertBatches(
       : {}),
     mode: budget ? 'budget' : 'legacy',
     ...(budget
-      ? { target: options.textureTarget === 'retention' ? 'retention' : 'density' }
+      ? {
+          target:
+            options.textureTarget === 'density'
+              ? 'density'
+              : options.textureTarget === 'retention'
+                ? 'retention'
+                : 'balanced',
+        }
       : {}),
     size: layout.size,
     materials,

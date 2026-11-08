@@ -32,6 +32,8 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
     materialDeltas,
     materialWeights,
     setMaterialWeights,
+    textureTarget,
+    setTextureTarget,
     selected,
     setSelected,
     solo,
@@ -279,6 +281,11 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                 onSelect={selectMaterial}
                 includedParts={includedParts}
                 busy={busy}
+                textureTarget={textureTarget}
+                onTextureTarget={(target) => {
+                  setTextureTarget(target);
+                  changed();
+                }}
               />
             )}
           </aside>
@@ -480,7 +487,13 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                     {session
                       ? `当前配置：${height}px 高 · ${
                           binding === "humanoid" ? "六部位人形" : "静态整体"
-                        } · 预算·密度 · ${Object.keys(materialWeights).length} 项权重调整`
+                        } · 预算·${
+                          textureTarget === "density"
+                            ? "密度"
+                            : textureTarget === "retention"
+                              ? "保留"
+                              : "均衡"
+                        } · ${Object.keys(materialWeights).length} 项权重调整`
                       : "打开模型后开始。"}
                   </p>
                   {result ? (

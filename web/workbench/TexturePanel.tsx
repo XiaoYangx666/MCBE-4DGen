@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { TextureTarget } from '../shared/texture-target';
 import type { Result, Session } from './types';
 
 type MaterialFilter = 'all' | 'limited';
@@ -22,6 +23,8 @@ export function TexturePanel({
   onSelect,
   includedParts,
   busy,
+  textureTarget,
+  onTextureTarget,
 }: {
   session: Session | null;
   result: Result | null;
@@ -31,6 +34,8 @@ export function TexturePanel({
   onSelect: (id: string | null) => void;
   includedParts: ReadonlySet<string>;
   busy: boolean;
+  textureTarget: TextureTarget;
+  onTextureTarget: (target: TextureTarget) => void;
 }) {
   const materials = session?.materials ?? [];
   const parts = session?.parts ?? [];
@@ -171,6 +176,29 @@ export function TexturePanel({
         </div>
       </div>
       <div className="texture-list-tools">
+        <label className="texture-target-field">
+          <span>分配依据</span>
+          <select
+            aria-label="图集分配依据"
+            title="均衡：一半按表面积、一半按源贴图细节；按面积：大块优先；按源贴图：细节优先"
+            value={textureTarget}
+            disabled={busy}
+            onChange={(event) =>
+              onTextureTarget(event.target.value as TextureTarget)
+            }
+          >
+            <option value="balanced">均衡（推荐）</option>
+            <option value="density">按世界表面积</option>
+            <option value="retention">按源贴图细节</option>
+          </select>
+        </label>
+        <p className="texture-target-note">
+          {textureTarget === "balanced"
+            ? "一半按面积、一半按源贴图细节：大块不糊，脸和头发也不会被挤掉。"
+            : textureTarget === "retention"
+              ? "按材质实际采样的源图像素分配；衣服等大块可能明显变糊。"
+              : "面积大的衣服和身体优先，小件可能被压到最小。"}
+        </p>
         <input
           type="search"
           value={query}

@@ -100,7 +100,9 @@ export async function updateModel(
       (settings.textureMode !== undefined &&
         !['legacy', 'budget'].includes(settings.textureMode)) ||
       (settings.textureTarget !== undefined &&
-        !['texel-density', 'texel-retention'].includes(settings.textureTarget)) ||
+        !['texel-density', 'texel-retention', 'texel-balanced'].includes(
+          settings.textureTarget,
+        )) ||
       (settings.atlasSharing !== undefined &&
         typeof settings.atlasSharing !== 'boolean') ||
       (settings.fingerprint !== undefined &&

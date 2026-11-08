@@ -14,7 +14,7 @@ import {
   unwrapChartBounds,
 } from '../texture-chart-math.ts';
 import { allocateAt, demandOf, type BudgetTarget, type ChartDemand } from './budget.ts';
-import { packBoxes } from './pack.ts';
+import { growPackedBoxes, packBoxes, type PackBox } from './pack.ts';
 import type { AtlasPlan, ChartInput, PlannedChart } from './types.ts';
 
 export type MergePolicy = 'none' | 'strict' | 'production';
@@ -375,6 +375,8 @@ export interface AtlasBudgetResult {
     charts: number;
     sharedCharts: number;
     sharedSavedPixels: number;
+    /** Charts moved or enlarged into leftover atlas area. */
+    grownCharts: number;
   };
   charts: {
     chartId: string;
@@ -401,16 +403,39 @@ export function planAtlasBudget(
   const charts = inputs.flatMap((input) => analyse(input, options));
   const slots = groupSlots(charts, inputs, options, target);
 
-  const demands = slots.map((slot) => slot.demand);
+  const coverageAware = options.coverageAware ?? true;
+  // Balanced allocation is a blend of *shares*, not of raw units: world area
+  // and source texels are unrelated magnitudes, so they must each be
+  // normalised before mixing or one side would dominate completely.
+  const baseDemands = slots.map((slot) => slot.demand);
+  const demands =
+    target === 'balanced'
+      ? (() => {
+          const density = baseDemands.map((demand) =>
+            demandOf(demand, 'density', coverageAware),
+          );
+          const retention = baseDemands.map((demand) =>
+            demandOf(demand, 'retention', coverageAware),
+          );
+          const totalDensity = density.reduce((sum, value) => sum + value, 0);
+          const totalRetention = retention.reduce((sum, value) => sum + value, 0);
+          return baseDemands.map((demand, index) => ({
+            ...demand,
+            demandValue:
+              0.5 * (totalDensity > 0 ? density[index]! / totalDensity : 0) +
+              0.5 * (totalRetention > 0 ? retention[index]! / totalRetention : 0),
+          }));
+        })()
+      : baseDemands;
   const budgetOptions = {
     size,
     pad,
     target,
-    coverageAware: options.coverageAware ?? true,
+    coverageAware,
   };
   const attempt = (scale: number) => {
     const allocations = allocateAt(demands, budgetOptions, scale);
-    const boxes = allocations.map((allocation) => {
+    const boxes: PackBox[] = allocations.map((allocation, index) => {
       const base = { width: allocation.width, height: allocation.height };
       const variants =
         !allocation.floorBound && allocation.width > 4 && allocation.height > 4
@@ -426,7 +451,12 @@ export function planAtlasBudget(
               },
             ]
           : [base];
-      return { key: allocation.id, ...base, variants };
+      return {
+        key: allocation.id,
+        ...base,
+        variants,
+        growable: !demands[index]!.flat,
+      };
     });
     const packed = packBoxes(boxes, size, pad);
     if (!packed) return null;
@@ -437,7 +467,7 @@ export function planAtlasBudget(
         allocation.height = chosen.height;
       }
     }
-    return { allocations, packed, scale };
+    return { allocations, packed, scale, boxes };
   };
   // Packing is part of the search: the largest scale that both fits the area
   // and survives rectangle fragmentation, exactly like the production planner.
@@ -453,6 +483,31 @@ export function planAtlasBudget(
       best = candidate;
       low = mid;
     } else high = mid;
+  }
+  // Uniform scaling stops at the first chart pair that cannot both grow.
+  // Spend the remaining atlas area on charts that still fit, otherwise the
+  // atlas keeps a large transparent corner while smaller charts stay tiny.
+  const grown = growPackedBoxes(best.boxes, size, pad, best.packed);
+  best.packed = {
+    rects: grown.rects,
+    chosen: grown.chosen,
+    score: best.packed.score,
+    free: grown.free,
+  };
+  for (const allocation of best.allocations) {
+    const chosen = best.packed.chosen.get(allocation.id);
+    if (chosen) {
+      allocation.width = chosen.width;
+      allocation.height = chosen.height;
+    }
+  }
+  // Growing a floor-bound chart means it is no longer at the technical floor.
+  const demandById = new Map(demands.map((demand) => [demand.id, demand]));
+  for (const allocation of best.allocations) {
+    const demand = demandById.get(allocation.id);
+    if (!demand || demand.flat) continue;
+    allocation.floorBound =
+      allocation.width === demand.minEdge && allocation.height === demand.minEdge;
   }
   const allocations = best.allocations;
   const packed = best.packed;
@@ -571,6 +626,7 @@ export function planAtlasBudget(
       charts: charts.length,
       sharedCharts,
       sharedSavedPixels,
+      grownCharts: grown.grown,
     },
     charts: chartReports,
   };

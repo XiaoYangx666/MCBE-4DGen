@@ -5,7 +5,7 @@ import { estimateTriangles } from "./estimate";
 import type { Result, Session } from "./types";
 import type { TextureMode, TextureTarget } from "../shared/texture-types";
 import type { StudioWorkspace } from "../shared/WorkspaceTabs";
-import { toServerTextureTarget } from "../shared/texture-target";
+import { fromServerTextureTarget, toServerTextureTarget } from "../shared/texture-target";
 
 export type Workbench = ReturnType<typeof useWorkbench>;
 
@@ -23,7 +23,7 @@ export function useWorkbench() {
   const [excluded, setExcluded] = useState<string[]>([]);
   const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
   const [textureMode, setTextureMode] = useState<TextureMode>("budget");
-  const [textureTarget, setTextureTarget] = useState<TextureTarget>("density");
+  const [textureTarget, setTextureTarget] = useState<TextureTarget>("balanced");
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [materialDeltas, setMaterialDeltas] = useState<Map<string, number>>(new Map());
   const [materialWeights, setMaterialWeights] = useState<
@@ -94,9 +94,11 @@ export function useWorkbench() {
       }
     }
     setIncludedParts(included);
-    // Allocation is density-only now: legacy/retention saves are migrated.
+    // Allocation is always the budget planner now; only the basis is a user
+    // choice. Older saves without a target use balanced, which keeps large
+    // visible parts sharp without squeezing small detailed materials.
     setTextureMode("budget");
-    setTextureTarget("density");
+    setTextureTarget(fromServerTextureTarget(saved?.textureTarget));
     setSelectedPart(null);
     setMaterialDeltas(new Map());
     setMaterialWeights(saved?.materialWeights ?? {});

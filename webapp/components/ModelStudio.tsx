@@ -60,6 +60,23 @@ import { useCompactViewport } from '../lib/use-compact-viewport';
 const DEFAULT_NAME = '我的 4D 皮肤';
 /** Formats the browser build cannot open; the picker lists them as unavailable. */
 const WEB_UNAVAILABLE_FORMATS: readonly ModelFormat[] = ['pmd'];
+const ALLOCATION_OPTIONS = [
+  {
+    value: 'balanced',
+    label: '均衡（推荐）',
+    note: '一半按世界表面积、一半按源贴图细节；大块不糊，脸和头发也不会被挤掉。',
+  },
+  {
+    value: 'density',
+    label: '按世界表面积',
+    note: '衣服、身体等面积大的材质优先；小件可能被压到最小。',
+  },
+  {
+    value: 'retention',
+    label: '按源贴图细节',
+    note: '按材质实际采样的源图像素分配；衣服等大块可能明显变糊。',
+  },
+] as const;
 const thumbnailCache = new Map<string, string | null>();
 
 function textureThumbnail(texture: TextureSource | null): string | null {
@@ -116,6 +133,8 @@ export function ModelStudio({
   const compact = useCompactViewport();
   const [previewRoot, setPreviewRoot] = useState<THREE.Group | null>(null);
   const [weights, setWeights] = useState<Record<string, number>>({});
+  const [textureTarget, setTextureTarget] = useState<'density' | 'retention' | 'balanced'>('balanced');
+  const [allocationOpen, setAllocationOpen] = useState(false);
   const [includedParts, setIncludedParts] = useState<Set<string>>(new Set());
   const [selectedPart, setSelectedPart] = useState<string | null>(null);
   const [showKeptParts, setShowKeptParts] = useState(true);
@@ -367,11 +386,11 @@ export function ModelStudio({
       includedParts,
       weights,
       textureMode: 'budget',
-      textureTarget: 'density',
+      textureTarget,
       atlasSharing: true,
       modelTriangles: model?.stats.triangles ?? 0,
     }),
-  ].join('|'), [binding, name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, includedParts, weights, model?.stats.triangles]);
+  ].join('|'), [binding, name, height, rotationY, armSpread, doubleSided, ratio, maxError, included, includedParts, weights, textureTarget, model?.stats.triangles]);
 
   const convert = async () => {
     if (!model || busy) return;
@@ -467,7 +486,7 @@ export function ModelStudio({
         includedParts,
         weights,
         textureMode: 'budget',
-        textureTarget: 'density',
+        textureTarget,
         atlasSharing: true,
         rig: binding === 'humanoid' ? extracted.rig : null,
         onProgress: setProgress,
@@ -685,58 +704,76 @@ export function ModelStudio({
     [result],
   );
 
-  const texturePanel = result && result.textureUrl ? (
+  const texturePanel = (
     <>
       <div className="texture-tab-head">
         <span>
-          输出贴图 {result.textureReport.size} × {result.textureReport.size} PNG
+          {result && result.textureUrl
+            ? `输出贴图 ${result.textureReport.size} × ${result.textureReport.size} PNG`
+            : '纹理分配'}
         </span>
-        <button
-          type="button"
-          className="texture-adjust-button"
-          disabled={!selectedStudioMaterial || busy || loading}
-          title={
-            selectedStudioMaterial
-              ? `调整 ${selectedStudioMaterial.name} 的相对纹理密度`
-              : '点击图集或占比图选择材质'
-          }
-          onClick={() => {
-            if (selectedStudioMaterial) setTunerKey(selectedStudioMaterial.id);
-          }}
-        >
-          <Icon name="settings" size={13} />
-          调整清晰度
-        </button>
+        <div className="texture-tab-actions">
+          <button
+            type="button"
+            className="texture-adjust-button"
+            disabled={busy || loading}
+            title="选择纹理分配方式"
+            onClick={() => setAllocationOpen(true)}
+          >
+            <Icon name="settings" size={13} />
+            分配方式
+          </button>
+          {result && result.textureUrl && (
+            <button
+              type="button"
+              className="texture-adjust-button"
+              disabled={!selectedStudioMaterial || busy || loading}
+              title={
+                selectedStudioMaterial
+                  ? `调整 ${selectedStudioMaterial.name} 的相对纹理预算`
+                  : '点击图集或占比图选择材质'
+              }
+              onClick={() => {
+                if (selectedStudioMaterial) setTunerKey(selectedStudioMaterial.id);
+              }}
+            >
+              <Icon name="settings" size={13} />
+              调整清晰度
+            </button>
+          )}
+        </div>
       </div>
-      <div className="texture-overview">
-        <AtlasInspector
-          src={result.textureUrl}
-          size={result.textureReport.size}
-          regions={inspectorRegions}
-          materials={atlasMaterials}
-          selected={soloKey}
-          onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
-          showList={false}
-          showAdvanced={false}
-          zoomable={false}
-          {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
-        />
-        <MaterialDonut
-          materials={result.textureReport.materials.map((material) => ({
-            key: material.key,
-            name: materialLabels.get(material.key) ?? material.name,
-            pixels: material.rectPixels ?? material.uvPixels ?? material.pixels,
-          }))}
-          total={result.textureReport.size * result.textureReport.size}
-          selected={soloKey}
-          onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
-          coverage={result.textureReport.allocatedUtilization ?? result.textureReport.contentUtilization}
-          uvCoverage={result.textureReport.uvUtilization ?? result.textureCoverage}
-        />
-      </div>
+      {result && result.textureUrl ? (
+        <div className="texture-overview">
+          <AtlasInspector
+            src={result.textureUrl}
+            size={result.textureReport.size}
+            regions={inspectorRegions}
+            materials={atlasMaterials}
+            selected={soloKey}
+            onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
+            showList={false}
+            showAdvanced={false}
+            zoomable={false}
+            {...(result.coverageUrl ? { coverageSrc: result.coverageUrl } : {})}
+          />
+          <MaterialDonut
+            materials={result.textureReport.materials.map((material) => ({
+              key: material.key,
+              name: materialLabels.get(material.key) ?? material.name,
+              pixels: material.rectPixels ?? material.uvPixels ?? material.pixels,
+            }))}
+            total={result.textureReport.size * result.textureReport.size}
+            selected={soloKey}
+            onSelect={(id) => setSoloKey(soloKey === id ? null : id)}
+            coverage={result.textureReport.allocatedUtilization ?? result.textureReport.contentUtilization}
+            uvCoverage={result.textureReport.uvUtilization ?? result.textureCoverage}
+          />
+        </div>
+      ) : (
+        <p className="field-help">转换后在这里查看可点击的贴图和材质占比。</p>
+      )}
     </>
-  ) : (
-    <p className="field-help">转换后在这里查看可点击的贴图和材质占比。</p>
   );
 
   const exportPanel = result ? (
@@ -787,7 +824,9 @@ export function ModelStudio({
               <dd>
                 {result.textureReport.target === 'retention'
                   ? '纹理预算 · 保留'
-                  : '纹理预算 · 密度'}
+                  : result.textureReport.target === 'balanced'
+                    ? '纹理预算 · 均衡'
+                    : '纹理预算 · 密度'}
               </dd>
             </div>
             <div>
@@ -1157,7 +1196,7 @@ export function ModelStudio({
                     onResetWeight={resetMaterialWeight}
                     onResetAllWeights={resetAllMaterialWeights}
                     disabled={loading || busy}
-                    note="纹理预算 · 密度 · 相对清晰度 0.1–20×"
+                    note="纹理预算 · 相对清晰度 0.1–20×"
                   />
                 ) : (
                   <p className="field-help">导入模型后可以在这里调整材质清晰度。</p>
@@ -1388,6 +1427,39 @@ export function ModelStudio({
             <button type="button" onClick={() => setPending(null)}>取消</button>
             <button type="button" className="primary" onClick={loadPending}>加载所选模型</button>
           </div>
+        </Dialog>
+      )}
+
+      {allocationOpen && (
+        <Dialog
+          title="纹理分配方式"
+          label="纹理分配方式"
+          className="allocation-dialog"
+          closeLabel="关闭纹理分配方式"
+          onClose={() => setAllocationOpen(false)}
+        >
+          <div className="allocation-options">
+            {ALLOCATION_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`allocation-option${
+                  textureTarget === option.value ? ' active' : ''
+                }`}
+                aria-pressed={textureTarget === option.value}
+                onClick={() => {
+                  setTextureTarget(option.value);
+                  setAllocationOpen(false);
+                }}
+              >
+                <b>{option.label}</b>
+                <span>{option.note}</span>
+              </button>
+            ))}
+          </div>
+          <p className="allocation-note">
+            切换后会标记需要重新转换，点「转换」生成新图集。
+          </p>
         </Dialog>
       )}
 

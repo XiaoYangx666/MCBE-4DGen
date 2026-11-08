@@ -24,7 +24,7 @@
  */
 import type { PackRect } from './pack.ts';
 
-export type BudgetTarget = 'density' | 'retention' | 'legacy';
+export type BudgetTarget = 'density' | 'retention' | 'legacy' | 'balanced';
 
 export interface ChartDemand {
   id: string;
@@ -42,6 +42,12 @@ export interface ChartDemand {
   weight: number;
   /** Flat materials have no texture detail to preserve. */
   flat?: boolean;
+  /**
+   * Pre-normalised demand. Balanced allocation blends density and retention
+   * shares, which needs the totals across all charts, so the planner writes the
+   * final value here.
+   */
+  demandValue?: number;
 }
 
 export interface BudgetOptions {
@@ -83,11 +89,22 @@ export function demandOf(
   coverageAware = true,
 ): number {
   if (chart.flat) return 0;
+  if (chart.demandValue !== undefined) return chart.demandValue;
   const weight = Math.max(0, chart.weight);
   if (target === 'density')
     return Math.max(0, chart.worldArea) * weight * weight;
   if (target === 'retention')
     return Math.max(0, coverageAware ? chart.sourceTexels : chart.bboxSourceTexels) * weight;
+  if (target === 'balanced') {
+    // Half surface-area, half sampled source detail. Both demands are
+    // normalised into atlas shares before they are used, so the different
+    // units cancel; this keeps large visible parts sharp without starving
+    // small but detailed materials (face, hair, eyes).
+    const area = Math.max(0, chart.worldArea) * weight * weight;
+    const detail =
+      Math.max(0, coverageAware ? chart.sourceTexels : chart.bboxSourceTexels) * weight;
+    return (area + detail) / 2;
+  }
   // Legacy comparison: the production sublinear surface-area curve.
   return Math.pow(Math.max(0, chart.worldArea * weight), 0.85);
 }

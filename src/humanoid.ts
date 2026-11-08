@@ -71,7 +71,7 @@ export async function exportHumanoid(
     atlasPadding?: number;
     materialWeights?: Record<string, number>;
     /** Opt-in shared texel-budget planner; legacy compact stays the default. */
-    atlasBudget?: 'texel-density' | 'texel-retention';
+    atlasBudget?: 'texel-density' | 'texel-retention' | 'texel-balanced';
     atlasSharing?: boolean;
     profile?: HumanoidProfile;
     reduction?: { ratio: number; maxError: number };
@@ -438,7 +438,7 @@ export async function exportHumanoid(
   return textureHumanoid(state, options, timings);
 }
 
-async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:number; atlas?:number; atlasPadding?:number; materialWeights?:Record<string,number>; atlasBudget?:'texel-density'|'texel-retention'; atlasSharing?:boolean; onStage?:(phase:string)=>void}, timings:Record<string,number> = {}) {
+async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:number; atlas?:number; atlasPadding?:number; materialWeights?:Record<string,number>; atlasBudget?:'texel-density'|'texel-retention'|'texel-balanced'; atlasSharing?:boolean; onStage?:(phase:string)=>void}, timings:Record<string,number> = {}) {
   const {pivots, classification} = state;
   let phaseName = 'atlas', phaseStart = performance.now();
   const phase = (name:string) => {timings[phaseName] = Math.round(performance.now()-phaseStart); phaseName=name; phaseStart=performance.now(); options.onStage?.(name);};

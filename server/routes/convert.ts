@@ -28,7 +28,7 @@ export const convertRoutes = [
       height: number;
       profile: HumanoidProfile | null;
       textureMode?: 'legacy' | 'budget';
-      textureTarget?: 'texel-density' | 'texel-retention';
+      textureTarget?: 'texel-density' | 'texel-retention' | 'texel-balanced';
       atlasSharing?: boolean;
       /** Recompute the atlas/preview only; do not assemble the skin-pack ZIP. */
       preview?: boolean;
@@ -54,7 +54,9 @@ export const convertRoutes = [
       (body.textureMode !== undefined &&
         !['legacy', 'budget'].includes(body.textureMode)) ||
       (body.textureTarget !== undefined &&
-        !['texel-density', 'texel-retention'].includes(body.textureTarget))
+        !['texel-density', 'texel-retention', 'texel-balanced'].includes(
+          body.textureTarget,
+        ))
     )
       throw Error('转换参数无效');
 

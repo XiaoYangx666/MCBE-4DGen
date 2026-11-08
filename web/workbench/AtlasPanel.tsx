@@ -67,7 +67,8 @@ export function AtlasPanel({
           wastePixels: measurement.wastePixels,
           mode:
             texture?.allocation === "texel-density" ||
-            texture?.allocation === "texel-retention"
+            texture?.allocation === "texel-retention" ||
+            texture?.allocation === "texel-balanced"
               ? "budget"
               : "legacy",
         };

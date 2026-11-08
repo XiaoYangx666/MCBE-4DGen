@@ -51,7 +51,7 @@ export interface EditSettings {
   includedParts?: string[];
   /** Legacy compact planner is the default; budget is opt-in. */
   textureMode?: 'legacy' | 'budget';
-  textureTarget?: 'texel-density' | 'texel-retention';
+  textureTarget?: 'texel-density' | 'texel-retention' | 'texel-balanced';
   atlasSharing?: boolean;
   /** Structure fingerprint the selection was made against. */
   fingerprint?: string;

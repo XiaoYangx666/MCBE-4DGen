@@ -33,7 +33,7 @@ export interface TextureOptions {
    * material independent and reports technical floors instead of silently
    * clamping. Leave undefined for the legacy compact path.
    */
-  atlasBudget?: "texel-density" | "texel-retention";
+  atlasBudget?: "texel-density" | "texel-retention" | "texel-balanced";
   /** With `atlasBudget`, reuse rectangles only for identical source pixels. */
   atlasSharing?: boolean;
   /** With `atlasBudget`, charge retention demand for sampled UV area. */
@@ -227,7 +227,9 @@ export async function optimizeTextures(
     throw new Error("Material weights must be in [0, 20]");
   if (
     options.atlasBudget !== undefined &&
-    !["texel-density", "texel-retention"].includes(options.atlasBudget)
+    !["texel-density", "texel-retention", "texel-balanced"].includes(
+      options.atlasBudget,
+    )
   )
     throw new Error("Invalid atlas budget");
   if (options.atlasBudget)

@@ -302,7 +302,7 @@ function aspectOf(input: AtlasInput, bounds: [number, number, number, number] | 
  * platforms produce the same rectangles for the same input.
  */
 export interface AtlasPlanOptions {
-  budget?: 'texel-density' | 'texel-retention';
+  budget?: 'texel-density' | 'texel-retention' | 'texel-balanced';
   /** Priority by `AtlasInput.key`, default 1. */
   weights?: Record<string, number>;
   /** Overlay charts that read exactly the same source pixels. */
@@ -349,7 +349,12 @@ function planWithBudget(
   const budgetOptions: AtlasBudgetOptions = {
     size,
     pad,
-    target: options.budget === 'texel-density' ? 'density' : 'retention',
+    target:
+      options.budget === 'texel-density'
+        ? 'density'
+        : options.budget === 'texel-retention'
+          ? 'retention'
+          : 'balanced',
     coverageAware: false,
     sharing: options.sharing ?? 'none',
     merge: 'production',

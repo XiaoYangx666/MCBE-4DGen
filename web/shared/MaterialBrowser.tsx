@@ -176,7 +176,9 @@ export function MaterialBrowser({
   const qualityLabel = mode === 'budget'
     ? target === 'density'
       ? '相对纹理密度'
-      : '相对细节保留'
+      : target === 'retention'
+        ? '相对细节保留'
+        : '相对纹理预算'
     : '旧版像素权重';
   const qualityUnit = mode === 'budget' ? '×' : '';
   const presets = [0.5, 1, 2, 4, 10];

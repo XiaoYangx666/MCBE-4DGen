@@ -8,13 +8,15 @@ describe('desktop texture target mapping', () => {
   it('maps UI labels to the API values the server validates', () => {
     expect(toServerTextureTarget('density')).toBe('texel-density');
     expect(toServerTextureTarget('retention')).toBe('texel-retention');
+    expect(toServerTextureTarget('balanced')).toBe('texel-balanced');
   });
 
   it('reads old and new saved values', () => {
     expect(fromServerTextureTarget('texel-density')).toBe('density');
     expect(fromServerTextureTarget('density')).toBe('density');
     expect(fromServerTextureTarget('texel-retention')).toBe('retention');
-    expect(fromServerTextureTarget(undefined)).toBe('retention');
-    expect(fromServerTextureTarget('legacy')).toBe('retention');
+    expect(fromServerTextureTarget('texel-balanced')).toBe('balanced');
+    expect(fromServerTextureTarget(undefined)).toBe('balanced');
+    expect(fromServerTextureTarget('legacy')).toBe('balanced');
   });
 });

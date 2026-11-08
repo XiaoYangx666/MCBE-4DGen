@@ -191,7 +191,7 @@ export function TextureTuner({
               step={1}
               value={sliderValue}
               disabled={busy}
-              aria-label={`${name} 相对纹理密度`}
+              aria-label={`${name} 相对纹理预算`}
               title="拖动时只调整数值，松手后重新计算预览"
               onChange={(event) =>
                 setDraft(snapSlider(Number(event.target.value)))

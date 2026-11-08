@@ -1,7 +1,7 @@
 import type { MaterialListItem } from './MaterialList';
 
 export type TextureMode = 'legacy' | 'budget';
-export type TextureTarget = 'density' | 'retention';
+export type TextureTarget = 'density' | 'retention' | 'balanced';
 
 /** How a pixel number in the material browser was produced. */
 export type TexturePixelState = 'actual' | 'estimate' | 'pending' | 'none';

@@ -1629,6 +1629,44 @@ button.text-danger:hover:not(:disabled) { background: transparent; color: var(--
   color: var(--muted);
   font-size: 12px;
 }
+.allocation-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.allocation-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.allocation-option b { font-size: 12px; font-weight: 550; }
+.allocation-option span {
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+.allocation-option:hover { border-color: var(--accent); }
+.allocation-option.active {
+  border-color: var(--accent);
+  background: var(--selected);
+}
+.pick-box p.allocation-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.6;
+}
 .preview-header {
   flex: 0 0 auto;
   display: flex;
@@ -2569,11 +2607,13 @@ footer a { color: var(--accent); }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 4px;
   color: var(--muted);
   font-size: 10.5px;
 }
+.texture-tab-actions { display: flex; gap: 6px; margin-left: auto; }
 .texture-adjust-button {
   display: inline-flex;
   align-items: center;

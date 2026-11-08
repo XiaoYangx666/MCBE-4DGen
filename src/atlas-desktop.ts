@@ -32,7 +32,7 @@ export interface AtlasBudgetTextureOptions {
   /** Gutter in pixels per side. */
   padding?: number;
   /** Allocation target shared with the browser planner. */
-  target: 'texel-density' | 'texel-retention';
+  target: 'texel-density' | 'texel-retention' | 'texel-balanced';
   /** Priority by material name, default 1. */
   materialWeights?: Record<string, number>;
   /** Merge only materials that read exactly the same source pixels. */
@@ -286,7 +286,12 @@ export async function optimizeTexturesWithBudget(
   const planned = planAtlasBudget(inputs, {
     size,
     pad: padding,
-    target: options.target === 'texel-density' ? 'density' : 'retention',
+    target:
+      options.target === 'texel-density'
+        ? 'density'
+        : options.target === 'texel-retention'
+          ? 'retention'
+          : 'balanced',
     coverageAware: options.coverageAware ?? false,
     sharing: options.sharing ? 'safe' : 'none',
     merge: 'production',
