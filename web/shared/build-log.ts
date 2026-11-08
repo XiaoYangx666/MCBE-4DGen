@@ -23,6 +23,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    build: 'v0.2.2',
+    date: '2026-11-08',
+    title: 'v0.2.2 发布',
+    changes: [
+      { tag: '新增', text: '按部件减面：桌面和网页的模型部件列表里可以直接填保留比例，留空继承全局；可以给头部、脸等细节部件多留面，给四肢和次要部件多减面。比例会进入转换缓存、模型设置和皮肤包配置。' },
+      { tag: '优化', text: '预览视角：切换源模型 / 4D 输出不再旋转或重置相机，重新转换也保持当前视角；「重置视角」和初始取景始终从玩家正前方（−Z）看。桌面工作台改为常驻视口并缓存源/结果对象，切换明显更快。' },
+      { tag: '优化', text: '桌面预览任务轮询从 1 秒改为 150 毫秒，转换完成后结果几乎立即出现。' },
+      { tag: '修复', text: '大模型图集内存：贴图按需解码并限制缓存，图集岛逐个重采样，修复 17 万面 PMX 转换时 libvips 内存不足、桌面后台退出的问题。' },
+    ],
+  },
+  {
     build: 'v0.2.1',
     date: '2026-11-07',
     title: 'v0.2.1 发布',
@@ -210,4 +221,4 @@ export const BUILD_LABEL = CURRENT_BUILD.build;
 
 /** Note shown at the top of the build log. */
 export const CHANGELOG_NOTE =
-  '当前为 v0.2.1 正式版。正式版本之间仍按构建号记录，发版时会把覆盖的多个构建合并成一个版本条目。';
+  '当前为 v0.2.2 正式版。正式版本之间仍按构建号记录，发版时会把覆盖的多个构建合并成一个版本条目。';
