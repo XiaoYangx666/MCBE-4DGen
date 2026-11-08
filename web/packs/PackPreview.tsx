@@ -88,8 +88,9 @@ export function PackPreview({
         identifier: scene.identifier as `geometry.${string}`,
         groupByBone: true,
         mirrorX,
-        side: THREE.FrontSide,
-        alphaTest: 0.5,
+        side: THREE.DoubleSide,
+        alphaTest: 0.01,
+        transparent: true,
         onTextureLoad: () => view?.invalidate(),
       });
       view.setObject(preview.object);

@@ -372,9 +372,9 @@ export function Viewer({
             groupByBone: true,
             mirrorX: true,
             texture,
-            side: THREE.FrontSide,
-            alphaTest: 0.5,
-            transparent: false,
+            side: THREE.DoubleSide,
+            alphaTest: 0.01,
+            transparent: true,
             roughness: 1,
           });
           object = preview.object;
