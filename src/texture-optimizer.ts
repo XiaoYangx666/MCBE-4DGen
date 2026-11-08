@@ -518,16 +518,13 @@ export async function optimizeTextures(
     );
   const atlas = Buffer.alloc(size * size * 4);
   const reportRegions: {id:number; material:string; materialKeys:string[]; materials:string[]; surfaceAreas:Record<string,number>; weightedArea:number; x:number; y:number; width:number; height:number; source:Region["source"]; resized:{width:number;height:number}; tiles:Region["tiles"]; crop:Region["crop"]}[] = [];
-  // Reuse decoded source images across islands. The eviction budget must cover
-  // every distinct source texture used by the atlas: a smaller bound thrashed
-  // between textures and re-decoded multi-megapixel PNGs for each island.
+  // Decode sources on demand with a byte-bounded cache. Keeping every source
+  // buffer plus every resampled island alive at once runs large MMD models out
+  // of native memory in libvips; islands are resampled one at a time and only
+  // a few decoded textures stay resident.
   const decodedImages = new Map<Uint8Array, Buffer>();
-  const distinctSources = new Set<Uint8Array>();
-  for (const region of regions) {
-    const image = region.material?.getBaseColorTexture()?.getImage();
-    if (image) distinctSources.add(image);
-  }
-  const decodeCacheLimit = Math.max(3, distinctSources.size);
+  const DECODE_CACHE_BYTES = 96 * 1024 * 1024;
+  let decodedBytes = 0;
   const decodeImage = async (image: Uint8Array) => {
     const cached = decodedImages.get(image);
     if (cached) return cached;
@@ -536,21 +533,17 @@ export async function optimizeTextures(
       .ensureAlpha()
       .raw()
       .toBuffer();
-    if (decodedImages.size >= decodeCacheLimit)
-      decodedImages.delete(decodedImages.keys().next().value!);
+    while (decodedImages.size && decodedBytes + raw.byteLength > DECODE_CACHE_BYTES) {
+      const oldest = decodedImages.keys().next().value!;
+      const old = decodedImages.get(oldest)!;
+      decodedImages.delete(oldest);
+      decodedBytes -= old.byteLength;
+    }
     decodedImages.set(image, raw);
+    decodedBytes += raw.byteLength;
     return raw;
   };
-  // Decode every source the atlas needs up front, concurrently. Each decode is
-  // a libvips round trip over a multi-megapixel image; doing them one island at
-  // a time serialized the startup latency of every call.
-  await Promise.all([...distinctSources].map((image) => decodeImage(image)));
-  // Resample islands concurrently. Each call is an independent libvips pipeline
-  // over an already decoded buffer, so results are identical to running them
-  // one at a time; only the serialized per-call latency is removed. The pixel
-  // post-processing below stays in atlas order because it writes one buffer.
-  const resampled = await Promise.all(
-    regions.map(async (region) => {
+  const resampleRegion = async (region: Region) => {
       const w = region.crop
           ? region.width
           : Math.round(region.width / region.tiles[0]),
@@ -610,11 +603,10 @@ export async function optimizeTextures(
             .toBuffer()
         : Buffer.alloc(4 * w * h, 255);
       return { w, h, pixels };
-    }),
-  );
+  };
   for (const [id, region] of regions.entries()) {
     const rect = layout[id]!;
-    const { w, h, pixels } = resampled[id]!;
+    const { w, h, pixels } = await resampleRegion(region);
     const factor = region.material?.getBaseColorFactor() ?? [1, 1, 1, 1];
     const mode = region.material?.getAlphaMode() ?? "OPAQUE",
       cutoff = region.material?.getAlphaCutoff() ?? 0.5;
