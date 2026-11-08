@@ -4,7 +4,10 @@ import * as THREE from "three";
 import { createPosePreview } from "../web/workbench/pose-preview.ts";
 import { estimateTriangles } from "../web/workbench/estimate.ts";
 import { triangleBudget } from "../web/workbench/estimate.ts";
-import { preparePreviewMaterial } from "../web/workbench/preview-material.ts";
+import {
+  preparePreviewMaterial,
+  prepareSourcePreviewMaterials,
+} from "../web/workbench/preview-material.ts";
 
 test("alpha-textured opaque clothing uses depth-writing cutouts while real translucency stays blended", () => {
   const clothing = new THREE.MeshStandardMaterial({ transparent: true, opacity: 1, depthWrite: false });
@@ -20,6 +23,22 @@ test("alpha-textured opaque clothing uses depth-writing cutouts while real trans
   const mask = new THREE.MeshStandardMaterial({ alphaTest: 0.7 });
   preparePreviewMaterial(mask);
   assert.equal(mask.alphaTest, 0.7);
+});
+
+test("result poly_mesh previews keep their exported alpha instead of becoming cutouts", () => {
+  const result = new THREE.MeshStandardMaterial({
+    transparent: true,
+    alphaTest: 0.01,
+    opacity: 1,
+  });
+  prepareSourcePreviewMaterials([result], false);
+  assert.equal(result.transparent, true);
+  assert.equal(result.alphaTest, 0.01);
+
+  const source = new THREE.MeshStandardMaterial({ transparent: true, opacity: 1 });
+  prepareSourcePreviewMaterials([source], true);
+  assert.equal(source.transparent, false);
+  assert.equal(source.alphaTest, 0.5);
 });
 
 test("triangle guidance uses lightweight, acceptable and high bands", () => {

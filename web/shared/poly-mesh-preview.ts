@@ -27,7 +27,12 @@ export interface PolyMeshPreviewOptions {
   mirrorX?: boolean;
   /** Emit one mesh per bone, named after the bone. Defaults to a single mesh. */
   groupByBone?: boolean;
-  /** Material face side. Defaults to `THREE.FrontSide`. */
+  /**
+   * Material face side. Defaults to `THREE.FrontSide`. Exported poly_mesh
+   * already duplicates backfaces for double-sided source materials, so
+   * FrontSide renders both viewing directions exactly once. DoubleSide would
+   * draw translucent double-sided parts twice and double their opacity.
+   */
   side?: THREE.Side;
   /** Alpha cutout threshold. Defaults to `0.5`. */
   alphaTest?: number;

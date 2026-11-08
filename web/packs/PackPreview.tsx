@@ -88,7 +88,10 @@ export function PackPreview({
         identifier: scene.identifier as `geometry.${string}`,
         groupByBone: true,
         mirrorX,
-        side: THREE.DoubleSide,
+        // The export already duplicates backfaces for double-sided source
+        // materials. FrontSide draws each surface once; DoubleSide would blend
+        // translucent parts such as 目影 twice and turn 50% black into 75%.
+        side: THREE.FrontSide,
         alphaTest: 0.01,
         transparent: true,
         onTextureLoad: () => view?.invalidate(),

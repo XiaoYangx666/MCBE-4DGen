@@ -154,6 +154,45 @@ test('desktop budget path handles vertices shared by several triangles', async (
   }
 });
 
+test('flat translucent materials bake their alpha exactly once', async () => {
+  // 目影 is an untextured black material at 50% alpha. The budget path used to
+  // fill the flat chart with its opacity and then apply the base-color factor
+  // again, halving it to 25% (alpha 64 instead of 128).
+  const doc = await documentFixture();
+  const primitive = doc
+    .getRoot()
+    .listMeshes()[0]!
+    .listPrimitives()[0]!;
+  primitive
+    .getMaterial()!
+    .setName('目影')
+    .setBaseColorTexture(null)
+    .setBaseColorFactor([0, 0, 0, 0.5])
+    .setAlphaMode('BLEND')
+    .setDoubleSided(true);
+  const result = await optimizeTextures(model(doc), {
+    compactSize: 128,
+    padding: 0,
+    atlasBudget: 'texel-retention',
+  });
+  const uv = result.model.document
+    .getRoot()
+    .listMeshes()[0]!
+    .listPrimitives()[0]!
+    .getAttribute('TEXCOORD_0')!;
+  const value: number[] = [];
+  uv.getElement(0, value);
+  // Atlas UVs use glTF's top-left origin, so raw image rows match V directly.
+  const x = Math.min(127, Math.floor(value[0]! * 128));
+  const y = Math.min(127, Math.floor(value[1]! * 128));
+  const { data } = await sharp(Buffer.from(result.png))
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const offset = (y * 128 + x) * 4;
+  assert.deepEqual([...data.subarray(offset, offset + 4)], [0, 0, 0, 128]);
+});
+
 test('legacy compact output is unchanged when atlasBudget is absent', async () => {
   const result = await optimizeTextures(await twoMaterials(), {
     compactSize: 128,

@@ -311,19 +311,11 @@ export async function optimizeTexturesWithBudget(
       written.add(rectKey);
       const innerPixels = Buffer.alloc(inner.width * inner.height * 4);
       if (!batch.image || !chart.bounds) {
-        const alpha = batch.alphaMode === 'OPAQUE' ? 1 : batch.opacity;
-        const color = [
-          Math.round(Math.min(1, Math.max(0, batch.color[0])) * 255),
-          Math.round(Math.min(1, Math.max(0, batch.color[1])) * 255),
-          Math.round(Math.min(1, Math.max(0, batch.color[2])) * 255),
-          Math.round(alpha * 255),
-        ];
-        for (let i = 0; i < innerPixels.length; i += 4) {
-          innerPixels[i] = color[0]!;
-          innerPixels[i + 1] = color[1]!;
-          innerPixels[i + 2] = color[2]!;
-          innerPixels[i + 3] = color[3]!;
-        }
+        // Flat materials have no texture pixels; start from opaque white and
+        // let bakeBaseColorPixels apply the base-color/alpha factor once. The
+        // browser atlas does the same, so a flat 50%-alpha part (e.g. 目影)
+        // stays at 50% instead of being multiplied twice.
+        innerPixels.fill(255);
       } else {
         let offset = 0;
         for (let y = 0; y < inner.height; y++) {

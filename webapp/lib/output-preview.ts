@@ -23,7 +23,10 @@ export function buildGeometryPreview(
     // it back. Flat image skins are authored directly in Bedrock coordinates
     // and must keep their original orientation.
     mirrorX: options.mirrorX ?? true,
-    side: THREE.DoubleSide,
+    // Exports duplicate backfaces for double-sided source materials, so one
+    // side already covers both viewing directions. DoubleSide would draw
+    // translucent 目影 twice and turn its 50% black into 75% black.
+    side: THREE.FrontSide,
     alphaTest: 0.01,
     transparent: true,
   });

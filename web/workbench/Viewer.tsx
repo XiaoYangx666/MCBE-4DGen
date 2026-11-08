@@ -10,7 +10,7 @@ import type { Result, Session } from "./types";
 import type { PartSummary } from "../../src/api-types";
 import { applyPartMeshState, collectPartMeshes } from "./part-visibility";
 import { api } from "../lib/api";
-import { preparePreviewMaterial } from "./preview-material";
+import { prepareSourcePreviewMaterials } from "./preview-material";
 import {
   createPreviewViewport,
   type PreviewViewport,
@@ -372,7 +372,9 @@ export function Viewer({
             groupByBone: true,
             mirrorX: true,
             texture,
-            side: THREE.DoubleSide,
+            // Backfaces are already duplicated by the exporter; FrontSide
+            // avoids blending translucent parts twice.
+            side: THREE.FrontSide,
             alphaTest: 0.01,
             transparent: true,
             roughness: 1,
@@ -400,7 +402,7 @@ export function Viewer({
         if (!cached) group.traverse((child) => {
           if (!(child instanceof THREE.Mesh)) return;
           const old = Array.isArray(child.material) ? child.material : [child.material];
-          old.forEach(preparePreviewMaterial);
+          prepareSourcePreviewMaterials(old, viewKind !== "result" || !result);
           child.userData.materialNames = old.map((material) => material.name);
           child.userData.original = old;
           child.userData.flat = old.map((material) => new THREE.MeshBasicMaterial({

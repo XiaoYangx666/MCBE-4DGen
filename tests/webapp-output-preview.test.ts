@@ -44,6 +44,22 @@ describe('webapp output preview', () => {
     preview.dispose();
   });
 
+  it('draws exported backfaces once so translucent parts are not blended twice', () => {
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockReturnValue(new THREE.Texture());
+    const preview = buildGeometryPreview(triangleFile(), 'unused');
+    let mesh: THREE.Mesh | null = null;
+    preview.object.traverse((object) => {
+      if (!mesh && (object as THREE.Mesh).isMesh) mesh = object as THREE.Mesh;
+    });
+    const material = mesh!.material as THREE.MeshStandardMaterial;
+    // The exporter duplicates double-sided backfaces; FrontSide keeps a 50%
+    // alpha part at 50% instead of rendering both copies.
+    expect(material.side).toBe(THREE.FrontSide);
+    expect(material.transparent).toBe(true);
+    expect(material.alphaTest).toBe(0.01);
+    preview.dispose();
+  });
+
   it('keeps Bedrock coordinates for flat image skins', () => {
     vi.spyOn(THREE.TextureLoader.prototype, 'load').mockReturnValue(new THREE.Texture());
     const preview = buildGeometryPreview(triangleFile(), 'unused', { mirrorX: false });
