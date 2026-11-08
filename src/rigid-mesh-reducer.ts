@@ -38,7 +38,14 @@ export async function reduceRigidModel(
     for (let i = 0; i < pos.getCount(); i++) { const n: number[] = [], t: number[] = []; normal.getElement(i, n); uv.getElement(i, t); attributes.set([...n, ...t], i * 5); }
     const sourcePart = readPartExtra(p.getExtras())?.id;
     const ratio = partReduceRatio(sourcePart, options.ratio, options.partRatios);
-    const target = Math.max(1, Math.floor(source.length / 3 * ratio));
+    const triangleCount = source.length / 3;
+    const target = Math.max(1, Math.floor(triangleCount * ratio));
+    // Requesting every triangle is a no-op; skip the simplifier so 100% parts
+    // cost nothing when the user is only tuning other parts.
+    if (target >= triangleCount) {
+      details.push({ part: p.getExtras()._playerPart, sourcePart, material: p.getMaterial()?.getName(), before: triangleCount, after: triangleCount, error: 0 });
+      continue;
+    }
     const [indices, error] = MeshoptSimplifier.simplifyWithAttributes(source, new Float32Array(pos.getArray()!), 3,
       attributes, 5, [...REDUCE_ATTRIBUTE_WEIGHTS], null, target * 3, options.maxError, [...REDUCE_SIMPLIFY_OPTIONS]);
     if (!indices.length) throw new Error('Reduction emptied a material/rigid group');

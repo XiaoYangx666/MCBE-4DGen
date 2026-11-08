@@ -125,6 +125,18 @@ export const convertRoutes = [
       height: body.height,
       profile: body.profile,
     });
+    // Rig/pose/frozen geometry does not depend on the retention values, so a
+    // per-part edit can reuse it and re-run only the reduction.
+    const baseKey = stableJson({
+      session: body.session,
+      excluded: [...excluded].sort(),
+      includedParts: [...keepParts].sort(),
+      binding: body.binding,
+      height: body.height,
+      profile: body.profile,
+    });
+    const preparedBase =
+      body.binding === 'humanoid' ? studio.preparedBases.get(baseKey) : undefined;
     const preparedModel = studio.preparedModels.get(geometryKey);
     const cached = preview
       ? undefined
@@ -159,9 +171,13 @@ export const convertRoutes = [
         ? preview
           ? '复用模型，更新纹理预览…'
           : '复用模型，仅更新纹理与 UV…'
-        : preview
-          ? '正在绑定、减面并生成纹理预览…'
-          : '正在绑定、减面并生成 128×128 图集…',
+        : preparedBase
+          ? preview
+            ? '复用姿势与网格，更新减面预览…'
+            : '复用姿势与网格，重新减面并生成图集…'
+          : preview
+            ? '正在绑定、减面并生成纹理预览…'
+            : '正在绑定、减面并生成 128×128 图集…',
       meta: {
         source: session.name,
         modelId: session.modelId,
@@ -206,8 +222,11 @@ export const convertRoutes = [
         if (body.binding === 'humanoid') {
           const result = await exportHumanoid(model, {
             prepared: preparedModel?.humanoid,
+            ...(preparedBase ? { preparedBase } : {}),
             onPrepared: (state) =>
               studio.retainPrepared(geometryKey, { humanoid: state }),
+            onPreparedBase: (state) =>
+              studio.retainPreparedBase(baseKey, state),
             height: body.height,
             onStage: (phase) => {
               job.message =
@@ -215,7 +234,10 @@ export const convertRoutes = [
                   {
                     rig: '准备骨骼与材质…',
                     pose: '冻结调整后的姿势…',
-                    reduction: '按误差限制减面…',
+                    reduction:
+                      Object.keys(partRatios).length > 0
+                        ? '按部件比例减面…'
+                        : '按误差限制减面…',
                     atlas: '裁切贴图并分配图集…',
                     export: '导出六个玩家部位…',
                     done: '几何导出完成…',

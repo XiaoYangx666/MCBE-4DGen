@@ -2,7 +2,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { Document } from '@gltf-transform/core';
 import sharp from 'sharp';
-import { exportHumanoid } from '../src/humanoid.ts';
+import { exportHumanoid, type PreparedHumanoidBase } from '../src/humanoid.ts';
 import type { IntermediateModel } from '../src/model.ts';
 
 async function fixture(): Promise<IntermediateModel> {
@@ -146,4 +146,40 @@ test('texture-only humanoid rebuild reuses prepared geometry without pose or red
     assert.deepEqual(reused.poly_mesh?.normals,bone.poly_mesh?.normals);
   }
   assert.deepEqual(prepared.model.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!.getAttribute('TEXCOORD_0')!.getArray(),sourceUV);
+});
+
+test('prepared base reuses rig and pose and leaves the cached document intact', async () => {
+  const input = await fixture();
+  let base: PreparedHumanoidBase | undefined;
+  const phases: string[] = [];
+  const full = await exportHumanoid(input, {
+    height: 32, textureSize: 32,
+    reduction: { ratio: 0.5, maxError: 0.03 },
+    onPreparedBase: (value) => { base = value; },
+    onStage: (phase) => { if (phase === 'reduction') phases.push('first'); },
+  });
+  assert.ok(base);
+  assert.deepEqual(phases, ['first']);
+  const before = base.model.document.getRoot().listMeshes()
+    .flatMap((mesh) => mesh.listPrimitives())
+    .reduce((sum, primitive) => sum + primitive.getIndices()!.getCount() / 3, 0);
+
+  const reusedPhases: string[] = [];
+  const next = await exportHumanoid(input, {
+    height: 32, textureSize: 32,
+    reduction: { ratio: 0.25, maxError: 0.03 },
+    preparedBase: base,
+    onPreparedBase: () => { reusedPhases.push('re-prepared'); },
+    onStage: (phase) => reusedPhases.push(phase),
+  });
+  // The cached base is served as-is: no rig/pose/prepare stages and no
+  // onPreparedBase callback on the reuse pass.
+  assert.deepEqual(reusedPhases, ['reduction', 'atlas', 'export', 'done']);
+  assert.deepEqual(next.binding.parts, full.binding.parts);
+  assert.deepEqual(next.binding.pivots, full.binding.pivots);
+  assert.equal(next.binding.reduction?.ratio, 0.25);
+  const after = base.model.document.getRoot().listMeshes()
+    .flatMap((mesh) => mesh.listPrimitives())
+    .reduce((sum, primitive) => sum + primitive.getIndices()!.getCount() / 3, 0);
+  assert.equal(after, before);
 });

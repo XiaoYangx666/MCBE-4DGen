@@ -20,7 +20,11 @@ import type {
   PartSummary,
 } from '../src/api-types.ts';
 import { autoProfile } from '../src/auto-profile.ts';
-import type { HumanoidProfile, PreparedHumanoid } from '../src/humanoid.ts';
+import type {
+  HumanoidProfile,
+  PreparedHumanoid,
+  PreparedHumanoidBase,
+} from '../src/humanoid.ts';
 import { importModel } from '../src/importer.ts';
 import type { IntermediateModel } from '../src/model.ts';
 import { assignParts, materialKeyMap } from '../src/parts.ts';
@@ -119,6 +123,8 @@ export class Studio {
   readonly sessions = new Map<string, Session>();
   readonly jobs = new Map<string, Job>();
   readonly preparedModels = new Map<string, PreparedState>();
+  /** Pre-reduction rig/pose state, reusable when only retention changes. */
+  readonly preparedBases = new Map<string, PreparedHumanoidBase>();
   readonly io = new NodeIO()
     .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({ 'meshopt.encoder': MeshoptEncoder });
@@ -165,10 +171,19 @@ export class Studio {
     this.preparedModels.set(key, state);
   }
 
+  retainPreparedBase(key: string, state: PreparedHumanoidBase): void {
+    // Same budget as prepared models: one frozen document is enough for the
+    // current session and keeps per-part retention edits re-reduction-only.
+    if (!this.preparedBases.has(key) && this.preparedBases.size >= 1)
+      this.preparedBases.delete(this.preparedBases.keys().next().value!);
+    this.preparedBases.set(key, state);
+  }
+
   /** Drop a workbench session and its finished conversion buffers. */
   releaseSession(id: string): boolean {
     const removed = this.sessions.delete(id);
     this.preparedModels.clear();
+    this.preparedBases.clear();
     for (const [jobId, job] of this.jobs)
       if (job.status !== 'running') this.jobs.delete(jobId);
     return removed;
@@ -281,6 +296,7 @@ export class Studio {
     if (this.sessions.size >= 1)
       this.sessions.delete(this.sessions.keys().next().value!);
     this.preparedModels.clear();
+    this.preparedBases.clear();
     const source =
       cache && (await fileExists(resolve(this.root, cache)))
         ? resolve(this.root, cache)

@@ -58,34 +58,53 @@ export interface PreparedHumanoid {
   profile: { shoulderOutset:number; armSpreadDegrees:number };
 }
 
+/**
+ * Rig, pose and frozen geometry before reduction. Cached so changing only the
+ * per-part retention can skip the rig/pose/prepare phases and re-reduce.
+ */
+export interface PreparedHumanoidBase {
+  model: IntermediateModel;
+  pivots: Record<Part, V3>;
+  classification: {material:string; mode:string; components:number; triangles:Record<string,number>}[];
+  profile: { shoulderOutset:number; armSpreadDegrees:number };
+}
+
+export interface HumanoidExportOptions {
+  height: number;
+  textureSize: number;
+  atlas?: number;
+  /** Gutter in pixels per side; 0 by default (Bedrock uses nearest sampling). */
+  atlasPadding?: number;
+  materialWeights?: Record<string, number>;
+  /** Opt-in shared texel-budget planner; legacy compact stays the default. */
+  atlasBudget?: 'texel-density' | 'texel-retention' | 'texel-balanced';
+  atlasSharing?: boolean;
+  profile?: HumanoidProfile;
+  reduction?: {
+    ratio: number;
+    maxError: number;
+    /** Per-part retention overrides keyed by stable source-part id. */
+    partRatios?: Record<string, number>;
+  };
+  onStage?: (phase: string) => void;
+  prepared?: PreparedHumanoid;
+  onPrepared?: (prepared: PreparedHumanoid) => void;
+  /** Reuse the pre-reduction model from an earlier conversion of this session. */
+  preparedBase?: PreparedHumanoidBase;
+  onPreparedBase?: (prepared: PreparedHumanoidBase) => void;
+}
+
 /** Rigid six-part player binding, using source rig weights, topology and explicit garment rules.
  * Bedrock poly_mesh cannot retain smooth skin weights, elbow/knee bends or VRM physics.
  */
 export async function exportHumanoid(
   input: IntermediateModel,
-  options: {
-    height: number;
-    textureSize: number;
-    atlas?: number;
-    /** Gutter in pixels per side; 0 by default (Bedrock uses nearest sampling). */
-    atlasPadding?: number;
-    materialWeights?: Record<string, number>;
-    /** Opt-in shared texel-budget planner; legacy compact stays the default. */
-    atlasBudget?: 'texel-density' | 'texel-retention' | 'texel-balanced';
-    atlasSharing?: boolean;
-    profile?: HumanoidProfile;
-    reduction?: {
-      ratio: number;
-      maxError: number;
-      /** Per-part retention overrides keyed by stable source-part id. */
-      partRatios?: Record<string, number>;
-    };
-    onStage?: (phase: string) => void;
-    prepared?: PreparedHumanoid;
-    onPrepared?: (prepared: PreparedHumanoid) => void;
-  },
+  options: HumanoidExportOptions,
 ) {
-  if (options.prepared) return textureHumanoid(options.prepared, options);
+  if (options.prepared) {
+    options.onStage?.("atlas");
+    return textureHumanoid(options.prepared, options);
+  }
   const timings: Record<string, number> = {};
   let phaseName = "rig",
     phaseStart = performance.now();
@@ -95,6 +114,8 @@ export async function exportHumanoid(
     phaseStart = performance.now();
     options.onStage?.(name);
   };
+  if (options.preparedBase)
+    return finishHumanoid(options.preparedBase, options, timings, phase);
   options.onStage?.("rig");
   const shoulderOutset = options.profile?.shoulderOutset ?? 0;
   const spread = options.profile?.armSpreadDegrees ?? 0;
@@ -433,12 +454,41 @@ export async function exportHumanoid(
       return [part, fit(point[0]!, point[1]!, point[2]!)];
     }),
   ) as Record<Part, V3>;
+  const base: PreparedHumanoidBase = {
+    model: prepared.model,
+    pivots,
+    classification,
+    profile: { shoulderOutset, armSpreadDegrees: spread },
+  };
+  options.onPreparedBase?.(base);
+  return finishHumanoid(base, options, timings, phase);
+}
+
+/** Reduce the cached base and run the texture/export phases. */
+async function finishHumanoid(
+  base: PreparedHumanoidBase,
+  options: HumanoidExportOptions,
+  timings: Record<string, number>,
+  phase: (name: string) => void,
+) {
   phase("reduction");
   const reduced = options.reduction
-    ? await reduceRigidModel(prepared.model, options.reduction)
+    ? await reduceRigidModel(base.model, options.reduction)
     : null;
   phase("atlas");
-  const state: PreparedHumanoid = {model:reduced?.model ?? prepared.model, pivots, classification, reduction:reduced?.report ?? null, profile:{shoulderOutset, armSpreadDegrees:spread}};
+  // Without reduction the cached base must stay untouched for the next edit.
+  const model =
+    reduced?.model ?? {
+      ...base.model,
+      document: cloneDocument(base.model.document),
+    };
+  const state: PreparedHumanoid = {
+    model,
+    pivots: base.pivots,
+    classification: base.classification,
+    reduction: reduced?.report ?? null,
+    profile: base.profile,
+  };
   options.onPrepared?.(state);
   return textureHumanoid(state, options, timings);
 }
@@ -447,7 +497,6 @@ async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:nu
   const {pivots, classification} = state;
   let phaseName = 'atlas', phaseStart = performance.now();
   const phase = (name:string) => {timings[phaseName] = Math.round(performance.now()-phaseStart); phaseName=name; phaseStart=performance.now(); options.onStage?.(name);};
-  options.onStage?.('atlas');
   const texture = await optimizeTextures(state.model, {
     maxTextureSize:options.textureSize,
     ...(options.materialWeights ? {materialWeights:options.materialWeights} : {}),
