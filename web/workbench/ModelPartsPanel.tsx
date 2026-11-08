@@ -17,6 +17,10 @@ export function ModelPartsPanel({
   setSelectedPart,
   busy,
   changed,
+  partRatios,
+  onPartRatio,
+  onResetPartRatios,
+  defaultRatio,
 }: {
   session: Session | null;
   includedParts: ReadonlySet<string>;
@@ -25,6 +29,10 @@ export function ModelPartsPanel({
   setSelectedPart: (part: string | null) => void;
   busy: boolean;
   changed: () => void;
+  partRatios: Readonly<Record<string, number>>;
+  onPartRatio: (id: string, ratio: number | null) => void;
+  onResetPartRatios: () => void;
+  defaultRatio: number;
 }) {
   const parts = session?.parts ?? [];
   const studioParts = useMemo<StudioPart[]>(() => {
@@ -92,6 +100,10 @@ export function ModelPartsPanel({
         selectedPart={selectedPart}
         onSelectPart={setSelectedPart}
         disabled={busy}
+        partRatios={partRatios}
+        onPartRatio={onPartRatio}
+        onResetPartRatios={onResetPartRatios}
+        defaultRatio={defaultRatio}
       />
     </div>
   );

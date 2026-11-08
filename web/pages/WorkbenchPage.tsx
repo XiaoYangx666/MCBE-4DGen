@@ -272,6 +272,10 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                 setSelectedPart={setSelectedPart}
                 busy={busy}
                 changed={changed}
+                partRatios={partRatios}
+                onPartRatio={setPartRatio}
+                onResetPartRatios={resetPartRatios}
+                defaultRatio={ratio}
               />
             )}
             {workspace === "texture" && (
@@ -440,10 +444,6 @@ export function WorkbenchPage({ workbench }: { workbench: Workbench }) {
                 changed={changed}
                 ratio={ratio}
                 setRatio={setRatio}
-                partRatios={partRatios}
-                setPartRatio={setPartRatio}
-                resetPartRatios={resetPartRatios}
-                includedParts={includedParts}
                 estimate={estimate}
                 result={result}
                 stale={stale}

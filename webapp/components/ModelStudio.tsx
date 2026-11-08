@@ -42,7 +42,6 @@ import { buildGeometryPreview } from '../lib/output-preview';
 import { useSkinPack } from '../lib/pack-context';
 import type { TextureSource } from '../engine/types';
 import { RatioField } from '../../web/shared/RatioField';
-import { PartRatioList } from '../../web/shared/PartRatioList';
 import { MaterialDonut } from './MaterialDonut';
 import { formatBytes } from '../../web/shared/format';
 import { PoseControls } from '../../web/shared/PoseControls';
@@ -643,11 +642,6 @@ export function ModelStudio({
       };
     });
   }, [source, materialLabels, materialThumbs]);
-  const partTriangles = useMemo(() => {
-    const map = new Map<string, number>();
-    if (source) for (const part of extractedParts(source)) map.set(part.id, part.triangles);
-    return map;
-  }, [source]);
   const studioMaterials = useMemo<StudioMaterial[]>(() => {
     if (!source) return [];
     const measured = new Map(
@@ -951,6 +945,10 @@ export function ModelStudio({
               showKeptOnly={showKeptParts}
               onShowKeptOnly={setShowKeptParts}
               disabled={loading || busy}
+              partRatios={partRatios}
+              onPartRatio={setPartRatio}
+              onResetPartRatios={resetPartRatios}
+              defaultRatio={ratio}
             />
           ) : (
             <p className="field-help">导入模型后可以在这里选择要保留的部件。</p>
@@ -1161,20 +1159,6 @@ export function ModelStudio({
               />
             </label>
             <p className="field-help">默认 0.03。调小更保形，可能减不到目标；调大减得更多，但更容易丢轮廓。</p>
-            <PartRatioList
-              parts={studioParts.map((part) => ({
-                id: part.id,
-                name: part.name,
-                group: part.group,
-                triangles: partTriangles.get(part.id),
-              }))}
-              includedParts={includedParts}
-              ratios={partRatios}
-              defaultRatio={ratio}
-              onChange={setPartRatio}
-              onResetAll={resetPartRatios}
-              disabled={loading || busy}
-            />
           </div>
 
           <div className="field-group">

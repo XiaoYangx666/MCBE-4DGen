@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Dialog } from './Dialog';
 import { MaterialList, WeightInput, type MaterialListItem } from './MaterialList';
+import { PartRatioInput } from './PartRatioInput';
 import {
   formatQuality,
   qualityToSlider,
@@ -61,6 +62,11 @@ export interface StudioPartsProps {
   onShowKeptOnly: (value: boolean) => void;
   disabled?: boolean;
   className?: string;
+  /** Per-part retention overrides keyed by stable part id. */
+  partRatios?: Readonly<Record<string, number>>;
+  onPartRatio?: (id: string, ratio: number | null) => void;
+  onResetPartRatios?: () => void;
+  defaultRatio?: number;
 }
 
 /** Absolute density steps; 1× restores the untouched budget. */
@@ -97,6 +103,10 @@ export function StudioParts({
   onShowKeptOnly,
   disabled = false,
   className,
+  partRatios,
+  onPartRatio,
+  onResetPartRatios,
+  defaultRatio = 0.2,
 }: StudioPartsProps) {
   const groups = useMemo(() => {
     const map = new Map<string, StudioPart[]>();
@@ -128,6 +138,16 @@ export function StudioParts({
         >
           反选
         </button>
+        {onResetPartRatios && partRatios && Object.keys(partRatios).length > 0 && (
+          <button
+            type="button"
+            disabled={disabled}
+            title="所有部件恢复全局减面比例"
+            onClick={onResetPartRatios}
+          >
+            减面恢复默认
+          </button>
+        )}
         <label className="texture-studio-check">
           <input
             type="checkbox"
@@ -205,8 +225,20 @@ export function StudioParts({
                       >
                         {part.name}
                       </button>
-                      <span className="texture-part-meta" title={part.meta}>
-                        {part.meta}
+                      <span className="texture-part-sub">
+                        <span className="texture-part-meta" title={part.meta}>
+                          {part.meta}
+                        </span>
+                        {onPartRatio && (
+                          <PartRatioInput
+                            id={part.id}
+                            name={part.name}
+                            ratio={partRatios?.[part.id]}
+                            defaultRatio={defaultRatio}
+                            disabled={disabled || !included}
+                            onChange={onPartRatio}
+                          />
+                        )}
                       </span>
                     </div>
                     <button

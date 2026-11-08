@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { StudioPart } from './texture-types';
+import { PartRatioInput } from './PartRatioInput';
 
 type PartFilter = 'all' | 'kept' | 'dropped' | 'shared';
 
@@ -27,6 +28,11 @@ export function PartBrowser({
   onSelectPart,
   disabled = false,
   emptyText = '当前模型没有可管理的部件。',
+  /** Per-part retention overrides keyed by stable part id. */
+  partRatios,
+  onPartRatio,
+  onResetPartRatios,
+  defaultRatio = 0.2,
 }: {
   parts: readonly StudioPart[];
   includedParts: ReadonlySet<string>;
@@ -36,6 +42,10 @@ export function PartBrowser({
   onSelectPart: (id: string | null) => void;
   disabled?: boolean;
   emptyText?: string;
+  partRatios?: Readonly<Record<string, number>>;
+  onPartRatio?: (id: string, ratio: number | null) => void;
+  onResetPartRatios?: () => void;
+  defaultRatio?: number;
 }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<PartFilter>('all');
@@ -116,6 +126,16 @@ export function PartBrowser({
         >
           反选
         </button>
+        {onResetPartRatios && partRatios && Object.keys(partRatios).length > 0 && (
+          <button
+            type="button"
+            disabled={disabled}
+            title="所有部件恢复全局减面比例"
+            onClick={onResetPartRatios}
+          >
+            减面恢复默认
+          </button>
+        )}
       </div>
       {!visible.length && <p className="workspace-empty">没有匹配的部件。</p>}
       <div className="texture-studio-part-groups">
@@ -190,8 +210,20 @@ export function PartBrowser({
                       >
                         {part.name}
                       </button>
-                      <span className="texture-part-meta" title={part.meta}>
-                        {part.meta}
+                      <span className="texture-part-sub">
+                        <span className="texture-part-meta" title={part.meta}>
+                          {part.meta}
+                        </span>
+                        {onPartRatio && (
+                          <PartRatioInput
+                            id={part.id}
+                            name={part.name}
+                            ratio={partRatios?.[part.id]}
+                            defaultRatio={defaultRatio}
+                            disabled={disabled || !included}
+                            onChange={onPartRatio}
+                          />
+                        )}
                       </span>
                     </div>
                     {part.sharedWith && part.sharedWith.length > 0 && (
