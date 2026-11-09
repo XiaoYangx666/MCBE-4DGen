@@ -19,6 +19,8 @@ export interface ExportOptions {
   identifier: string;
   /** Optional final skin atlas edge; normalized UVs stay unchanged. */
   skinTextureSize?: 64 | 128;
+  /** Resize only when the final atlas exceeds this edge; keeps smaller sources intact. */
+  maxSkinTextureSize?: 128;
   /** Duplicate back-facing triangles when glTF material is double-sided (default). */
   doubleSided?: "duplicate" | "front-only";
   /** Export frozen _playerPart groups in one pass, with independent streams per bone. */
@@ -53,13 +55,24 @@ export async function exportBedrockGeometry(
   let metadata = await sharp(image).metadata();
   if (metadata.format !== "png" || !metadata.width || !metadata.height)
     throw new Error("Export requires a valid PNG atlas");
+  const limit = options.maxSkinTextureSize;
+  const oversized =
+    limit !== undefined && (metadata.width > limit || metadata.height > limit);
   const resized =
-    options.skinTextureSize !== undefined &&
-    (metadata.width !== options.skinTextureSize ||
-      metadata.height !== options.skinTextureSize);
+    oversized ||
+    (options.skinTextureSize !== undefined &&
+      (metadata.width !== options.skinTextureSize ||
+        metadata.height !== options.skinTextureSize));
   if (resized) {
+    const target = options.skinTextureSize ?? limit!;
     image = await sharp(image)
-      .resize(options.skinTextureSize!, options.skinTextureSize!)
+      .resize({
+        width: target,
+        height: target,
+        ...(options.skinTextureSize === undefined
+          ? { fit: "inside" as const, withoutEnlargement: true }
+          : {}),
+      })
       .png()
       .toBuffer();
     metadata = await sharp(image).metadata();
@@ -72,7 +85,7 @@ export async function exportBedrockGeometry(
   const warnings = [...binding.model.warnings];
   if (resized)
     warnings.push(
-      `Final skin atlas resized to ${options.skinTextureSize}x${options.skinTextureSize} for client compatibility; normalized UVs preserved, downsampling can reduce detail.`,
+      `Final skin atlas resized to ${metadata.width}x${metadata.height} for client compatibility; normalized UVs preserved, downsampling can reduce detail.`,
     );
   let sourceTriangles = 0,
     addedBackfaces = 0,

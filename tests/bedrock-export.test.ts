@@ -63,6 +63,32 @@ test("skin atlas limit resizes PNG and dimensions together without changing norm
   assert.equal((await sharp(texture.getImage()!).metadata()).width, 512);
 });
 
+test("max skin texture limit only shrinks oversized atlases", async () => {
+  const model = await prepared();
+  const texture = model.document
+    .getRoot()
+    .listMaterials()[0]!
+    .getBaseColorTexture()!;
+  texture.setImage(
+    await sharp(texture.getImage()!).resize(256, 256).png().toBuffer(),
+  );
+  const binding = bindStatic(model);
+  const limited = await exportBedrockGeometry(binding, {
+    identifier: "geometry.fixture",
+    maxSkinTextureSize: 128,
+  });
+  assert.equal(limited.file["geometry.fixture"]!.texturewidth, 128);
+  assert.equal((await sharp(limited.png).metadata()).width, 128);
+  texture.setImage(
+    await sharp(texture.getImage()!).resize(64, 64).png().toBuffer(),
+  );
+  const kept = await exportBedrockGeometry(binding, {
+    identifier: "geometry.fixture",
+    maxSkinTextureSize: 128,
+  });
+  assert.equal(kept.file["geometry.fixture"]!.texturewidth, 64);
+});
+
 test("legacy export uses independent position/normal/UV indices and repeated triangle corner", async () => {
   const model = await prepared();
   const result = await exportBedrockGeometry(bindStatic(model), {

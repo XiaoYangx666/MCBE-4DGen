@@ -480,7 +480,10 @@ async function preserveSourceTexture(
   const sourceWidth = texture.width;
   const sourceHeight = texture.height;
   if (!(sourceWidth > 0 && sourceHeight > 0)) throw new Error('源贴图尺寸无效');
-  const scale = maxSize ? Math.min(1, maxSize / Math.max(sourceWidth, sourceHeight)) : 1;
+  // Skin packs are limited to 128px by the Minecraft client; clamp here even
+  // when an external caller supplied a larger texture budget.
+  const limit = Math.min(maxSize ?? 128, 128);
+  const scale = limit ? Math.min(1, limit / Math.max(sourceWidth, sourceHeight)) : 1;
   const width = Math.max(1, Math.round(sourceWidth * scale));
   const height = Math.max(1, Math.round(sourceHeight * scale));
   const canvas = document.createElement('canvas');

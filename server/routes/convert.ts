@@ -295,7 +295,7 @@ export const convertRoutes = [
           });
           exported = await exportBedrockGeometry(bindStatic(result.model), {
             identifier: 'geometry.skin0',
-            ...(result.preserved ? {} : { skinTextureSize: 128 }),
+            ...(result.preserved ? { maxSkinTextureSize: 128 } : { skinTextureSize: 128 }),
           });
           details = result.report;
         }

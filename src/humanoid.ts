@@ -520,7 +520,7 @@ async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:nu
   phase("export");
   const full = await exportBedrockGeometry(bindStatic(optimized.model), {
     identifier: "geometry.skin0",
-    ...(texture.preserved ? {} : { skinTextureSize: 128 }),
+    ...(texture.preserved ? { maxSkinTextureSize: 128 } : { skinTextureSize: 128 }),
     playerParts: true,
   });
   const geometry = full.file["geometry.skin0"]!;

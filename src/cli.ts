@@ -177,7 +177,7 @@ async function main() {
   });
   const exported = humanoid ?? await exportBedrockGeometry(bindStatic(optimized!.model), {
     identifier: 'geometry.skin0',
-    ...(optimized!.preserved ? {} : { skinTextureSize: 128 }),
+    ...(optimized!.preserved ? { maxSkinTextureSize: 128 } : { skinTextureSize: 128 }),
   });
   const files = buildSkinPack({ geometry: exported.file, png: exported.png, packName, identifier: 'geometry.skin0' });
   await validateSkinPackFiles(files);

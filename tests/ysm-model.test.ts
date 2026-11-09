@@ -299,7 +299,7 @@ test('YSM scene description owns role nodes, hierarchy and mesh offsets', () => 
   const plan = buildYsmImportPlan(parseYsmManifest(manifest()), parsed.geometry);
   assert.equal(plan.scene.humanoid, true);
   assert.equal(plan.textureHint.preserve, true);
-  assert.equal(plan.textureHint.maxSize, 256);
+  assert.equal(plan.textureHint.maxSize, 128);
   // Eight roles, but each hand role is nested under its upper-arm role.
   assert.equal(plan.scene.roots.filter((node) => node.role).length, 6);
   const arm = plan.scene.roots.find((node) => node.role === 'leftUpperArm')!;
@@ -509,8 +509,8 @@ test('YSM texture hint caps large atlases but explicit user sizes win', async ()
   const model = await importModel(join(modelDir, 'ysm.json'));
   const hinted = await optimizeTextures(model, {});
   assert.equal(hinted.preserved, true);
-  assert.equal(hinted.report.atlas.width, 256);
-  assert.equal(hinted.report.atlas.height, 256);
+  assert.equal(hinted.report.atlas.width, 128);
+  assert.equal(hinted.report.atlas.height, 128);
   const explicit = await optimizeTextures(model, { maxTextureSize: 1024, maxTextureSizeExplicit: true });
   assert.equal(explicit.report.atlas.width, 1024);
   const forcedAtlas = await optimizeTextures(model, { forceAtlas: true, compactSize: 128 });
