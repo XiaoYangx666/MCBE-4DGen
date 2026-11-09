@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { dominantHumanoidPart } from '../../src/humanoid-binding.ts';
+import { dominantHumanoidPart, HUMANOID_PARTS } from '../../src/humanoid-binding.ts';
 import { humanoidPivots, type HumanoidRig } from './humanoid.ts';
 import { sourceAlphaOf } from './preview-materials.ts';
 import {
@@ -150,8 +150,14 @@ export function extractModel(
     const skinWeight = geometry.getAttribute('skinWeight');
     const skeleton = skinned.isSkinnedMesh ? skinned.skeleton : null;
     const classify = !!rig && !!skeleton && !!skinIndex && !!skinWeight;
+    const rawRigidPart = mesh.userData._playerPart;
+    const rigidPart =
+      typeof rawRigidPart === 'string' && (HUMANOID_PARTS as readonly string[]).includes(rawRigidPart)
+        ? rawRigidPart as HumanoidPart
+        : null;
     const partScores = new Map<HumanoidPart, number>();
     const partOfTriangle = (a: number, b: number, c: number): HumanoidPart => {
+      if (rigidPart) return rigidPart;
       if (!classify) return 'body';
       partScores.clear();
       for (let corner = 0; corner < 3; corner++) {

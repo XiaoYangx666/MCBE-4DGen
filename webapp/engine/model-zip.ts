@@ -4,7 +4,7 @@ import { normalizePath } from './paths.ts';
 
 const MODEL_EXTENSION_SET = new Set(MODEL_EXTENSIONS);
 const SIDECAR_EXTENSIONS = new Set([
-  'bin', 'mtl',
+  'bin', 'mtl', 'json',
   'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'svg', 'tga', 'dds',
 ]);
 

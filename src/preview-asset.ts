@@ -47,7 +47,7 @@ export async function buildPreviewGlb(
 ): Promise<Uint8Array> {
   await MeshoptEncoder.ready;
   const preview = cloneDocument(document);
-  await preview.transform(prune(), meshopt({ encoder: MeshoptEncoder, level: "medium" }));
+  await preview.transform(prune({ keepExtras: true }), meshopt({ encoder: MeshoptEncoder, level: "medium" }));
   await Promise.all(preview.getRoot().listTextures().map((texture) => downscale(texture, textureLimit)));
   return new Uint8Array(await io.writeBinary(preview));
 }

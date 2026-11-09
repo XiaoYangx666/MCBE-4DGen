@@ -201,7 +201,7 @@ export class Studio {
         if (entry.isSymbolicLink()) continue;
         const file = resolve(folder, entry.name);
         if (entry.isDirectory()) await scan(file);
-        else if (/\.(png|jpe?g|tga|bmp|webp|dds|bin|mtl)$/i.test(file)) {
+        else if (/\.(png|jpe?g|tga|bmp|webp|dds|bin|mtl|json)$/i.test(file)) {
           const item = await stat(file);
           dependencies.push(`${file}:${item.size}:${item.mtimeMs}`);
         }
@@ -210,7 +210,7 @@ export class Studio {
     await scan(dirname(source));
     return createHash('sha1')
       .update(
-        `${source}:${info?.size ?? 0}:${info?.mtimeMs ?? 0}:${PREVIEW_TEXTURE_LIMIT}:${dependencies.sort().join(';')}:v3`,
+        `${source}:${info?.size ?? 0}:${info?.mtimeMs ?? 0}:${PREVIEW_TEXTURE_LIMIT}:${dependencies.sort().join(';')}:v8`,
       )
       .digest('hex');
   }
@@ -419,6 +419,7 @@ export class Studio {
       {
         profile: defaultProfile,
         previewKey: modelKey,
+        format: model.source.format,
         stats: {
           triangles: materials.reduce(
             (sum, material) => sum + material.triangles,
@@ -473,6 +474,7 @@ export class Studio {
       id,
       modelId: remember.id,
       name: remember.name,
+      format: model.source.format,
       settings,
       profile: defaultProfile,
       materials,

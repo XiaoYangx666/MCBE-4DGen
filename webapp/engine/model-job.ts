@@ -78,7 +78,7 @@ export async function prepareModelInput(
     expanded.files.map((file) => ({ path: modelFilePath(file), bytes: file.size })),
   );
   if (!candidates.length)
-    throw new Error('没有找到支持的模型文件。支持 GLB、glTF、VRM、PMX、FBX、OBJ、DAE、STL、PLY，也可以导入包含模型和贴图的 ZIP。');
+    throw new Error('没有找到支持的模型文件。支持 GLB、glTF、VRM、PMX、FBX、OBJ、DAE、STL、PLY、YSM 模型文件夹，也可以导入包含模型和贴图的 ZIP。');
   return { files: expanded.files, candidates, warnings: expanded.warnings };
 }
 
@@ -167,7 +167,7 @@ export async function loadModelJob(
     assertActive(isCurrent);
 
     if (!files.some((file) => formatOf(file.name))) {
-      throw new Error('没有找到支持的模型文件。支持 GLB、glTF、VRM、PMX、FBX、OBJ、DAE、STL、PLY，也可以导入包含模型和贴图的 ZIP。');
+      throw new Error('没有找到支持的模型文件。支持 GLB、glTF、VRM、PMX、FBX、OBJ、DAE、STL、PLY、YSM 模型文件夹，也可以导入包含模型和贴图的 ZIP。');
     }
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
     if (totalBytes > 512 * 1024 * 1024) {
@@ -230,6 +230,8 @@ export interface ConvertExtractedOptions {
   textureMode?: 'legacy' | 'budget';
   textureTarget?: 'density' | 'retention' | 'balanced';
   atlasSharing?: boolean;
+  /** Keep the single source texture and UVs instead of repacking an atlas. */
+  preserveTexture?: boolean;
   /** Stop before assembling the skin-pack ZIP. */
   preview?: boolean;
   /** Humanoid rig from the extraction, required for humanoid binding. */
@@ -351,6 +353,7 @@ export async function renderConvertedBatches(
     ...(options.textureTarget ? { textureTarget: options.textureTarget } : {}),
     ...(options.weights ? { materialWeights: options.weights } : {}),
     ...(options.atlasSharing ? { atlasSharing: true } : {}),
+    ...(options.preserveTexture ? { preserveTexture: true } : {}),
     ...(options.preview ? { preview: true } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });

@@ -4,7 +4,7 @@ import { IMPORTABLE_MODEL_EXTENSIONS } from '../src/model-candidates.ts';
 
 /** Extensions the desktop importer can open, shared with the browser build. */
 export const modelPattern = new RegExp(
-  `\\.(${IMPORTABLE_MODEL_EXTENSIONS.join('|')})$`,
+  `(?:\\.(?:${IMPORTABLE_MODEL_EXTENSIONS.join('|')})|(?:^|[\\\\/])ysm\\.json)$`,
   'i',
 );
 

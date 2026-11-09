@@ -385,6 +385,19 @@ export function Viewer({
           if (!cached) disposeObject(object);
           return;
         }
+        if (viewKind !== "result" && (session.format === "ysm" || session.warnings.some((warning) => warning.includes("YSM")))) {
+          object.traverse((child) => {
+            if (!(child instanceof THREE.Mesh)) return;
+            for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+              const map = (material as THREE.MeshStandardMaterial).map;
+              if (!map) continue;
+              map.magFilter = THREE.NearestFilter;
+              map.minFilter = THREE.NearestFilter;
+              map.generateMipmaps = false;
+              map.needsUpdate = true;
+            }
+          });
+        }
         group.add(object);
         contentRef.current = object;
         if (viewKind !== "result" || !result) {

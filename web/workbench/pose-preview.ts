@@ -116,7 +116,7 @@ export function createPosePreview(container: THREE.Group) {
             .getWorldPosition(new THREE.Vector3())
             .sub(pivot)
             .normalize(),
-          side = Math.sign(direction.x);
+          side = Math.sign(direction.x) || Math.sign(pivot.x);
         if (!side) throw Error("手臂骨骼方向无效");
         const radians = (spread * Math.PI) / 180;
         const delta = new THREE.Quaternion().setFromUnitVectors(

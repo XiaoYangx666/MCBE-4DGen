@@ -311,6 +311,7 @@ export function LibraryPage({
                           session={{
                             id: row.id,
                             name: row.name,
+                            format: row.model.format ?? (/ysm\.json$/i.test(row.model.path) ? 'ysm' : undefined),
                             profile: null,
                             materials: [],
                             warnings: [],

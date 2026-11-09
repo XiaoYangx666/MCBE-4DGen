@@ -92,6 +92,8 @@ export interface HumanoidExportOptions {
   /** Reuse the pre-reduction model from an earlier conversion of this session. */
   preparedBase?: PreparedHumanoidBase;
   onPreparedBase?: (prepared: PreparedHumanoidBase) => void;
+  /** Keep a single source texture and its UVs instead of repacking a 128 atlas. */
+  preserveTexture?: boolean;
 }
 
 /** Rigid six-part player binding, using source rig weights, topology and explicit garment rules.
@@ -227,6 +229,11 @@ export async function exportHumanoid(
     if (used.has(mesh))
       throw new Error("Humanoid binding requires unique mesh instances");
     used.add(mesh);
+    const rawRigidPart = node.getExtras()._playerPart;
+    const rigidPart =
+      typeof rawRigidPart === "string" && HUMANOID_PARTS.includes(rawRigidPart as Part)
+        ? (rawRigidPart as Part)
+        : null;
     const skin = node.getSkin();
     const sourceJoints = skin?.listJoints() ?? [];
     const jointParts = skin ? sourceJoints.map(partForJoint) : undefined;
@@ -268,6 +275,7 @@ export async function exportHumanoid(
               scores.set(part, (scores.get(part) ?? 0) + ws[j]!);
             }
           }
+        else if (rigidPart) scores.set(rigidPart, 1);
         return scores;
       };
       const componentPart = new Map<number, Part | undefined>();
@@ -343,7 +351,7 @@ export async function exportHumanoid(
         for (let c = 0; c < 3; c++)
           for (const [part, weight] of vertexScores(indices[i + c]!, false))
             scores.set(part, (scores.get(part) ?? 0) + weight);
-        const weightedPart = dominantHumanoidPart(scores);
+        const weightedPart = rigidPart ?? dominantHumanoidPart(scores);
         const part: Part =
           rule?.mode === "body"
             ? "body"
@@ -403,7 +411,7 @@ export async function exportHumanoid(
       vec3.create(),
       vec3.subtract(vec3.create(), hand.getWorldTranslation(), pivot),
     );
-    const side = Math.sign(direction[0]);
+    const side = Math.sign(direction[0]) || Math.sign(pivot[0]);
     if (!side || !Number.isFinite(side))
       throw new Error("Humanoid arm direction is not lateral");
     const radians = (spread * Math.PI) / 180;
@@ -493,7 +501,7 @@ async function finishHumanoid(
   return textureHumanoid(state, options, timings);
 }
 
-async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:number; atlas?:number; atlasPadding?:number; materialWeights?:Record<string,number>; atlasBudget?:'texel-density'|'texel-retention'|'texel-balanced'; atlasSharing?:boolean; onStage?:(phase:string)=>void}, timings:Record<string,number> = {}) {
+async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:number; atlas?:number; atlasPadding?:number; materialWeights?:Record<string,number>; atlasBudget?:'texel-density'|'texel-retention'|'texel-balanced'; atlasSharing?:boolean; preserveTexture?:boolean; onStage?:(phase:string)=>void}, timings:Record<string,number> = {}) {
   const {pivots, classification} = state;
   let phaseName = 'atlas', phaseStart = performance.now();
   const phase = (name:string) => {timings[phaseName] = Math.round(performance.now()-phaseStart); phaseName=name; phaseStart=performance.now(); options.onStage?.(name);};
@@ -502,13 +510,14 @@ async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:nu
     ...(options.materialWeights ? {materialWeights:options.materialWeights} : {}),
     ...(options.atlasBudget ? {atlasBudget:options.atlasBudget} : {}),
     ...(options.atlasSharing ? {atlasSharing:true} : {}),
+    ...(options.preserveTexture ? {preserveTexture:true} : {}),
     ...(options.atlas ? {atlasSize:options.atlas} : {compactSize:128,padding:options.atlasPadding ?? 0}),
   });
   const optimized = {model:texture.model, report:{texture:texture.report}};
   phase("export");
   const full = await exportBedrockGeometry(bindStatic(optimized.model), {
     identifier: "geometry.skin0",
-    skinTextureSize: 128,
+    ...(options.preserveTexture ? {} : { skinTextureSize: 128 }),
     playerParts: true,
   });
   const geometry = full.file["geometry.skin0"]!;

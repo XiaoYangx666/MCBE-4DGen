@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type { HumanoidProfile } from '../../src/humanoid.ts';
+import { modelDisplayName } from '../../src/model-candidates.ts';
 import { fileExists, fileResponse } from '../fs.ts';
 import { HttpError, json, withBusy } from '../http.ts';
 import {
@@ -156,7 +157,7 @@ async function openModel({ studio, req }: RouteContext) {
     const main = body.main ?? candidates[0]!;
     if (!candidates.includes(main)) throw Error('请选择包内模型');
     return json(
-      await studio.load(main, entry?.name ?? basename(main), null, {
+      await studio.load(main, entry?.name ?? modelDisplayName(main), null, {
         ...(entry?.id ? { existingId: entry.id } : {}),
       }),
     );

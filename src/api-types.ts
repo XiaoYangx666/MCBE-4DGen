@@ -72,6 +72,8 @@ export interface ModelEntry {
   stats?: { triangles: number; materials: number; bytes: number };
   previewKey?: string;
   sourceAvailable?: boolean;
+  /** Source format, used by the library preview to choose pixel-art sampling. */
+  format?: string;
 }
 
 /** Response of opening a model in the workbench. */
@@ -79,6 +81,8 @@ export interface LoadedSession {
   id: string;
   modelId: string;
   name: string;
+  /** Source format, used by the preview to choose pixel-art sampling. */
+  format: string;
   settings: EditSettings | null;
   profile: HumanoidProfile | null;
   materials: MaterialSummary[];

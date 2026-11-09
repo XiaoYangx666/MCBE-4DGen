@@ -13,6 +13,8 @@ export type Session = {
   settings?: Partial<EditSettings> | null;
   id: string;
   name: string;
+  /** Source format, used by the preview to choose pixel-art sampling. */
+  format?: string;
   profile: HumanoidProfile | null;
   materials: MaterialRow[];
   parts?: PartSummary[];

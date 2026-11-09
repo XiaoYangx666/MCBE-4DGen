@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, relative, resolve } from 'node:path';
 import JSZip from 'jszip';
 import { storage } from '../../src/workspace-storage.ts';
+import { modelDisplayName } from '../../src/model-candidates.ts';
 import { fileExists } from '../fs.ts';
 import { json, safeName, withBusy } from '../http.ts';
 import { modelPattern } from '../model-files.ts';
@@ -75,7 +76,7 @@ export const uploadRoutes = [
           candidates: candidates.map((path) => relative(folder, path)),
         });
       return json(
-        await studio.load(candidates[0]!, basename(candidates[0]!), null),
+        await studio.load(candidates[0]!, modelDisplayName(candidates[0]!), null),
       );
     }),
   ),
@@ -91,7 +92,7 @@ export const uploadRoutes = [
         throw Error('模型路径无效');
       if (!modelPattern.test(main)) throw Error('请选择模型文件');
       if (!(await fileExists(main))) throw Error('模型文件不存在');
-      return json(await studio.load(main, basename(main), null));
+      return json(await studio.load(main, modelDisplayName(main), null));
     }),
   ),
 ];

@@ -40,6 +40,8 @@ export interface ConvertOptions {
   atlasSharing?: boolean;
   /** Charge retention demand for sampled UV area. */
   coverageAware?: boolean;
+  /** Keep a single source texture and its UVs instead of repacking the 128 atlas. */
+  preserveTexture?: boolean;
   /**
    * Preview mode still plans/renders the atlas and exports geometry, but skips
    * assembling the final skin-pack ZIP. The result can be finalised later
@@ -170,6 +172,8 @@ export async function convertBatches(
   if (!source.length) throw new Error('没有可导出的材质');
   // UVs are rewritten for the atlas, so keep the extracted batches reusable.
   const batches = source.map((batch) => ({ ...batch }));
+  if (options.preserveTexture && batches.length === 1 && batches[0]!.texture)
+    return preserveSourceTexture(batches[0]!, options);
   const inputs: AtlasInput[] = batches.map((batch) => ({
     key: batch.key,
     materialName: batch.name,
@@ -436,6 +440,80 @@ export async function convertBatches(
     textureCoverage: atlas.coverage,
     textureUrl: atlas.canvas.toDataURL('image/png'),
     ...(coverageUrl ? { coverageUrl } : {}),
+    triangles: geometryReport.triangles,
+    binding,
+    ...(geometryReport.parts ? { parts: geometryReport.parts } : {}),
+    ...(options.preview ? { preview: true } : {}),
+  };
+}
+
+/**
+ * Preserve the source texture and UVs for a single-material model. YSM models
+ * already ship a prepared atlas; this avoids the 128×128 repack and keeps the
+ * original 128/256/512 texture.
+ */
+async function preserveSourceTexture(
+  batch: SourceBatch,
+  options: ConvertOptions,
+): Promise<ConvertResult> {
+  const texture = batch.texture!;
+  const width = texture.width;
+  const height = texture.height;
+  if (!(width > 0 && height > 0)) throw new Error('源贴图尺寸无效');
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('无法创建贴图画布');
+  context.drawImage(texture.image, 0, 0, width, height);
+  const png = await canvasPng(canvas);
+  const textureUrl = canvas.toDataURL('image/png');
+  const progress = reporter(options.onProgress);
+  progress('保留源贴图…', `${width}×${height}`);
+  const binding: BindingMode = options.rig ? 'humanoid' : 'static';
+  const { file, report: geometryReport } = buildBedrockGeometry([batch], {
+    height: options.height,
+    doubleSided: options.doubleSided,
+    ...(options.sourceTriangles !== undefined
+      ? { sourceTriangles: options.sourceTriangles }
+      : {}),
+    ...(options.rig ? { rig: options.rig } : {}),
+    textureSize: { width, height },
+  });
+  const files = options.preview
+    ? {}
+    : buildSkinPack({
+        geometry: file,
+        png,
+        identifier: 'geometry.skin0',
+        packName: options.name.trim(),
+      });
+  const pixels = width * height;
+  const textureReport: TextureReport = {
+    allocatedUtilization: 1,
+    sampledUtilization: 1,
+    uvUtilization: 1,
+    contentUtilization: 1,
+    sampledPixels: pixels,
+    uvPixels: pixels,
+    contentPixels: pixels,
+    allocatedPixels: pixels,
+    gutterPixels: 0,
+    emptyPixels: 0,
+    gutterUtilization: 0,
+    emptyUtilization: 0,
+    chartCoverage: 1,
+    size: Math.max(width, height),
+    materials: [{ key: batch.materialKey ?? batch.key, name: batch.name, pixels }],
+  };
+  return {
+    files,
+    geometry: file,
+    png,
+    report: geometryReport,
+    textureReport,
+    textureCoverage: 1,
+    textureUrl,
     triangles: geometryReport.triangles,
     binding,
     ...(geometryReport.parts ? { parts: geometryReport.parts } : {}),

@@ -16,7 +16,7 @@
 
 直接打开：<https://4dgen.mcxfj.top>
 
-图片皮肤和 3D 模型转换都在浏览器里完成，文件不会上传。支持 GLB / glTF / VRM / OBJ / PMX 等模型，生成后直接下载 `.zip` 皮肤包。手机也可以使用。
+图片皮肤和 3D 模型转换都在浏览器里完成，文件不会上传。支持 GLB / glTF / VRM / OBJ / PMX / YSM 文件夹等模型，生成后直接下载 `.zip` 皮肤包。手机也可以使用。
 
 ### Windows 桌面版
 
@@ -64,7 +64,7 @@ npm run webapp:build    # 输出到 webapp/dist/
 
 ## 功能
 
-- **模型导入**：OBJ/MTL、GLB、glTF、FBX、DAE、STL、PLY、PMX、VRM，保留节点、材质、蒙皮与贴图。
+- **模型导入**：OBJ/MTL、GLB、glTF、FBX、DAE、STL、PLY、PMX、VRM、YSM 文件夹（`ysm.json`），保留节点、材质、蒙皮与贴图。
 - **优化**：误差受限减面、贴图缩放、显式图集、初始姿态冻结。
 - **绑定**：Static 整体绑定；VRM / 常见 MMD / Mixamo 六部位刚性人形绑定（网页版也会自动识别），可调肩宽与手臂外展。
 - **导出**：Bedrock `poly_mesh` 几何、ZIP、`manifest.json`、`skins.json`、`geometry.json` 与本地化文件。
@@ -82,6 +82,8 @@ npm run webapp:build    # 输出到 webapp/dist/
 | PMX 2.0 / 2.1 | 支持（需显式 profile `boneMap`；已在真实 PMX 样本上验证） |
 | VRM 0.x | 支持（Static 或人形绑定；有真实样本） |
 | VRM 1.0 | 部分支持（仅夹具验证，暂无真实样本） |
+| YSM 文件夹（`ysm.json`） | 支持玩家主体 + 默认贴图；保留原始 UV/贴图（不再重打 128 图集）和 YSM 骨骼父子层级，自动映射六部位；动画、手臂、GUI/表情部件不导入 |
+| 加密 `.ysm` | 不支持（官方加密格式无法还原） |
 | PMD / Blend | 不支持 |
 
 ## 文档

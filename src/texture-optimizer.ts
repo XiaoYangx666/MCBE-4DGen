@@ -38,6 +38,8 @@ export interface TextureOptions {
   atlasSharing?: boolean;
   /** With `atlasBudget`, charge retention demand for sampled UV area. */
   atlasCoverageAware?: boolean;
+  /** Keep a single source texture and its UVs instead of repacking an atlas. */
+  preserveTexture?: boolean;
 }
 interface Rect {
   x: number;
@@ -232,6 +234,10 @@ export async function optimizeTextures(
     )
   )
     throw new Error("Invalid atlas budget");
+  if (options.preserveTexture) {
+    const preserved = await preserveSingleTexture(input, options);
+    if (preserved) return preserved;
+  }
   if (options.atlasBudget)
     return optimizeTexturesWithBudget(input, {
       size: options.compactSize ?? options.atlasSize ?? 128,
@@ -865,6 +871,103 @@ export async function optimizeTextures(
           .map((r) => r.id),
       })),
       regions: reportRegions,
+      warnings: model.warnings,
+    },
+  };
+}
+
+/**
+ * Preserve a single source texture and its UVs. YSM models already ship one
+ * prepared atlas; repacking it only resamples and loses detail. Returns null
+ * when the document is not a single-material/single-texture model, so callers
+ * can fall back to the normal atlas path.
+ */
+async function preserveSingleTexture(input: IntermediateModel, options: TextureOptions) {
+  const inspection = await inspectModel(input);
+  const model: IntermediateModel = {
+    ...input,
+    document: cloneDocument(input.document),
+    source: { ...input.source },
+    warnings: [...input.warnings],
+  };
+  const root = model.document.getRoot();
+  const materials = root.listMaterials();
+  const textures = root.listTextures();
+  if (materials.length !== 1 || textures.length !== 1) return null;
+  const texture = textures[0]!;
+  let image = texture.getImage();
+  if (!image) return null;
+  let metadata = await sharp(image).metadata();
+  if (!metadata.width || !metadata.height) return null;
+  let width = metadata.width;
+  let height = metadata.height;
+  const limit = options.maxTextureSize;
+  if (limit && Math.max(width, height) > limit) {
+    const resized = await sharp(image)
+      .resize({ width: limit, height: limit, fit: "inside", withoutEnlargement: true })
+      .png()
+      .toBuffer();
+    image = new Uint8Array(resized);
+    texture.setImage(image).setMimeType("image/png");
+    metadata = await sharp(image).metadata();
+    width = metadata.width!;
+    height = metadata.height!;
+  }
+  const png = new Uint8Array(image);
+  const name = materials[0]!.getName() || "YSM";
+  const key = `m:${name}#1`;
+  const pixels = width * height;
+  model.warnings.push(
+    "YSM source texture and UVs were preserved; the texture was not repacked into an atlas.",
+  );
+  return {
+    model,
+    png,
+    report: {
+      originalTextures: inspection.textures.map((t) => ({
+        width: t.width,
+        height: t.height,
+        bytes: t.bytes,
+      })),
+      atlas: {
+        width,
+        height,
+        bytes: png.length,
+        sampledUtilization: 1,
+        uvUtilization: 1,
+        contentUtilization: 1,
+        allocatedUtilization: 1,
+        sampledPixels: pixels,
+        uvPixels: pixels,
+        contentPixels: pixels,
+        allocatedPixels: pixels,
+        gutterPixels: 0,
+        emptyPixels: 0,
+        gutterUtilization: 0,
+        emptyUtilization: 0,
+        chartCoverage: 1,
+      },
+      filter: "nearest" as const,
+      padding: 0,
+      allocation: "source-area" as const,
+      materialWeights: options.materialWeights ?? {},
+      materials: [{ name, key, pixels, uvPixels: pixels, regions: [0] }],
+      regions: [{
+        id: 0,
+        material: name,
+        materials: [name],
+        materialKeys: [key],
+        surfaceAreas: { [name]: 1 },
+        weightedArea: 1,
+        x: 0,
+        y: 0,
+        width,
+        height,
+        source: { width, height },
+        resized: { width, height },
+        tiles: [1, 1] as [number, number],
+        crop: { x: 0, y: 0, width, height },
+      }],
       warnings: model.warnings,
     },
   };

@@ -186,6 +186,7 @@ export function ModelStudio({
   /** 用户手动改过朝向之后，加载新模型不再自动套用默认旋转。 */
   const customRotation = useRef(false);
   const modelInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
 
   // Leaving the model page must not keep the stage fullscreen.
   useEffect(() => {
@@ -507,6 +508,7 @@ export function ModelStudio({
         textureMode: 'budget',
         textureTarget,
         atlasSharing: true,
+        preserveTexture: model?.format === 'ysm',
         rig: binding === 'humanoid' ? extracted.rig : null,
         onProgress: setProgress,
       });
@@ -989,11 +991,24 @@ export function ModelStudio({
           if (next.length) void choose(next);
         }}
       />
+      <input
+        ref={folderInput}
+        className="mobile-model-input"
+        type="file"
+        multiple
+        disabled={loading || busy}
+        {...{ webkitdirectory: '' }}
+        onChange={(event) => {
+          const next = event.target.files ? [...event.target.files] : [];
+          event.target.value = '';
+          if (next.length) void choose(next);
+        }}
+      />
       {dragging && (
         <div className="model-drop-overlay" aria-hidden="true">
           <Icon name="upload" size={30} />
           <b>松开以导入模型</b>
-          <span>GLB / VRM / PMX / 含贴图的 ZIP</span>
+          <span>GLB / VRM / PMX / 含贴图的 ZIP / YSM 文件夹</span>
         </div>
       )}
       {!compact && (
@@ -1206,11 +1221,19 @@ export function ModelStudio({
                     multiple
                     compact={!!model}
                     title={model ? '重新选择模型' : '拖入模型或 ZIP，或点击选择'}
-                    hint={model ? `${model.name} · ${formatBytes(totalBytes)}` : 'GLB / glTF / VRM / PMX / FBX / OBJ / DAE / STL / PLY，或含贴图的 ZIP'}
+                    hint={model ? `${model.name} · ${formatBytes(totalBytes)}` : 'GLB / glTF / VRM / PMX / FBX / OBJ / DAE / STL / PLY、含贴图的 ZIP 或 YSM 模型文件夹'}
                     icon="cube"
                     onFiles={(next) => void choose(next)}
                     disabled={loading || busy}
                   />
+                  <button
+                    type="button"
+                    className="button-link"
+                    disabled={loading || busy}
+                    onClick={() => folderInput.current?.click()}
+                  >
+                    选择 YSM 模型文件夹
+                  </button>
                 </>
               )}
 
@@ -1411,6 +1434,9 @@ export function ModelStudio({
                     <div className="empty-actions">
                       <button type="button" className="button-link" onClick={() => modelInput.current?.click()}>
                         选择模型文件
+                      </button>
+                      <button type="button" className="button-link" onClick={() => folderInput.current?.click()}>
+                        YSM 模型文件夹
                       </button>
                     </div>
                   )}

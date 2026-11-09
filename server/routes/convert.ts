@@ -219,10 +219,12 @@ export const convertRoutes = [
         })();
         let exported;
         let details: unknown;
+        const preserveTexture = session.model.source.format === 'ysm';
         if (body.binding === 'humanoid') {
           const result = await exportHumanoid(model, {
             prepared: preparedModel?.humanoid,
             ...(preparedBase ? { preparedBase } : {}),
+            ...(preserveTexture ? { preserveTexture: true } : {}),
             onPrepared: (state) =>
               studio.retainPrepared(geometryKey, { humanoid: state }),
             onPreparedBase: (state) =>
@@ -280,7 +282,7 @@ export const convertRoutes = [
               ...(Object.keys(partRatios).length ? { partRatios } : {}),
             },
             texture: {
-              compactSize: 128,
+              ...(preserveTexture ? { preserveTexture: true, maxTextureSize: 256 } : { compactSize: 128 }),
               padding: atlasPadding,
               ...(Object.keys(materialWeights).length
                 ? { materialWeights }
@@ -295,7 +297,7 @@ export const convertRoutes = [
           });
           exported = await exportBedrockGeometry(bindStatic(result.model), {
             identifier: 'geometry.skin0',
-            skinTextureSize: 128,
+            ...(preserveTexture ? {} : { skinTextureSize: 128 }),
           });
           details = result.report;
         }

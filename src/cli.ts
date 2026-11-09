@@ -35,6 +35,7 @@ const help = [
   '',
   'Output: manifest.json, skins.json, geometry.json, skin0.png, texts/, and optionally .zip.',
   'Input formats: ' + INPUT_FORMATS.join(', '),
+  'YSM folder format: pass the model folder\'s ysm.json',
   'Default static binding attaches the whole model to body; --binding humanoid uses VRM player limbs.',
 ].join('\n');
 
@@ -155,6 +156,7 @@ async function main() {
     texture: { maxTextureSize: textureSize, ...(atlas !== undefined ? { atlasSize: atlas } : { compactSize: 128, padding: 0 }) },
   };
   const model = await importModel(input, { backend: importer });
+  const preserveTexture = model.source.format === 'ysm';
   if (binding === 'humanoid' && ratio !== undefined) throw new Error('Humanoid binding currently preserves original triangles; omit --ratio');
   let profile: HumanoidProfile | undefined;
   if (profilePath) {
@@ -164,9 +166,17 @@ async function main() {
       Object.keys(value).some((key) => !['shoulderOutset', 'armSpreadDegrees', 'materialRules', 'boneMap', 'rotationYDegrees'].includes(key))) throw new Error('Invalid humanoid profile fields');
     profile = value as HumanoidProfile;
   }
-  const humanoid = binding === 'humanoid' ? await exportHumanoid(model, { height, textureSize, ...(profile ? { profile } : {}), ...(atlas ? { atlas } : {}) }) : null;
-  const optimized = humanoid ? null : await optimizeModel(model, options);
-  const exported = humanoid ?? await exportBedrockGeometry(bindStatic(optimized!.model), { identifier: 'geometry.skin0', skinTextureSize: 128 });
+  const humanoid = binding === 'humanoid' ? await exportHumanoid(model, { height, textureSize, ...(profile ? { profile } : {}), ...(atlas ? { atlas } : {}), ...(preserveTexture ? { preserveTexture: true } : {}) }) : null;
+  const optimized = humanoid ? null : await optimizeModel(model, {
+    ...options,
+    texture: preserveTexture
+      ? { maxTextureSize: textureSize, preserveTexture: true }
+      : options.texture,
+  });
+  const exported = humanoid ?? await exportBedrockGeometry(bindStatic(optimized!.model), {
+    identifier: 'geometry.skin0',
+    ...(preserveTexture ? {} : { skinTextureSize: 128 }),
+  });
   const files = buildSkinPack({ geometry: exported.file, png: exported.png, packName, identifier: 'geometry.skin0' });
   await validateSkinPackFiles(files);
   const zip = archive ? await zipSkinPack(files) : null;
