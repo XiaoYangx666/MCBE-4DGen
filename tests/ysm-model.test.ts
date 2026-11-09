@@ -10,12 +10,14 @@ import { exportHumanoid } from '../src/humanoid.ts';
 import { modelFormatOf, modelDisplayName } from '../src/model-candidates.ts';
 import { modelPattern } from '../server/model-files.ts';
 import {
+  buildYsmBoneMeshes,
   buildYsmMesh,
   buildYsmRig,
   hiddenYsmBones,
   parseYsmGeometry,
   parseYsmManifest,
   selectYsmTexture,
+  YSM_HUMANOID_ROLES,
 } from '../src/ysm-model.ts';
 
 const PNG_64 = Buffer.from(
@@ -214,6 +216,28 @@ test('YSM humanoid import defaults to six-part binding and exports all parts', a
     assert.equal(preserved.binding.texture.atlas.width, 64);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('YSM bone pivots stay in meters when ancestor bones are rotated', () => {
+  const geometry = humanoidGeometry();
+  const bones = geometry['minecraft:geometry'][0]!.bones as Array<Record<string, unknown>>;
+  bones.find((bone) => bone.name === 'LeftArm')!.rotation = [0, 0, -20];
+  const parsed = parseYsmGeometry(geometry);
+  const rig = buildYsmRig(parsed.geometry);
+  const set = buildYsmBoneMeshes(parsed.geometry);
+  // Bone nodes and the synthetic role pivots must agree, otherwise arm spread
+  // and the workbench pose preview rotate the mesh around a bogus pivot.
+  for (const role of YSM_HUMANOID_ROLES) {
+    const bone = set.bones.find((item) => item.role === role);
+    assert.ok(bone, `missing ${role} bone`);
+    const expected = rig.roles[role]!;
+    const distance = Math.hypot(
+      bone.pivot[0] - expected[0],
+      bone.pivot[1] - expected[1],
+      bone.pivot[2] - expected[2],
+    );
+    assert.ok(distance < 1e-5, `${role} pivot ${bone.pivot} != ${expected}`);
   }
 });
 

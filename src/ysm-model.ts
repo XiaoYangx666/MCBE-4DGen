@@ -830,11 +830,15 @@ export function buildYsmBoneMeshes(geometry: YsmGeometry, options: YsmMeshOption
     const role = roleByBone.get(bone.name);
     const part = partsByBone.get(bone.name);
     const world = worlds.get(bone.name) ?? IDENTITY;
-    const pivot = mirrorPivot(bone.pivot);
+    // `worlds` works in Bedrock units (the pivots and cube points are in units),
+    // so convert the resulting world pivot to meters afterwards. Dividing the
+    // input first would leave the translation part unscaled and move rotated
+    // bones far away from their real pivots.
+    const pivot = applyPoint(world, mirrorPivot(bone.pivot));
     return {
       name: bone.name,
       ...(bone.parent ? { parent: bone.parent } : {}),
-      pivot: applyPoint(world, [pivot[0] / 16, pivot[1] / 16, pivot[2] / 16]),
+      pivot: [pivot[0] / 16, pivot[1] / 16, pivot[2] / 16],
       part: rig.parts[bone.name] ?? 'body',
       ...(role ? { role } : {}),
       ...(part ? { mesh: part } : {}),
