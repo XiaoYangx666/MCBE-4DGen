@@ -508,9 +508,10 @@ test('YSM texture hint caps large atlases but explicit user sizes win', async ()
   }).png().toBuffer());
   const model = await importModel(join(modelDir, 'ysm.json'));
   const hinted = await optimizeTextures(model, {});
-  assert.equal(hinted.preserved, true);
+  assert.equal(hinted.preserved, false);
   assert.equal(hinted.report.atlas.width, 128);
   assert.equal(hinted.report.atlas.height, 128);
+  assert.ok(hinted.model.warnings.some((warning) => warning.includes('repacked by disconnected UV island')));
   const explicit = await optimizeTextures(model, { maxTextureSize: 1024, maxTextureSizeExplicit: true });
   assert.equal(explicit.report.atlas.width, 1024);
   const forcedAtlas = await optimizeTextures(model, { forceAtlas: true, compactSize: 128 });

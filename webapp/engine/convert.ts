@@ -187,10 +187,25 @@ export async function convertBatches(
     ...(options.maxTextureSizeExplicit ? { maxTextureSizeExplicit: true } : {}),
   });
   let fallbackWarning: string | undefined;
+  let repackWarning: string | undefined;
+  let repack = false;
   if (policy.preserve) {
-    if (batches.length === 1 && batches[0]!.texture)
+    const single = batches.length === 1 && batches[0]!.texture;
+    if (single) {
+      const texture = batches[0]!.texture!;
+      const limit = Math.min(policy.maxTextureSize ?? 128, 128);
+      if (Math.max(texture.width, texture.height) <= limit)
+        return preserveSourceTexture(batches[0]!, options, limit);
+    }
+    if (policy.repack === 'islands') {
+      repack = true;
+      repackWarning =
+        '源贴图按 UV 岛重新打包到 128，以保留有效像素密度；空白图集区域已移除。';
+    } else if (single) {
       return preserveSourceTexture(batches[0]!, options, policy.maxTextureSize);
-    fallbackWarning = '保留源贴图需要单材质和单贴图；已回退到常规图集。';
+    } else {
+      fallbackWarning = '保留源贴图需要单材质和单贴图；已回退到常规图集。';
+    }
   }
   const inputs: AtlasInput[] = batches.map((batch) => ({
     key: batch.key,
@@ -214,27 +229,29 @@ export async function convertBatches(
   const report = reporter(options.onProgress);
   report('规划 128×128 图集…', `${inputs.length} 个材质`);
   await nextFrame();
-  const budget = options.textureMode !== 'legacy';
+  const budget = !repack && options.textureMode !== 'legacy';
   // Bedrock samples skin textures with nearest filtering, so no gutter is
   // needed. The 2 px this frees per chart goes back into content resolution.
   const layout = planAtlas(
     inputs,
     128,
     0,
-    budget
-      ? {
-          budget:
-            options.textureTarget === 'density'
-              ? 'texel-density'
-              : options.textureTarget === 'retention'
-                ? 'texel-retention'
-                : 'texel-balanced',
-          ...(options.materialWeights && Object.keys(options.materialWeights).length
-            ? { weights: options.materialWeights }
-            : {}),
-          ...(options.atlasSharing ? { sharing: 'safe' as const } : {}),
-        }
-      : {},
+    repack
+      ? { allocation: 'source-area', splitIslands: true }
+      : budget
+        ? {
+            budget:
+              options.textureTarget === 'density'
+                ? 'texel-density'
+                : options.textureTarget === 'retention'
+                  ? 'texel-retention'
+                  : 'texel-balanced',
+            ...(options.materialWeights && Object.keys(options.materialWeights).length
+              ? { weights: options.materialWeights }
+              : {}),
+            ...(options.atlasSharing ? { sharing: 'safe' as const } : {}),
+          }
+        : {},
   );
   // Hole filling is intentionally disabled for now: moving charts into other
   // charts' holes produced opaque black patches in the exported texture when
@@ -440,6 +457,7 @@ export async function convertBatches(
     ...(options.rig ? { rig: options.rig } : {}),
   });
   if (fallbackWarning) geometryReport.warnings.push(fallbackWarning);
+  if (repackWarning) geometryReport.warnings.push(repackWarning);
   report('打包皮肤包…', `${geometryReport.triangles.toLocaleString('zh-CN')} 面`);
   await nextFrame();
   const files = options.preview

@@ -13,6 +13,11 @@ export interface TextureHint {
   preserve?: boolean;
   /** Default maximum edge when preserving; ignored when the user sets one. */
   maxSize?: number;
+  /**
+   * When the source is larger than `maxSize`, repack disconnected UV islands
+   * into the smaller atlas instead of scaling the whole source image.
+   */
+  repack?: "islands";
 }
 
 export interface TexturePolicyOptions {
@@ -27,6 +32,8 @@ export interface TexturePolicyOptions {
 export interface ResolvedTexturePolicy {
   preserve: boolean;
   maxTextureSize?: number;
+  /** Repack UV islands when preserve would require downscaling. */
+  repack?: "islands";
 }
 
 export function resolveTexturePolicy(
@@ -40,5 +47,6 @@ export function resolveTexturePolicy(
   return {
     preserve,
     ...(maxTextureSize !== undefined ? { maxTextureSize } : {}),
+    ...(preserve && hint?.repack === "islands" ? { repack: "islands" as const } : {}),
   };
 }

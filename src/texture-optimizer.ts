@@ -39,6 +39,8 @@ export interface TextureOptions {
   atlasSharing?: boolean;
   /** With `atlasBudget`, charge retention demand for sampled UV area. */
   atlasCoverageAware?: boolean;
+  /** Split every disconnected UV island; used when repacking a sparse source atlas. */
+  chartMode?: "merged" | "islands";
   /** The user explicitly asked for a packed atlas. */
   forceAtlas?: boolean;
   /** True only when maxTextureSize came from an explicit user setting. */
@@ -245,11 +247,30 @@ export async function optimizeTextures(
     ...(options.maxTextureSizeExplicit ? { maxTextureSizeExplicit: true } : {}),
   });
   let fallbackWarning: string | undefined;
+  let repack = false;
   if (policy.preserve) {
     const preserved = await preserveSingleTexture(input, options, policy);
-    if (preserved) return preserved;
-    fallbackWarning =
-      "Source texture preservation requires one material and one texture; the normal atlas path was used instead.";
+    if (preserved && "repack" in preserved && preserved.repack) {
+      // Repack all disconnected UV islands at the source's native texel size,
+      // then let the compact packer shrink uniformly to the 128 atlas.
+      repack = true;
+      options = {
+        ...options,
+        compactSize: policy.maxTextureSize ?? 128,
+        allocation: "source-area",
+        chartMode: "islands",
+        padding: 0,
+      };
+      delete options.atlasSize;
+      delete options.maxTextureSize;
+      delete options.atlasBudget;
+      delete options.atlasSharing;
+    } else if (preserved) {
+      return preserved;
+    } else {
+      fallbackWarning =
+        "Source texture preservation requires one material and one texture; the normal atlas path was used instead.";
+    }
   }
   if (options.atlasBudget) {
     const result = await optimizeTexturesWithBudget(input, {
@@ -264,7 +285,7 @@ export async function optimizeTextures(
     if (fallbackWarning) result.model.warnings.push(fallbackWarning);
     return result;
   }
-  const maxTextureSize = policy.maxTextureSize;
+  const maxTextureSize = repack ? undefined : policy.maxTextureSize;
   validateModel(input);
   const inspection = await inspectModel(input);
   const model: IntermediateModel = {
@@ -289,7 +310,7 @@ export async function optimizeTextures(
     }
   const regions: Region[] = [];
   for (const [material, primitives] of options.compactSize
-    ? textureCharts(doc)
+    ? textureCharts(doc, { merge: options.chartMode !== "islands" })
     : grouped) {
     const texture = material?.getBaseColorTexture();
     const image = texture?.getImage();
@@ -478,8 +499,12 @@ export async function optimizeTextures(
       (sum, r) => sum + Math.pow(Math.max(0, r.weightedArea), ALLOCATION_POWER),
       0,
     );
-    const dimensions = regions.map((r) => {
-      if (options.allocation === "source-area") return [r.width, r.height];
+    const baseDimensions = regions.map(
+      (region) => [region.width, region.height] as const,
+    );
+    const dimensions = regions.map((r, index) => {
+      if (options.allocation === "source-area")
+        return [baseDimensions[index]![0], baseDimensions[index]![1]];
       const demand =
         Math.max(
           1e-8,
@@ -488,7 +513,10 @@ export async function optimizeTextures(
         ) *
         size *
         size;
-      const aspect = Math.max(1 / 32, Math.min(32, r.width / r.height));
+      const aspect = Math.max(
+        1 / 32,
+        Math.min(32, baseDimensions[index]![0] / baseDimensions[index]![1]),
+      );
       return [Math.sqrt(demand * aspect), Math.sqrt(demand / aspect)];
     });
     // A 3×3 minimum keeps small eye/trim charts sampleable at the final atlas size.
@@ -504,7 +532,7 @@ export async function optimizeTextures(
           Math.round(dimensions[i]![1]! * scale),
         );
       });
-      return pack(regions, size, padding, true);
+      return pack(regions, size, padding, options.chartMode !== "islands");
     };
     let low = 0,
       high = size;
@@ -828,6 +856,9 @@ export async function optimizeTextures(
   model.warnings.push(
     "Atlas preserves base color and alpha only; PBR lighting/shader effects are not reproduced.",
   );
+  if (repack) model.warnings.push(
+    "Source texture was repacked by disconnected UV island at native texel size; empty atlas space was removed before fitting the 128px skin limit.",
+  );
   if (fallbackWarning) model.warnings.push(fallbackWarning);
   validateModel(model);
   return {
@@ -928,6 +959,9 @@ async function preserveSingleTexture(
   let height = sourceHeight;
   const limit = policy.maxTextureSize;
   if (limit && Math.max(width, height) > limit) {
+    // A sparse source atlas is better repacked by UV island than scaled as a
+    // whole; the caller will run the compact atlas path at native texel size.
+    if (policy.repack === "islands") return { repack: true as const };
     const resized = await sharp(image)
       .resize({
         width: limit,

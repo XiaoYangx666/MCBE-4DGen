@@ -986,7 +986,11 @@ export interface YsmScene {
 }
 
 /** YSM ships one prepared player atlas; skin packs must fit the client's 128px limit. */
-export const YSM_TEXTURE_HINT: TextureHint = { preserve: true, maxSize: 128 };
+export const YSM_TEXTURE_HINT: TextureHint = {
+  preserve: true,
+  maxSize: 128,
+  repack: "islands",
+};
 
 /** Small YSM models are already lightweight; keep them at 100% by default. */
 export const YSM_REDUCTION_HINT: ReductionHint = { retainBelowTriangles: 10_000 };

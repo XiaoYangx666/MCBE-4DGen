@@ -7,6 +7,7 @@ import {
 import {
   buildUvCharts,
   normalizeWrapMode,
+  splitUvIslands,
   unwrapChartBounds,
   type WrapMode,
 } from '../../src/texture-chart-math.ts';
@@ -106,6 +107,9 @@ interface PendingChart {
   area: number;
   aspect: number;
   textured: boolean;
+  /** Source pixel bounds for source-area repacking. */
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 interface AtlasBox {
@@ -225,11 +229,18 @@ function packBoxes(
  * Build the UV islands for one input. Materials with triangle UVs use the
  * shared desktop chart splitter; legacy flat inputs keep their single rect.
  */
-function chartsFor(input: AtlasInput): PendingChart[] {
+function chartsFor(input: AtlasInput, options: AtlasPlanOptions): PendingChart[] {
   const wrap: [WrapMode, WrapMode] = [
     normalizeWrapMode(input.texture?.wrapS ?? 1000),
     normalizeWrapMode(input.texture?.wrapT ?? 1000),
   ];
+  const source = (bounds: [number, number, number, number] | null) =>
+    bounds && input.texture
+      ? {
+          sourceWidth: Math.max(0, bounds[2] - bounds[0]) * input.texture.width,
+          sourceHeight: Math.max(0, bounds[3] - bounds[1]) * input.texture.height,
+        }
+      : {};
   const single = (
     bounds: [number, number, number, number] | null,
     triangles: number[],
@@ -247,6 +258,7 @@ function chartsFor(input: AtlasInput): PendingChart[] {
       area: input.area,
       aspect: aspectOf(input, bounds),
       textured: !!input.texture && !!bounds,
+      ...source(bounds),
     };
   };
 
@@ -256,7 +268,9 @@ function chartsFor(input: AtlasInput): PendingChart[] {
     : [];
   if (!input.texture || !input.uvBounds) return [single(null, allTriangles)];
   if (!uvs || uvs.length < 6) return [single(input.uvBounds, allTriangles)];
-  const charts = buildUvCharts(uvs);
+  const charts = options.splitIslands
+    ? splitUvIslands(uvs)
+    : buildUvCharts(uvs);
   if (!charts.length) return [single(input.uvBounds, allTriangles)];
   const triangleAreas = input.triangleAreas;
   const perTriangle = input.area / Math.max(1, Math.floor(uvs.length / 6));
@@ -282,6 +296,7 @@ function chartsFor(input: AtlasInput): PendingChart[] {
       area,
       aspect: aspectOf(input, bounds),
       textured: true,
+      ...source(bounds),
     };
   });
 }
@@ -307,6 +322,10 @@ export interface AtlasPlanOptions {
   weights?: Record<string, number>;
   /** Overlay charts that read exactly the same source pixels. */
   sharing?: 'safe';
+  /** Split disconnected UV islands instead of merging nearby charts. */
+  splitIslands?: boolean;
+  /** Allocate by source pixel bounds instead of world surface area. */
+  allocation?: 'surface-area' | 'source-area';
 }
 
 function planWithBudget(
@@ -696,7 +715,7 @@ export function planAtlas(
   options: AtlasPlanOptions = {},
 ): AtlasLayout {
   if (options.budget) return planWithBudget(inputs, size, pad, options);
-  const charts = inputs.flatMap(chartsFor);
+  const charts = inputs.flatMap((input) => chartsFor(input, options));
   if (!charts.length) return { size, rects: new Map(), charts: [], scale: 1 };
   // Duplicate material keys must not collide inside the rect map.
   const usedKeys = new Set<string>();
@@ -718,6 +737,17 @@ export function planAtlas(
     charts.map((chart, index) => {
       if (!chart.textured)
         return { key: chart.key, width: MIN_FLAT, height: MIN_FLAT };
+      if (
+        options.allocation === 'source-area' &&
+        chart.sourceWidth !== undefined &&
+        chart.sourceHeight !== undefined
+      ) {
+        return {
+          key: chart.key,
+          width: clamp(Math.round(chart.sourceWidth * scale), MIN_CHART, contentLimit),
+          height: clamp(Math.round(chart.sourceHeight * scale), MIN_CHART, contentLimit),
+        };
+      }
       const share = totalDemand > 0 ? demand[index]! / totalDemand : 0;
       const target = Math.max(MIN_CHART * MIN_CHART, usable * share * scale);
       const width = clamp(

@@ -43,6 +43,35 @@ describe('webapp atlas planner', () => {
     expect(ratio).toBeLessThan(50); // 64^0.85 ≈ 34, not 64.
   });
 
+  it('repacks disjoint UV islands at source pixel density', () => {
+    const source: TextureSource = {
+      image: {} as CanvasImageSource,
+      width: 256,
+      height: 256,
+      key: 'source-256',
+    };
+    const uvs = new Float32Array([
+      0.1, 0.1, 0.2, 0.1, 0.1, 0.2,
+      0.7, 0.7, 0.8, 0.7, 0.7, 0.8,
+    ]);
+    const layout = planAtlas([{
+      key: 'body',
+      texture: source,
+      uvBounds: [0.1, 0.1, 0.8, 0.8],
+      uvs,
+      triangleAreas: new Float32Array([1, 1]),
+      color: [1, 1, 1],
+      opacity: 1,
+      area: 2,
+    }], 128, 0, { allocation: 'source-area', splitIslands: true });
+    expect(layout.charts.length).toBeGreaterThan(1);
+    const pixels = layout.charts.reduce(
+      (sum, chart) => sum + chart.rect.width * chart.rect.height,
+      0,
+    );
+    expect(pixels).toBeGreaterThan(1200);
+  });
+
   it('packs many flat materials without giving them atlas area', () => {
     const many = Array.from({ length: 64 }, (_, index) => ({
       ...input(`flat${index}`, 1000, null),
