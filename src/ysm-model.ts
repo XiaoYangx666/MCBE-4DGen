@@ -116,6 +116,7 @@ export type YsmDiagnostic =
   | { code: 'bone-not-object'; bone: number }
   | { code: 'bone-without-name'; bone: number }
   | { code: 'duplicate-bone'; name: string }
+  | { code: 'duplicate-bone-conflict'; name: string }
   | { code: 'cyclic-bone'; name: string }
   | { code: 'missing-parent'; name: string; parent: string }
   | { code: 'hidden-bones'; names: string[] }
@@ -649,41 +650,119 @@ export interface YsmMeshOptions {
 interface BoneWorlds {
   byName: Map<string, YsmBone>;
   worlds: Map<string, Transform>;
+  /** Effective parent after missing-parent and cycle repair keyed by unique bone name. */
+  parents: Map<string, string>;
+  /** World transform for a specific occurrence, including duplicate names. */
+  worldOfBone: (bone: YsmBone) => Transform;
   diagnostics: YsmDiagnostic[];
 }
 
-/** Resolve every bone's world transform once, with cycle and missing-parent diagnostics. */
+const sameVector = (a: V3 | undefined, b: V3 | undefined): boolean => {
+  const left = a ?? [0, 0, 0];
+  const right = b ?? [0, 0, 0];
+  return left[0] === right[0] && left[1] === right[1] && left[2] === right[2];
+};
+
+/** Resolve every bone's world transform once, with cycle and missing-parent repair. */
 function boneWorlds(geometry: YsmGeometry): BoneWorlds {
   const diagnostics: YsmDiagnostic[] = [];
   const byName = new Map<string, YsmBone>();
+  const duplicateNames = new Set<string>();
+  const conflictNames = new Set<string>();
   for (const bone of geometry.bones) {
-    if (byName.has(bone.name)) {
-      diagnostics.push({ code: 'duplicate-bone', name: bone.name });
+    const first = byName.get(bone.name);
+    if (first) {
+      if (!duplicateNames.has(bone.name)) {
+        duplicateNames.add(bone.name);
+        diagnostics.push({ code: 'duplicate-bone', name: bone.name });
+      }
+      if (
+        !conflictNames.has(bone.name) &&
+        (first.parent !== bone.parent ||
+          !sameVector(first.pivot, bone.pivot) ||
+          !sameVector(first.rotation, bone.rotation))
+      ) {
+        conflictNames.add(bone.name);
+        diagnostics.push({ code: 'duplicate-bone-conflict', name: bone.name });
+      }
       continue;
     }
     byName.set(bone.name, bone);
   }
-  const worlds = new Map<string, Transform>();
-  const resolving = new Set<string>();
-  const worldOf = (bone: YsmBone): Transform => {
-    const cached = worlds.get(bone.name);
-    if (cached) return cached;
-    if (resolving.has(bone.name)) {
-      diagnostics.push({ code: 'cyclic-bone', name: bone.name });
-      return IDENTITY;
+
+  const parents = new Map<string, string>();
+  for (const [name, bone] of byName) {
+    if (!bone.parent) continue;
+    if (bone.parent === name) {
+      diagnostics.push({ code: 'cyclic-bone', name });
+      continue;
     }
-    resolving.add(bone.name);
-    const parent = bone.parent ? byName.get(bone.parent) : undefined;
-    if (bone.parent && !parent)
-      diagnostics.push({ code: 'missing-parent', name: bone.name, parent: bone.parent });
-    const local = pivotRotation(mirrorPivot(bone.pivot), mirrorRotation(bone.rotation));
-    const world = parent ? multiply(worldOf(parent), local) : local;
-    resolving.delete(bone.name);
-    worlds.set(bone.name, world);
+    if (!byName.has(bone.parent)) {
+      diagnostics.push({ code: 'missing-parent', name, parent: bone.parent });
+      continue;
+    }
+    parents.set(name, bone.parent);
+  }
+
+  // Break cycles deterministically at the lexicographically smallest node in
+  // each cycle. The remaining chain becomes a normal tree rooted there.
+  const state = new Map<string, 1 | 2>();
+  for (const start of byName.keys()) {
+    if (state.has(start)) continue;
+    const path: string[] = [];
+    const index = new Map<string, number>();
+    let current: string | undefined = start;
+    while (current) {
+      const existing = state.get(current);
+      if (existing === 2) break;
+      if (existing === 1) {
+        const cycleStart = index.get(current);
+        if (cycleStart !== undefined) {
+          const cycle = path.slice(cycleStart);
+          const broken = [...cycle].sort()[0]!;
+          parents.delete(broken);
+          diagnostics.push({ code: 'cyclic-bone', name: broken });
+        }
+        break;
+      }
+      state.set(current, 1);
+      index.set(current, path.length);
+      path.push(current);
+      current = parents.get(current);
+    }
+    for (const name of path) state.set(name, 2);
+  }
+
+  const worlds = new Map<string, Transform>();
+  const localOf = (bone: YsmBone): Transform =>
+    pivotRotation(mirrorPivot(bone.pivot), mirrorRotation(bone.rotation));
+  const worldOfFirst = (name: string, resolving = new Set<string>()): Transform => {
+    const cached = worlds.get(name);
+    if (cached) return cached;
+    const bone = byName.get(name);
+    if (!bone || resolving.has(name)) return IDENTITY;
+    resolving.add(name);
+    const parentName = parents.get(name);
+    const parent = parentName ? worldOfFirst(parentName, resolving) : IDENTITY;
+    const world = multiply(parent, localOf(bone));
+    worlds.set(name, world);
     return world;
   };
-  for (const bone of geometry.bones) worldOf(bone);
-  return { byName, worlds, diagnostics };
+  for (const name of byName.keys()) worldOfFirst(name);
+
+  // Duplicate bones can declare a different hierarchy. Use their own local
+  // transform and parent world so their cubes keep the original position.
+  const worldOfBone = (bone: YsmBone): Transform => {
+    const canonical = byName.get(bone.name);
+    if (canonical === bone) return worldOfFirst(bone.name);
+    const parentName = bone.parent && bone.parent !== bone.name && byName.has(bone.parent)
+      ? bone.parent
+      : undefined;
+    const parent = parentName ? worldOfFirst(parentName) : IDENTITY;
+    return multiply(parent, localOf(bone));
+  };
+
+  return { byName, worlds, parents, worldOfBone, diagnostics };
 }
 
 /**
@@ -720,7 +799,7 @@ function resolveHiddenBones(geometry: YsmGeometry, seed?: Iterable<string>): Set
 function buildYsmMeshFromWorlds(
   geometry: YsmGeometry,
   options: YsmMeshOptions,
-  { worlds }: BoneWorlds,
+  core: BoneWorlds,
 ): YsmMesh {
   const diagnostics: YsmDiagnostic[] = [];
   const hidden = resolveHiddenBones(geometry, options.hiddenBones);
@@ -743,7 +822,6 @@ function buildYsmMeshFromWorlds(
   const parts: YsmMeshPart[] = [];
   for (const [name, entries] of cubesByBone) {
     const builder = emptyBuilder();
-    const world = worlds.get(name) ?? IDENTITY;
     for (const { bone, cube } of entries) {
       const points = cubePoints(cube, bone.inflate);
       const cubeRotation = pivotRotation(mirrorPivot(cube.pivot), mirrorRotation(cube.rotation));
@@ -752,7 +830,7 @@ function buildYsmMeshFromWorlds(
         ? boxQuads(cube, points, mirroredLayout)
         : perFaceQuads(cube, points, mirroredLayout);
       for (const quad of quads)
-        addQuad(builder, quad, cubeRotation, world, cube.mirror === true, geometry.textureWidth, geometry.textureHeight);
+        addQuad(builder, quad, cubeRotation, core.worldOfBone(bone), cube.mirror === true, geometry.textureWidth, geometry.textureHeight);
     }
     if (!builder.indices.length) continue;
     parts.push({
@@ -808,7 +886,8 @@ export function buildYsmRig(geometry: YsmGeometry): YsmRig {
   return { ...rig, diagnostics: [...worlds.diagnostics, ...rig.diagnostics] };
 }
 
-function buildYsmRigFromWorlds(geometry: YsmGeometry, { byName, worlds }: BoneWorlds): YsmRig {
+function buildYsmRigFromWorlds(geometry: YsmGeometry, core: BoneWorlds): YsmRig {
+  const { byName, worlds } = core;
   const diagnostics: YsmDiagnostic[] = [];
   const roleBones = new Map<YsmHumanoidRole, YsmBone>();
   for (const role of YSM_HUMANOID_ROLES) {
@@ -838,7 +917,8 @@ function buildYsmRigFromWorlds(geometry: YsmGeometry, { byName, worlds }: BoneWo
       const found = partRoots.get(current.name);
       if (found) { part = found; break; }
       seen.add(current.name);
-      current = current.parent ? byName.get(current.parent) : undefined;
+      const parentName = core.parents.get(current.name);
+      current = parentName ? byName.get(parentName) : undefined;
     }
     parts[bone.name] = part;
   }
@@ -939,9 +1019,10 @@ export function buildYsmScene(geometry: YsmGeometry, options: YsmMeshOptions = {
     const role = roleByBone.get(bone.name);
     const part = rig.parts[bone.name] ?? 'body';
     const geometryPart = partsByBone.get(bone.name);
+    const parent = core.parents.get(bone.name);
     bones.push({
       name: bone.name,
-      ...(bone.parent ? { parent: bone.parent } : {}),
+      ...(parent ? { parent } : {}),
       pivot: meterPivot,
       part,
       ...(role ? { role } : {}),
@@ -1014,7 +1095,8 @@ export function buildYsmScene(geometry: YsmGeometry, options: YsmMeshOptions = {
   for (const bone of bones) {
     const node = boneNodes.get(bone.name)!;
     const pivot = pivots.get(bone.name)!;
-    const parent = bone.parent ? core.byName.get(bone.parent) : undefined;
+    const parentName = core.parents.get(bone.name);
+    const parent = parentName ? core.byName.get(parentName) : undefined;
     const parentPart = parent ? rig.parts[parent.name] ?? 'body' : undefined;
     const role = humanoid ? HUMANOID_PART_ROLES[bone.part] : undefined;
     if (humanoid && role && (!parent || parentPart !== bone.part)) {

@@ -38,6 +38,8 @@ function ysmWarning(diagnostic: YsmDiagnostic): string {
       return `已忽略骨骼 ${diagnostic.bone}：缺少名称。`;
     case 'duplicate-bone':
       return `YSM 骨骼重名「${diagnostic.name}」，已按名称合并。`;
+    case 'duplicate-bone-conflict':
+      return `YSM 骨骼「${diagnostic.name}」重名但 pivot/rotation/parent 不同；已保留各自几何的源变换，但共用第一根骨骼的层级。`;
     case 'cyclic-bone':
       return `YSM 骨骼层级在「${diagnostic.name}」处形成循环，已按无父骨骼处理。`;
     case 'missing-parent':

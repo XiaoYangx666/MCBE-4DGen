@@ -929,7 +929,15 @@ async function preserveSingleTexture(
   const limit = policy.maxTextureSize;
   if (limit && Math.max(width, height) > limit) {
     const resized = await sharp(image)
-      .resize({ width: limit, height: limit, fit: "inside", withoutEnlargement: true })
+      .resize({
+        width: limit,
+        height: limit,
+        fit: "inside",
+        withoutEnlargement: true,
+        // Preserved YSM textures can be 512/1024; use the same high-quality
+        // downscale policy as the browser instead of the implicit default.
+        kernel: "lanczos3",
+      })
       .png()
       .toBuffer();
     image = new Uint8Array(resized);

@@ -488,6 +488,10 @@ async function preserveSourceTexture(
   canvas.height = height;
   const context = canvas.getContext('2d');
   if (!context) throw new Error('无法创建贴图画布');
+  // Match the Node preserved-texture path: high-quality downscale for HD YSM
+  // textures, never the browser's implicit low-quality default.
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
   context.drawImage(texture.image, 0, 0, width, height);
   const png = await canvasPng(canvas);
   const textureUrl = canvas.toDataURL('image/png');

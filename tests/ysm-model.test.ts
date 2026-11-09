@@ -273,17 +273,23 @@ test('YSM duplicate bones merge cubes instead of dropping a #2 part', () => {
     'minecraft:geometry': [{
       description: { texture_width: 64, texture_height: 64 },
       bones: [
-        { name: 'Body', pivot: [0, 0, 0], cubes: [{ origin: [0, 0, 0], size: [1, 1, 1], uv: [0, 0] }] },
-        { name: 'Body', pivot: [0, 0, 0], cubes: [{ origin: [2, 0, 0], size: [1, 1, 1], uv: [0, 0] }] },
+        { name: 'Rotated', pivot: [0, 0, 0], rotation: [0, 0, 90] },
+        { name: 'Body', pivot: [0, 0, 0], cubes: [{ origin: [0, 0, 0], size: [8, 1, 1], uv: [0, 0] }] },
+        { name: 'Body', parent: 'Rotated', pivot: [0, 0, 0], cubes: [{ origin: [0, 0, 0], size: [8, 1, 1], uv: [0, 0] }] },
       ],
     }],
   });
   const scene = buildYsmScene(parsed.geometry);
-  assert.equal(scene.bones.length, 1);
-  assert.equal(scene.bones[0]!.mesh!.indices.length, 72);
+  const mesh = buildYsmMesh(parsed.geometry);
+  assert.equal(scene.bones.length, 2);
+  assert.equal(scene.bones.find((bone) => bone.name === 'Body')!.mesh!.indices.length, 72);
   assert.equal(scene.roots.filter((node) => node.name === 'Body').length, 1);
   assert.ok(scene.diagnostics.some((item) => item.code === 'duplicate-bone'));
+  assert.ok(mesh.diagnostics.some((item) => item.code === 'duplicate-bone-conflict'));
   assert.ok(!scene.roots.some((node) => node.name.startsWith('Body#')));
+  // The conflicting duplicate keeps its own source hierarchy/rotation instead
+  // of being silently placed under the first bone's identity transform.
+  assert.ok(bounds(mesh).min[1]! < -0.4);
 });
 
 test('YSM scene description owns role nodes, hierarchy and mesh offsets', () => {
@@ -314,7 +320,7 @@ test('YSM scene description owns role nodes, hierarchy and mesh offsets', () => 
   ].map((value) => Number(value.toFixed(4))));
 });
 
-test('YSM hierarchy diagnostics report missing parents and cycles', () => {
+test('YSM hierarchy diagnostics repair missing parents and cycles', () => {
   const cube = { origin: [0, 0, 0], size: [1, 1, 1], uv: [0, 0] };
   const parsed = parseYsmGeometry({
     format_version: '1.12.0',
@@ -330,6 +336,25 @@ test('YSM hierarchy diagnostics report missing parents and cycles', () => {
   const scene = buildYsmScene(parsed.geometry);
   assert.ok(scene.diagnostics.some((item) => item.code === 'missing-parent' && item.parent === 'Missing'));
   assert.ok(scene.diagnostics.some((item) => item.code === 'cyclic-bone'));
+  // Every repaired bone must remain reachable from a root, and the effective
+  // parent map must be acyclic.
+  const names = new Set<string>();
+  const walk = (node: import('../src/ysm-model.ts').YsmSceneNode) => {
+    names.add(node.name);
+    for (const child of node.children) walk(child);
+  };
+  for (const root of scene.roots) walk(root);
+  for (const name of ['A', 'B', 'Orphan']) assert.ok(names.has(name), `missing ${name}`);
+  const parents = new Map(scene.bones.map((bone) => [bone.name, bone.parent]));
+  for (const bone of scene.bones) {
+    const seen = new Set<string>();
+    let current: string | undefined = bone.name;
+    while (current) {
+      assert.ok(!seen.has(current), `cycle at ${current}`);
+      seen.add(current);
+      current = parents.get(current);
+    }
+  }
 });
 
 test('YSM box-UV cube becomes 12 triangles in converter space', () => {

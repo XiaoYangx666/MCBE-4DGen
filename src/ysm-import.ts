@@ -58,6 +58,8 @@ function ysmWarning(diagnostic: YsmDiagnostic): string {
       return `Ignored bone ${diagnostic.bone}: missing a name.`;
     case 'duplicate-bone':
       return `Duplicate YSM bone name "${diagnostic.name}" was merged by name.`;
+    case 'duplicate-bone-conflict':
+      return `Duplicate YSM bone "${diagnostic.name}" has a different pivot/rotation/parent; its cubes keep their own source transform, but they share the first bone's hierarchy.`;
     case 'cyclic-bone':
       return `Cyclic YSM bone hierarchy at "${diagnostic.name}"; the cycle was treated as unparented.`;
     case 'missing-parent':
