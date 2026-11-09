@@ -93,6 +93,7 @@ npm run webapp:build    # 输出到 webapp/dist/
 - [网页版（纯浏览器）](docs/web-app.md)
 - [桌面版使用与打包](docs/desktop.md)
 - [数据目录与图片模板](docs/storage-and-templates.md)
+- [YSM 导入架构](docs/ysm-architecture.md)
 - [命令行与皮肤包管理](docs/cli.md)
 - [全部文档](docs/README.md)
 

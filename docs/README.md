@@ -15,6 +15,7 @@
 ## 参考
 
 - [代码结构](code-structure.md)：入口、转换核心、服务端路由与前端模块职责。
+- [YSM 导入架构](ysm-architecture.md)：YSM 与普通转换流程的边界、source hints、场景描述层和纹理重排。
 - [依赖、版本与许可证](dependencies.md)
 - [Minecraft 原版皮肤与角色创建器研究](skin-state.md)
 
