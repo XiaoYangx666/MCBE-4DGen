@@ -7,6 +7,7 @@ import {
   type YsmSceneNode,
 } from '../../src/ysm-model.ts';
 import type { TextureHint } from '../../src/texture-policy.ts';
+import type { ReductionHint } from '../../src/reduce-policy.ts';
 import type { ResourceIndex } from './resources.ts';
 
 export interface LoadedYsmScene {
@@ -15,6 +16,7 @@ export interface LoadedYsmScene {
   /** Synthetic player-role pivots, when the model exposes a complete rig. */
   humanoidRoles?: Record<string, THREE.Object3D>;
   textureHint: TextureHint;
+  reductionHint: ReductionHint;
 }
 
 async function readJson(file: File): Promise<unknown> {
@@ -181,5 +183,6 @@ export async function loadYsmScene(
     name: group.name,
     ...(humanoidRoles ? { humanoidRoles } : {}),
     textureHint: plan.textureHint,
+    reductionHint: plan.reductionHint,
   };
 }

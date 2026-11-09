@@ -19,6 +19,7 @@ import {
   type HumanoidPart,
 } from './humanoid-binding.ts';
 import type { TextureHint } from './texture-policy.ts';
+import type { ReductionHint } from './reduce-policy.ts';
 
 export type V2 = [number, number];
 export type V3 = [number, number, number];
@@ -987,6 +988,9 @@ export interface YsmScene {
 /** YSM ships one prepared player atlas, so preserve it unless the user says otherwise. */
 export const YSM_TEXTURE_HINT: TextureHint = { preserve: true, maxSize: 256 };
 
+/** Small YSM models are already lightweight; keep them at 100% by default. */
+export const YSM_REDUCTION_HINT: ReductionHint = { retainBelowTriangles: 10_000 };
+
 const subtract = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const negate = (a: V3): V3 => [-a[0], -a[1], -a[2]];
 
@@ -1148,6 +1152,7 @@ export interface YsmImportPlan {
   texture: YsmTexture;
   textureName: string;
   textureHint: TextureHint;
+  reductionHint: ReductionHint;
   diagnostics: YsmDiagnostic[];
 }
 
@@ -1174,6 +1179,7 @@ export function buildYsmImportPlan(
     texture,
     textureName,
     textureHint: scene.textureHint,
+    reductionHint: YSM_REDUCTION_HINT,
     diagnostics,
   };
 }

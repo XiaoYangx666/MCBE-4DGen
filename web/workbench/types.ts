@@ -6,6 +6,7 @@ import type {
   SourceFormat,
 } from "../../src/api-types";
 import type { HumanoidProfile } from "../../src/humanoid";
+import type { ReductionHint } from "../../src/reduce-policy";
 
 export type MaterialRow = MaterialSummary;
 
@@ -16,6 +17,8 @@ export type Session = {
   name: string;
   /** Source format, used by the preview to choose pixel-art sampling. */
   format?: SourceFormat;
+  /** Importer default for triangle retention; explicit saved settings still win. */
+  reductionHint?: ReductionHint;
   profile: HumanoidProfile | null;
   materials: MaterialRow[];
   parts?: PartSummary[];

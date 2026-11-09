@@ -475,6 +475,7 @@ export class Studio {
       modelId: remember.id,
       name: remember.name,
       format: model.source.format,
+      ...(model.source.reductionHint ? { reductionHint: model.source.reductionHint } : {}),
       settings,
       profile: defaultProfile,
       materials,

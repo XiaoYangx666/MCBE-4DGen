@@ -18,6 +18,7 @@ import { indexResources, type ResourceIndex } from './resources.ts';
 import { applyVrmMtoonMaterials } from './vrm-materials.ts';
 import { loadYsmScene } from './ysm.ts';
 import type { TextureHint } from '../../src/texture-policy.ts';
+import type { ReductionHint } from '../../src/reduce-policy.ts';
 
 /** Formats this loader can open directly; PMX is converted first, PMD is desktop-only. */
 export type ModelFormat = Exclude<CandidateFormat, 'pmx' | 'pmd'>;
@@ -32,6 +33,8 @@ export interface LoadedModel {
   humanoidRoles?: Record<string, THREE.Object3D>;
   /** Importer texture suggestion; explicit conversion settings still win. */
   textureHint?: TextureHint;
+  /** Importer default for triangle retention; explicit user settings still win. */
+  reductionHint?: ReductionHint;
   dispose: () => void;
 }
 
@@ -137,7 +140,7 @@ export async function loadModelFiles(
   const revoke = () => { for (const url of created) URL.revokeObjectURL(url); };
 
   try {
-    const { scene, format, humanoidRoles, name: parsedName, textureHint } = await parseModel(main.file, mainUrl, main.format, files, manager, warnings, index);
+    const { scene, format, humanoidRoles, name: parsedName, textureHint, reductionHint } = await parseModel(main.file, mainUrl, main.format, files, manager, warnings, index);
     // OBJ/MTL textures are started by preload() and may still be decoding when
     // OBJLoader resolves. Wait for the manager to go idle so stats and the
     // atlas see the actual images.
@@ -165,6 +168,7 @@ export async function loadModelFiles(
       stats,
       ...(humanoidRoles && Object.keys(humanoidRoles).length ? { humanoidRoles } : {}),
       ...(textureHint ? { textureHint } : {}),
+      ...(reductionHint ? { reductionHint } : {}),
       dispose: () => {
         if (disposed) return;
         disposed = true;
@@ -192,6 +196,7 @@ async function parseModel(
   humanoidRoles?: Record<string, THREE.Object3D>;
   name?: string;
   textureHint?: TextureHint;
+  reductionHint?: ReductionHint;
 }> {
   if (format === 'ysm') {
     const ysm = await loadYsmScene(index, modelFilePath(file), manager, warnings);
@@ -200,6 +205,7 @@ async function parseModel(
       format,
       name: ysm.name,
       textureHint: ysm.textureHint,
+      reductionHint: ysm.reductionHint,
       ...(ysm.humanoidRoles ? { humanoidRoles: ysm.humanoidRoles } : {}),
     };
   }

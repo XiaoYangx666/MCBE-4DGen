@@ -1,5 +1,6 @@
 import type { HumanoidProfile } from './humanoid.ts';
 import type { IntermediateModel } from './model.ts';
+import type { ReductionHint } from './reduce-policy.ts';
 
 /** Source format stored on a loaded model. */
 export type SourceFormat = IntermediateModel['source']['format'];
@@ -87,6 +88,8 @@ export interface LoadedSession {
   name: string;
   /** Source format, used by the preview to choose pixel-art sampling. */
   format: SourceFormat;
+  /** Importer default for triangle retention; explicit saved settings still win. */
+  reductionHint?: ReductionHint;
   settings: EditSettings | null;
   profile: HumanoidProfile | null;
   materials: MaterialSummary[];

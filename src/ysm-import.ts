@@ -172,6 +172,7 @@ export async function importYsmModel(input: string, options: YsmImportOptions = 
       coordinates: 'right-handed-y-up',
       importer: 'ysm',
       textureHint: plan.textureHint,
+      reductionHint: plan.reductionHint,
     },
     warnings,
   };

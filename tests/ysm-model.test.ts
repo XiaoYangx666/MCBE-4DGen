@@ -25,6 +25,7 @@ import {
 } from '../src/ysm-model.ts';
 import { resolveTexturePolicy } from '../src/texture-policy.ts';
 import { optimizeTextures } from '../src/texture-optimizer.ts';
+import { resolveDefaultReductionRatio } from '../src/reduce-policy.ts';
 
 const PNG_64 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAvElEQVR4nOXOoQEAIAzAsOppNP9/yc6IQMSnOff9LB3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdAWB/yxHm1fJEsAAAAASUVORK5CYII=',
@@ -429,6 +430,7 @@ test('importModel reads a YSM folder through ysm.json', () => temporary(async (d
   const model = await importModel(join(modelDir, 'ysm.json'));
   assert.equal(model.source.format, 'ysm');
   assert.equal(model.source.importer, 'ysm');
+  assert.equal(model.source.reductionHint?.retainBelowTriangles, 10_000);
   assert.equal(model.document.getRoot().listMeshes().length, 1);
   assert.equal(model.document.getRoot().listMeshes()[0]!.listPrimitives()[0]!.getIndices()!.getCount(), 36);
   assert.equal(model.document.getRoot().listTextures().length, 1);
@@ -512,6 +514,14 @@ test('texture policy keeps importer defaults below explicit user settings', () =
   });
 });
 
+test('YSM small models default to 100% retention without overriding user settings', () => {
+  const hint = { retainBelowTriangles: 10_000 };
+  assert.equal(resolveDefaultReductionRatio(hint, 9_999), 1);
+  assert.equal(resolveDefaultReductionRatio(hint, 10_000), 0.2);
+  assert.equal(resolveDefaultReductionRatio(hint, 30_000), 0.2);
+  assert.equal(resolveDefaultReductionRatio(undefined, 2_000), 0.2);
+});
+
 test('YSM manifests are recognised as model candidates', () => {
   assert.equal(modelFormatOf('models/char/ysm.json'), 'ysm');
   assert.equal(modelFormatOf('C:\\models\\char\\ysm.json'), 'ysm');
@@ -570,6 +580,7 @@ test('webapp YSM loader exposes a complete six-part rig', async () => {
       warnings,
     );
     assert.ok(loaded.humanoidRoles);
+    assert.equal(loaded.reductionHint.retainBelowTriangles, 10_000);
     assert.deepEqual(Object.keys(loaded.humanoidRoles!).sort(), [
       'head', 'hips', 'leftHand', 'leftUpperArm', 'leftUpperLeg', 'rightHand', 'rightUpperArm', 'rightUpperLeg',
     ].sort());

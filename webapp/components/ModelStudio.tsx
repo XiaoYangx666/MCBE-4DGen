@@ -42,6 +42,7 @@ import { buildGeometryPreview } from '../lib/output-preview';
 import { useSkinPack } from '../lib/pack-context';
 import type { TextureSource } from '../engine/types';
 import { RatioField } from '../../web/shared/RatioField';
+import { resolveDefaultReductionRatio } from '../../src/reduce-policy.ts';
 import { MaterialDonut } from './MaterialDonut';
 import { formatBytes } from '../../web/shared/format';
 import { PoseControls } from '../../web/shared/PoseControls';
@@ -330,6 +331,7 @@ export function ModelStudio({
       setPreviewRoot(root);
       modelRef.current = job.model;
       setModel(job.model);
+      setRatio(resolveDefaultReductionRatio(job.model.reductionHint, job.model.stats.triangles));
       setSourceBytes(job.totalBytes);
       setSource(job.extracted);
       setIncluded(new Set(job.extracted.batches.map((batch) => batch.key)));
