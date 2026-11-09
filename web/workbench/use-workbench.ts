@@ -6,7 +6,7 @@ import type { Result, Session } from "./types";
 import type { TextureMode, TextureTarget } from "../shared/texture-types";
 import type { StudioWorkspace } from "../shared/WorkspaceTabs";
 import { fromServerTextureTarget, toServerTextureTarget } from "../shared/texture-target";
-import { resolveDefaultReductionRatio } from "../../src/reduce-policy.ts";
+import { resolveInitialReductionRatio } from "../../src/reduce-policy.ts";
 
 export type Workbench = ReturnType<typeof useWorkbench>;
 
@@ -106,7 +106,7 @@ export function useWorkbench() {
     setMaterialDeltas(new Map());
     setMaterialWeights(saved?.materialWeights ?? {});
     const sourceTriangles = next.materials.reduce((sum, material) => sum + material.triangles, 0);
-    setRatio(saved?.ratio ?? resolveDefaultReductionRatio(next.reductionHint, sourceTriangles));
+    setRatio(resolveInitialReductionRatio(saved?.ratio, next.reductionHint, sourceTriangles));
     setPartRatios(
       Object.fromEntries(
         Object.entries(saved?.partRatios ?? {}).filter(([id]) =>

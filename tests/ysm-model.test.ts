@@ -25,7 +25,7 @@ import {
 } from '../src/ysm-model.ts';
 import { resolveTexturePolicy } from '../src/texture-policy.ts';
 import { optimizeTextures } from '../src/texture-optimizer.ts';
-import { resolveDefaultReductionRatio } from '../src/reduce-policy.ts';
+import { resolveDefaultReductionRatio, resolveInitialReductionRatio } from '../src/reduce-policy.ts';
 import { assignParts } from '../src/parts.ts';
 
 const PNG_64 = Buffer.from(
@@ -547,6 +547,12 @@ test('YSM small models default to 100% retention without overriding user setting
   assert.equal(resolveDefaultReductionRatio(hint, 10_000), 0.2);
   assert.equal(resolveDefaultReductionRatio(hint, 30_000), 0.2);
   assert.equal(resolveDefaultReductionRatio(undefined, 2_000), 0.2);
+  assert.equal(resolveInitialReductionRatio(undefined, hint, 9_999), 1);
+  // Legacy entries saved the generic 20% default automatically.
+  assert.equal(resolveInitialReductionRatio(0.2, hint, 9_999), 1);
+  // A real user choice is authoritative.
+  assert.equal(resolveInitialReductionRatio(0.5, hint, 9_999), 0.5);
+  assert.equal(resolveInitialReductionRatio(1, hint, 12_000), 1);
 });
 
 test('YSM manifests are recognised as model candidates', () => {

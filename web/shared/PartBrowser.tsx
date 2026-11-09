@@ -49,6 +49,15 @@ export function PartBrowser({
 }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<PartFilter>('all');
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleGroup = (group: string) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  };
 
   const allPartIds = useMemo(() => parts.map((part) => part.id), [parts]);
   const normalized = query.trim().toLowerCase();
@@ -142,11 +151,22 @@ export function PartBrowser({
         {groups.map(([group, list]) => {
           const groupIds = list.map((part) => part.id);
           const kept = groupIds.filter((id) => includedParts.has(id)).length;
+          const collapsible = list.length > 1;
+          const isCollapsed = collapsible && collapsed.has(group);
           return (
             <div className="texture-part-group" key={group}>
-              {list.length > 1 && (
+              {collapsible && (
                 <div className="texture-part-group-head">
-                  <span title={group}>分组 · {group}</span>
+                  <button
+                    type="button"
+                    className="texture-part-group-toggle"
+                    aria-expanded={!isCollapsed}
+                    title={isCollapsed ? `展开分组 ${group}` : `收起分组 ${group}`}
+                    onClick={() => toggleGroup(group)}
+                  >
+                    <span aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span>
+                    <span title={group}>分组 · {group}</span>
+                  </button>
                   <small>
                     {kept}/{list.length}
                   </small>
@@ -170,7 +190,7 @@ export function PartBrowser({
                   </button>
                 </div>
               )}
-              {list.map((part) => {
+              {!isCollapsed && list.map((part) => {
                 const included = includedParts.has(part.id);
                 return (
                   <div

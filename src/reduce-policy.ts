@@ -31,10 +31,13 @@ export interface ReductionHint {
   retainBelowTriangles?: number;
 }
 
+/** Generic default retention shared by all non-hinted imports. */
+export const DEFAULT_REDUCTION_RATIO = 0.2;
+
 export function resolveDefaultReductionRatio(
   hint: ReductionHint | null | undefined,
   triangles: number,
-  fallback = 0.2,
+  fallback = DEFAULT_REDUCTION_RATIO,
 ): number {
   if (
     hint?.retainBelowTriangles !== undefined &&
@@ -43,6 +46,22 @@ export function resolveDefaultReductionRatio(
   )
     return 1;
   return fallback;
+}
+
+/**
+ * Pick the initial slider value. The generic 20% value was saved automatically
+ * by older library entries, so it is treated as "not chosen" and replaced by
+ * the importer default; any other saved ratio remains authoritative.
+ */
+export function resolveInitialReductionRatio(
+  savedRatio: number | undefined,
+  hint: ReductionHint | null | undefined,
+  triangles: number,
+): number {
+  const fallback = resolveDefaultReductionRatio(hint, triangles);
+  return savedRatio === undefined || savedRatio === DEFAULT_REDUCTION_RATIO
+    ? fallback
+    : savedRatio;
 }
 
 /**
