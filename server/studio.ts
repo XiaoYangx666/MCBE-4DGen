@@ -201,7 +201,7 @@ export class Studio {
         if (entry.isSymbolicLink()) continue;
         const file = resolve(folder, entry.name);
         if (entry.isDirectory()) await scan(file);
-        else if (/\.(png|jpe?g|tga|bmp|webp|dds|bin|mtl)$/i.test(file)) {
+        else if (/\.(png|jpe?g|tga|bmp|webp|dds|bin|mtl|json)$/i.test(file)) {
           const item = await stat(file);
           dependencies.push(`${file}:${item.size}:${item.mtimeMs}`);
         }
@@ -210,7 +210,7 @@ export class Studio {
     await scan(dirname(source));
     return createHash('sha1')
       .update(
-        `${source}:${info?.size ?? 0}:${info?.mtimeMs ?? 0}:${PREVIEW_TEXTURE_LIMIT}:${dependencies.sort().join(';')}:v3`,
+        `${source}:${info?.size ?? 0}:${info?.mtimeMs ?? 0}:${PREVIEW_TEXTURE_LIMIT}:${dependencies.sort().join(';')}:v10`,
       )
       .digest('hex');
   }
@@ -343,7 +343,7 @@ export class Studio {
       if (node.getMesh()) instances.push(node.getMesh()!);
     });
     // Assign ids once so every later stage sees the same part identity.
-    const parts: PartSummary[] = assignParts(model.document).map((part) => ({
+    const parts: PartSummary[] = assignParts(model.document, model.source.format === 'ysm').map((part) => ({
       id: part.id,
       name: part.name,
       nodeIndex: part.nodeIndex,
@@ -355,6 +355,7 @@ export class Studio {
       triangles: part.triangles,
       vertices: part.vertices,
       instancePart: part.instancePart,
+      ...(part.group ? { group: part.group } : {}),
     }));
     const keys = materialKeyMap(model.document);
     const labels = materialDisplayLabels(
@@ -419,6 +420,7 @@ export class Studio {
       {
         profile: defaultProfile,
         previewKey: modelKey,
+        format: model.source.format,
         stats: {
           triangles: materials.reduce(
             (sum, material) => sum + material.triangles,
@@ -473,6 +475,8 @@ export class Studio {
       id,
       modelId: remember.id,
       name: remember.name,
+      format: model.source.format,
+      ...(model.source.reductionHint ? { reductionHint: model.source.reductionHint } : {}),
       settings,
       profile: defaultProfile,
       materials,

@@ -21,7 +21,7 @@
 Importer -> IntermediateModel -> Optimizer -> BoneMapper -> BedrockExporter -> SkinPackBuilder
 ```
 
-- `importer.ts`、`avatar-import.ts`、`tga.ts`、`pmx-metadata.ts`：读取 GLB/glTF、Assimp 格式与 PMX/VRM 元数据。
+- `importer.ts`、`avatar-import.ts`、`ysm-import.ts`、`ysm-model.ts`、`tga.ts`、`pmx-metadata.ts`：读取 GLB/glTF、Assimp 格式与 PMX/VRM 元数据；`ysm-model.ts` 解析 YSM 文件夹的 `ysm.json`、Bedrock 几何与六部位骨骼映射，`ysm-import.ts` 生成带玩家部位标签的静态 glTF 模型。
 - `prepare-model.ts`、`optimizer.ts`、`mesh-optimizer.ts`、`rigid-mesh-reducer.ts`：变换、姿势冻结、减面。
 - `texture-optimizer.ts`、`texture-charts.ts`、`image-template.ts`、`image-skin-geometry.ts`、`image-cutout.ts`：图集、UV 连通分岛、图片模板、两端共用的平面皮肤几何，以及纯色背景抠图（边缘洪水填充、容差与羽化）。
 - `bone-mapper.ts`、`humanoid.ts`、`humanoid-binding.ts`、`auto-profile.ts`：Static 与六部位人形绑定；`humanoid-binding.ts` 提供两端共用的角色映射、玩家骨架、轴心拟合与三角面归属规则。
@@ -31,6 +31,7 @@ Importer -> IntermediateModel -> Optimizer -> BoneMapper -> BedrockExporter -> S
 - `pack-tree.ts`：受管目录的读取/增量写入、SHA256 校验、几何 JSON 片段扫描与包体统计。
 - `pack-types.ts`：服务端、管理器和前端共用的皮肤包领域类型。
 - `api-types.ts`：模型库、工作台会话、转换结果与图集报告的前后端共享类型。
+- `model-candidates.ts`：模型格式识别、候选排序与显示名；`ysm.json` 作为 YSM 文件夹的入口标记。
 - `source-sites.ts`：模型来源网站目录、分类与热度顺序，同时作为本地图标代理的域名白名单。
 - `workspace-storage.ts`：统一数据目录、旧缓存迁移与路径边界检查。
 
@@ -100,6 +101,7 @@ npm run test:node
 网页版是独立的 Vite + React 静态应用，构建产物在 `webapp/dist/`，不需要 `server/`。
 
 - `engine/import-model.ts`：GLTF/OBJ/FBX/DAE/STL/PLY 加载与多文件资源映射。
+- `engine/ysm.ts`：YSM 文件夹/压缩包的 `ysm.json`、Bedrock 几何与默认贴图加载，按默认 `pre_parallel` 动画排除 GUI/表情部件。
 - `engine/humanoid.ts`：VRM 0.x / 1.0 人形元数据与常见 MMD / Mixamo 骨骼识别、六部位归属和世界轴心。
 - `engine/extract.ts`：世界变换、材质分组、UV 归一化、按源权重划分六部位与包围数据。
 - `engine/atlas.ts`：128 × 128 图集规划、绘制、UV 重映射。
@@ -113,7 +115,7 @@ npm run test:node
 - `lib/pack-import.ts`：读取 legacy poly_mesh 皮肤包 ZIP 并转换成单包里的皮肤。
 - `lib/download.ts`、`lib/theme.ts`、`lib/links.ts`、`lib/use-compact-viewport.ts`、`lib/material-visibility.ts`、`lib/use-cutout-preview.ts`、`lib/image-skin-options.ts`：保存/分享、主题、外链、紧凑视口、预览材质显隐、抠图预览防抖与图片皮肤高度范围等应用基础设施。
 - `components/`：图片模式、模型模式、`ImageSourcePicker`（图片选择、抠图开关与容差）、`ModelSourcesPage`（获取模型独立页）、`SettingsStudio`（主题、配色与本地数据）、`AboutStudio`（构建号、更新日志与许可）、`ConversionReport`（转换结果摘要）、单包管理、`SkinPreview`（皮肤卡片的三维预览弹窗）、视口、拖放与下载。
-- 共享 `src/skin-pack-files.ts`、`src/skin-pack-zip.ts`、`src/poly-mesh-writer.ts`、`src/geometry-validator.ts`、`src/image-skin-geometry.ts`、`src/image-cutout.ts`、`src/tga.ts` 与 `src/pmx-metadata.ts`；不导入 `sharp`、`node:fs` 或 `libassimp`。
+- 共享 `src/skin-pack-files.ts`、`src/skin-pack-zip.ts`、`src/poly-mesh-writer.ts`、`src/geometry-validator.ts`、`src/image-skin-geometry.ts`、`src/image-cutout.ts`、`src/tga.ts`、`src/pmx-metadata.ts` 与 `src/ysm-model.ts`；不导入 `sharp`、`node:fs` 或 `libassimp`。
 - 共享展示层 `web/shared/`：配色元数据与主题写入（`palettes`、`appearance`）、模型站点目录、`formatBytes` / `safeFilename` / ZIP 文件名与浏览器下载（`format`、`file-save`）、弹窗 Esc/背景点击行为、姿势控件（`PoseControls`）、材质列表与像素覆盖（`MaterialList`、`MaterialCoverage`）、转换报告摘要（`ConversionSummary`）、保留面数比例（`RatioField`），以及预览外壳（`preview-viewport`、`poly-mesh-preview`、`preview-lighting`、`preview-orientation`、`demand-render`、`viewport-appearance`）。`webapp/lib/theme.ts` 保留主题持久化并再导出共享写入逻辑。
 - 样式复用 `web/styles/theme.css` 的明暗主题变量与 `web/styles/shared.css` 的站点目录、姿势控件和材质行样式，页面布局遵循本地工作台的顶栏、三栏卡片与紧凑表单。
 

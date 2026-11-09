@@ -42,6 +42,7 @@ import { buildGeometryPreview } from '../lib/output-preview';
 import { useSkinPack } from '../lib/pack-context';
 import type { TextureSource } from '../engine/types';
 import { RatioField } from '../../web/shared/RatioField';
+import { resolveDefaultReductionRatio } from '../../src/reduce-policy.ts';
 import { MaterialDonut } from './MaterialDonut';
 import { formatBytes } from '../../web/shared/format';
 import { PoseControls } from '../../web/shared/PoseControls';
@@ -186,6 +187,7 @@ export function ModelStudio({
   /** 用户手动改过朝向之后，加载新模型不再自动套用默认旋转。 */
   const customRotation = useRef(false);
   const modelInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
 
   // Leaving the model page must not keep the stage fullscreen.
   useEffect(() => {
@@ -329,6 +331,7 @@ export function ModelStudio({
       setPreviewRoot(root);
       modelRef.current = job.model;
       setModel(job.model);
+      setRatio(resolveDefaultReductionRatio(job.model.reductionHint, job.model.stats.triangles));
       setSourceBytes(job.totalBytes);
       setSource(job.extracted);
       setIncluded(new Set(job.extracted.batches.map((batch) => batch.key)));
@@ -445,6 +448,7 @@ export function ModelStudio({
             rotationYDegrees: rotationY,
             bakeSkinning: binding === 'humanoid' || armSpread !== 0,
             rig: binding === 'humanoid' ? humanoidRig.current : null,
+            semanticGroups: model.format === 'ysm',
           });
         } finally {
           if (root) {
@@ -507,6 +511,7 @@ export function ModelStudio({
         textureMode: 'budget',
         textureTarget,
         atlasSharing: true,
+        textureHint: model?.textureHint,
         rig: binding === 'humanoid' ? extracted.rig : null,
         onProgress: setProgress,
       });
@@ -618,7 +623,7 @@ export function ModelStudio({
       material: part.materialName,
     }));
     const names = partDisplayNames(partInputs);
-    const groups = partGroupNames(partInputs);
+    const fallbackGroups = partGroupNames(partInputs);
     const byMaterial = new Map<string, string[]>();
     parts.forEach((part, index) => {
       const list = byMaterial.get(part.materialKey) ?? [];
@@ -631,7 +636,7 @@ export function ModelStudio({
       return {
         id: part.id,
         name,
-        group: groups[index]!,
+        group: part.subtree ?? fallbackGroups[index]!,
         meta: `${part.triangles.toLocaleString('zh-CN')} 面${
           name === label ? '' : ` · ${label}`
         }`,
@@ -989,6 +994,19 @@ export function ModelStudio({
           if (next.length) void choose(next);
         }}
       />
+      <input
+        ref={folderInput}
+        className="mobile-model-input"
+        type="file"
+        multiple
+        disabled={loading || busy}
+        {...{ webkitdirectory: '' }}
+        onChange={(event) => {
+          const next = event.target.files ? [...event.target.files] : [];
+          event.target.value = '';
+          if (next.length) void choose(next);
+        }}
+      />
       {dragging && (
         <div className="model-drop-overlay" aria-hidden="true">
           <Icon name="upload" size={30} />
@@ -1206,11 +1224,19 @@ export function ModelStudio({
                     multiple
                     compact={!!model}
                     title={model ? '重新选择模型' : '拖入模型或 ZIP，或点击选择'}
-                    hint={model ? `${model.name} · ${formatBytes(totalBytes)}` : 'GLB / glTF / VRM / PMX / FBX / OBJ / DAE / STL / PLY，或含贴图的 ZIP'}
+                    hint={model ? `${model.name} · ${formatBytes(totalBytes)}` : 'GLB / glTF / VRM / PMX / FBX / OBJ / DAE / STL / PLY、含贴图的 ZIP 或 YSM 模型文件夹'}
                     icon="cube"
                     onFiles={(next) => void choose(next)}
                     disabled={loading || busy}
                   />
+                  <button
+                    type="button"
+                    className="button-link"
+                    disabled={loading || busy}
+                    onClick={() => folderInput.current?.click()}
+                  >
+                    选择 YSM 模型文件夹
+                  </button>
                 </>
               )}
 
@@ -1411,6 +1437,9 @@ export function ModelStudio({
                     <div className="empty-actions">
                       <button type="button" className="button-link" onClick={() => modelInput.current?.click()}>
                         选择模型文件
+                      </button>
+                      <button type="button" className="button-link" onClick={() => folderInput.current?.click()}>
+                        YSM 模型文件夹
                       </button>
                     </div>
                   )}

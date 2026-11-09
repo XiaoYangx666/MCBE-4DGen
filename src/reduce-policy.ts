@@ -22,6 +22,49 @@ export const isValidReduceMaxError = (maxError: number): boolean =>
 export type ReducePartRatios = Readonly<Record<string, number>>;
 
 /**
+ * Importer default for triangle retention. The pipeline still honors an
+ * explicit saved/user ratio; this only supplies the initial slider value when
+ * the user has not chosen one.
+ */
+export interface ReductionHint {
+  /** Keep the source triangle count when the model is below this threshold. */
+  retainBelowTriangles?: number;
+}
+
+/** Generic default retention shared by all non-hinted imports. */
+export const DEFAULT_REDUCTION_RATIO = 0.2;
+
+export function resolveDefaultReductionRatio(
+  hint: ReductionHint | null | undefined,
+  triangles: number,
+  fallback = DEFAULT_REDUCTION_RATIO,
+): number {
+  if (
+    hint?.retainBelowTriangles !== undefined &&
+    Number.isFinite(triangles) &&
+    triangles < hint.retainBelowTriangles
+  )
+    return 1;
+  return fallback;
+}
+
+/**
+ * Pick the initial slider value. The generic 20% value was saved automatically
+ * by older library entries, so it is treated as "not chosen" and replaced by
+ * the importer default; any other saved ratio remains authoritative.
+ */
+export function resolveInitialReductionRatio(
+  savedRatio: number | undefined,
+  hint: ReductionHint | null | undefined,
+  triangles: number,
+): number {
+  const fallback = resolveDefaultReductionRatio(hint, triangles);
+  return savedRatio === undefined || savedRatio === DEFAULT_REDUCTION_RATIO
+    ? fallback
+    : savedRatio;
+}
+
+/**
  * Effective retention for one part: its own override when present and valid,
  * otherwise the global ratio. Shared so the Node and browser reducers agree on
  * what an empty or invalid override means.

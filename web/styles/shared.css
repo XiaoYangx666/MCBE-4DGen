@@ -963,6 +963,27 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.texture-part-group-head .texture-part-group-toggle {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+.texture-part-group-head .texture-part-group-toggle:hover:not(:disabled) {
+  color: var(--ink);
+}
+.texture-part-group-head .texture-part-group-toggle:focus-visible {
+  outline: 1px solid var(--accent, #3b6ea5);
+  outline-offset: 2px;
+}
 .texture-part-group-head small { margin-left: auto; }
 .texture-part-row {
   display: flex;

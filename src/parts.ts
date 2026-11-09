@@ -22,6 +22,8 @@ import type {
   Scene,
 } from '@gltf-transform/core';
 
+import { semanticPartGroup } from './part-groups.ts';
+
 export const PART_EXTRA = '_fourdgenPart';
 
 export interface PartExtra {
@@ -45,6 +47,8 @@ export interface PartInfo {
   vertices: number;
   /** True when the part represents an instanced node rather than one primitive. */
   instancePart: boolean;
+  /** Optional submodel label, e.g. YSM `FOX`, `Hair` or `Tail`. */
+  group?: string;
 }
 
 export function readPartExtra(record: Record<string, unknown>): PartExtra | null {
@@ -142,11 +146,22 @@ export function instanceNodes(document: Document): Node[] {
   return nodes;
 }
 
+/** Ancestor names from the outermost node down to `node`, for semantic grouping. */
+function nodePath(node: Node): string[] {
+  const names: string[] = [];
+  let current: Node | null = node;
+  while (current) {
+    names.unshift(current.getName());
+    current = current.getParentNode();
+  }
+  return names;
+}
+
 /**
  * Assign (or read back) deterministic part ids. Returns the parts in document
  * order. Calling it twice yields the same ids.
  */
-export function assignParts(document: Document): PartInfo[] {
+export function assignParts(document: Document, semanticGroups = false): PartInfo[] {
   const nodes = instanceNodes(document);
   const instances = meshInstances(document);
   const keys = materialKeyMap(document);
@@ -158,6 +173,7 @@ export function assignParts(document: Document): PartInfo[] {
     const nodeName = node.getName() || `node${nodeIndex}`;
     const instancePart = (instances.get(mesh) ?? 0) > 1;
     const primitives = mesh.listPrimitives();
+    const group = semanticGroups ? semanticPartGroup(nodePath(node)) : undefined;
 
     if (instancePart) {
       const existing = readPartExtra(node.getExtras());
@@ -191,6 +207,7 @@ export function assignParts(document: Document): PartInfo[] {
         triangles,
         vertices,
         instancePart: true,
+        ...(group ? { group } : {}),
       });
       return;
     }
@@ -223,6 +240,7 @@ export function assignParts(document: Document): PartInfo[] {
         triangles: trianglesOf(primitive),
         vertices: primitive.getAttribute('POSITION')?.getCount() ?? 0,
         instancePart: false,
+        ...(group ? { group } : {}),
       });
     });
   });

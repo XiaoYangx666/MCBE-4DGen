@@ -13,7 +13,8 @@ export type ModelFormat =
   | 'ply'
   | 'dae'
   | 'pmx'
-  | 'pmd';
+  | 'pmd'
+  | 'ysm';
 
 /** Extension -> loader family. VRM is a glTF container, so it loads as GLB. */
 const FORMAT_BY_EXTENSION: Readonly<Record<string, ModelFormat>> = {
@@ -51,6 +52,7 @@ export const MODEL_FORMAT_RANK: Readonly<Record<ModelFormat, number>> = {
   ply: 6,
   pmx: 7,
   pmd: 8,
+  ysm: 9,
 };
 
 export interface ModelCandidateEntry {
@@ -75,9 +77,20 @@ export function modelFileName(path: string): string {
 /** Loader family for a file name or path, or null when it is not a model. */
 export function modelFormatOf(path: string): ModelFormat | null {
   const name = modelFileName(path);
+  if (name.toLowerCase() === 'ysm.json') return 'ysm';
   const dot = name.lastIndexOf('.');
   if (dot <= 0 || dot === name.length - 1) return null;
   return FORMAT_BY_EXTENSION[name.slice(dot + 1).toLowerCase()] ?? null;
+}
+
+/** Human-facing name for a model path; YSM manifests use their folder name. */
+export function modelDisplayName(path: string): string {
+  if (modelFormatOf(path) === 'ysm') {
+    const normalized = path.replaceAll('\\', '/').replace(/\/[^/]*$/, '');
+    const folder = normalized.slice(normalized.lastIndexOf('/') + 1);
+    return folder || 'YSM 模型';
+  }
+  return modelFileName(path);
 }
 
 /** Sort model entries by loader preference, then by path for stable output. */
@@ -90,7 +103,7 @@ export function listModelCandidates(
     if (!format) continue;
     candidates.push({
       path: entry.path,
-      name: modelFileName(entry.path),
+      name: modelDisplayName(entry.path),
       format,
       bytes: entry.bytes ?? 0,
     });

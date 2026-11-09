@@ -82,6 +82,7 @@ Workers Builds 会自动安装依赖，并在 Cloudflare 侧生成/复用自己�
 | OBJ | `OBJLoader` + `MTLLoader` | 推荐同时选中 `.mtl` 和贴图 |
 | FBX / DAE / STL / PLY | three.js 加载器 | 实验支持 |
 | PMX 2.0 / 2.1 | libassimp WebAssembly → GLB | 支持静态转换；首次使用需加载约 12 MB WASM，PMD 不支持 |
+| YSM 文件夹 | `ysm.json` + Bedrock 几何解析 | 玩家主体 + 默认贴图；保留原始 UV/贴图和 YSM 骨骼层级，自动映射六部位；动画、手臂、GUI/表情部件不导入 |
 
 转换流程：
 
@@ -117,7 +118,7 @@ PMX 会先用 `libassimp` 的 WebAssembly 后端转换成 GLB，再走同一条 
 
 大模型导入和转换期间，预览区会覆盖一层阶段提示：读取文件 → 加载 PMX 转换引擎 / 转换 PMX → 准备贴图 → 解析模型 → 识别骨骼 → 提取网格 → 减面（按材质显示 `3/12`）→ 图集与覆盖率统计 → 导出几何 → 打包。有可数条目时会在阶段下面显示当前项或数量，设置栏按钮上方也会同步显示；这样长时间的单步处理不会再像一个卡死的界面。转换仍在主线程执行，每 40 ms 让出一次以便刷新阶段文字。
 
-模型拖放区也接受 `.zip`：解压后会按文件类型筛选模型（GLB / glTF / VRM / PMX / PMD / FBX / OBJ / DAE / STL / PLY）和配套资源（`.bin`、`.mtl`、PNG / JPEG / WebP / GIF / BMP / AVIF / SVG / TGA / DDS 贴图），再交给同一套加载流程。外层多包一层文件夹、贴图放在子目录都能识别；`__MACOSX`、`.DS_Store` 等系统文件会被忽略。同一个 ZIP 里有多个模型且贴图重名时，贴图按所选模型所在目录优先匹配，不会串用另一个模型的贴图。限制为压缩包 256 MB、解压后 512 MB、最多 2000 个资源文件，超出会提示精简。ZIP 只用于导入模型，不是皮肤包导入；`.mcpack` / `.mcaddon` 需要先改名为 `.zip` 或解压后再选。
+模型拖放区也接受 `.zip`：解压后会按文件类型筛选模型（GLB / glTF / VRM / PMX / PMD / FBX / OBJ / DAE / STL / PLY / YSM 的 `ysm.json`）和配套资源（`.bin`、`.mtl`、`.json`、PNG / JPEG / WebP / GIF / BMP / AVIF / SVG / TGA / DDS 贴图），再交给同一套加载流程。外层多包一层文件夹、贴图放在子目录都能识别；`__MACOSX`、`.DS_Store` 等系统文件会被忽略。同一个 ZIP 里有多个模型且贴图重名时，贴图按所选模型所在目录优先匹配，不会串用另一个模型的贴图。限制为压缩包 256 MB、解压后 512 MB、最多 2000 个资源文件，超出会提示精简。ZIP 只用于导入模型，不是皮肤包导入；`.mcpack` / `.mcaddon` 需要先改名为 `.zip` 或解压后再选。
 
 模型页拖放区下方的「获取模型」和移动端侧边栏的「获取模型」都会进入独立的站点目录页（`#sources`），不再使用弹窗；支持搜索和分类；网页版推荐下载 GLB / glTF / VRM / OBJ / PMX。目录本体是 `web/shared/SourceDirectory.tsx`；两端只注入自己的图标渲染与复制实现（桌面走 `/api/source-icon` 和桌面桥接，网页版用字母头像和 `navigator.clipboard`）。
 
@@ -213,6 +214,7 @@ PMX 会先用 `libassimp` 的 WebAssembly 后端转换成 GLB，再走同一条 
 | --- | --- | --- |
 | 图片平面皮肤 | 支持 | 支持 |
 | GLB / glTF / VRM / OBJ | 支持 | 支持 |
+| YSM 文件夹 | 支持（主体 + 默认贴图） | 支持（主体 + 默认贴图） |
 | PMX 2.0 / 2.1 | 支持，浏览器内 WASM 转 GLB | 支持 |
 | PMD / 其他 Assimp 格式 | 不支持 | 支持 |
 | 人形六部位绑定 | 支持，自动识别 VRM / 常见 MMD / Mixamo 骨骼；无法识别时退回静态整体绑定 | 支持 |
@@ -229,6 +231,7 @@ PMX 会先用 `libassimp` 的 WebAssembly 后端转换成 GLB，再走同一条 
 - 六部位按每个三角面的源权重总和归属到唯一部位；肩部、裙摆等混合权重区域可能出现刚性接缝，没有桌面版的逐材质衣物规则。
 - PMX 需要首次加载约 12 MB 的 `libassimp` WebAssembly（gzip 后约 3 MB），且转换在主线程完成；PMD 不支持，请先转成 PMX 2.0/2.1。
 - PMX 只保留基础网格、材质颜色和贴图；toon、球面贴图、描边、物理、表情和骨骼动画都会丢弃。一个 ZIP 里有多个模型时先让你选择，未选择时取体积最大的那个。
+- YSM 仅支持文件夹/压缩包内的 `ysm.json` 格式，加密 `.ysm` 无法还原；只导入玩家主体和默认贴图，手臂、动画、控制器、GUI/表情部件与 Molang 表达式不参与转换。单材质 YSM 模型会保留原始贴图和 UV，不再重打 128 图集；YSM 骨骼会保留原始父子层级并映射到头、身体、左右臂、左右腿六部位，尾巴、头发等次级骨骼跟随最近的身体部位。输出的 `geometry.json` 仍只写六部位玩家骨骼，额外子骨骼暂不单独输出。
 - 手臂下放优先使用 VRM 人形元数据；非 VRM 模型按常见 MMD 日文名、Mixamo 或英文骨骼名识别，自定义骨骼名可能识别不到。只旋转左右上臂，不处理肘部、手腕和手指。
 - TGA 贴图会转成 PNG，最长边超过 1024 px 时会先缩小；4K 贴图较多的包首次导入可能需要几十秒。
 - UV 超出 0–1 的材质会按贴图的重复 / 钳制 / 镜像环绕模式采样，不再裁切；重复跨度很大时仍受 128 图集分辨率限制，可能出现模糊。
@@ -261,6 +264,7 @@ webapp/
     DropZone.tsx          文件选择 / 拖放
   engine/                 浏览器转换引擎，不依赖 React 或单包状态
     import-model.ts       GLTF/OBJ/FBX/DAE/STL/PLY 加载
+    ysm.ts                YSM 文件夹/压缩包加载（ysm.json + Bedrock 几何 + 默认贴图）
     model-zip.ts          解包模型 ZIP（模型 + .bin/.mtl/贴图）
     pmx.ts                PMX → GLB（libassimp WASM），多 PMX 选最大
     textures.ts           TGA → PNG（最长边限制 1024），保留相对路径

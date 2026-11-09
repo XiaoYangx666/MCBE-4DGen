@@ -11,6 +11,7 @@ import { prepareVRM } from './avatar-import.ts';
 import { validateModel } from './validate-model.ts';
 import { decodeTGA } from './tga.ts';
 import { ASSIMP_IMPORT_POST_PROCESS } from './assimp-import.ts';
+import { importYsmModel } from './ysm-import.ts';
 import sharp from 'sharp';
 import type { Document } from '@gltf-transform/core';
 
@@ -52,6 +53,7 @@ export const INPUT_FORMATS = ['obj', 'glb', 'gltf', 'fbx', 'dae', 'stl', 'ply', 
 
 export async function importModel(input: string, options: ImportOptions = {}): Promise<IntermediateModel> {
   const extension = extname(input).toLowerCase();
+  if (basename(input).toLowerCase() === 'ysm.json') return importYsmModel(input, options);
   if (['.unitypackage', '.asset', '.prefab', '.bundle'].includes(extension)) throw new Error('Unity project/package assets are not standalone models. Export FBX or VRM with textures first.');
   if (extension === '.pmd') throw new Error('Unsupported input format: PMD. Export as PMX 2.0/2.1 first.');
   if (!INPUT_FORMATS.some((format) => extension === '.' + format)) throw new Error(`Unsupported input format: ${extension || '(none)'}. Supported: ${INPUT_FORMATS.join(', ')}`);

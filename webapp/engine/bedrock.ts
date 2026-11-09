@@ -32,6 +32,8 @@ export interface GeometryOptions {
   sourceTriangles?: number;
   /** Enables the six-part player skeleton instead of one static body bone. */
   rig?: GeometryRig;
+  /** Final texture dimensions; defaults to the 128×128 skin atlas. */
+  textureSize?: { width: number; height: number };
 }
 
 export interface GeometryReport {
@@ -190,10 +192,12 @@ export function buildBedrockGeometry(batches: readonly SourceBatch[], options: G
     for (const stream of streams.values()) yield* stream.positions.values;
   }
   const bounds = visibleBounds(emittedPositions());
+  const textureWidth = options.textureSize?.width ?? 128;
+  const textureHeight = options.textureSize?.height ?? 128;
   const file: BedrockGeometryFile = { format_version: '1.8.0' };
   file[identifier] = {
-    texturewidth: 128,
-    textureheight: 128,
+    texturewidth: textureWidth,
+    textureheight: textureHeight,
     visible_bounds_width: bounds.visible_bounds_width,
     visible_bounds_height: bounds.visible_bounds_height,
     visible_bounds_offset: bounds.visible_bounds_offset,
@@ -221,7 +225,7 @@ export function buildBedrockGeometry(batches: readonly SourceBatch[], options: G
 
   validateGeometry(file, {
     expectedIdentifier: identifier,
-    textureSize: { width: 128, height: 128 },
+    textureSize: { width: textureWidth, height: textureHeight },
     atlasUVs: true,
   });
 

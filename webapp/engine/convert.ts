@@ -18,6 +18,7 @@ import { nextFrame } from './frame.ts';
 import { validateName } from './names.ts';
 import { reporter, type ProgressHandler } from './progress.ts';
 import type { HumanoidPart, SourceBatch } from './types.ts';
+import { resolveTexturePolicy, type TextureHint } from '../../src/texture-policy.ts';
 
 export type BindingMode = 'static' | 'humanoid';
 
@@ -40,6 +41,14 @@ export interface ConvertOptions {
   atlasSharing?: boolean;
   /** Charge retention demand for sampled UV area. */
   coverageAware?: boolean;
+  /** Importer texture suggestion; explicit user settings still win. */
+  textureHint?: TextureHint | null;
+  /** The user explicitly asked for a packed atlas. */
+  forceAtlas?: boolean;
+  /** Explicit maximum source texture edge. */
+  maxTextureSize?: number;
+  /** True only when maxTextureSize is an explicit user setting. */
+  maxTextureSizeExplicit?: boolean;
   /**
    * Preview mode still plans/renders the atlas and exports geometry, but skips
    * assembling the final skin-pack ZIP. The result can be finalised later
@@ -158,6 +167,8 @@ export interface ConvertResult {
   excludedMaterialKeys?: string[];
   /** True when this result stopped before assembling the skin-pack ZIP. */
   preview?: boolean;
+  /** True when the source texture and UVs were kept instead of packed. */
+  texturePreserved?: boolean;
   /** Weights used to produce this result, for honest preview estimates. */
   materialWeights?: Record<string, number>;
 }
@@ -170,6 +181,32 @@ export async function convertBatches(
   if (!source.length) throw new Error('没有可导出的材质');
   // UVs are rewritten for the atlas, so keep the extracted batches reusable.
   const batches = source.map((batch) => ({ ...batch }));
+  const policy = resolveTexturePolicy(options.textureHint, {
+    ...(options.forceAtlas ? { forceAtlas: true } : {}),
+    ...(options.maxTextureSize !== undefined ? { maxTextureSize: options.maxTextureSize } : {}),
+    ...(options.maxTextureSizeExplicit ? { maxTextureSizeExplicit: true } : {}),
+  });
+  let fallbackWarning: string | undefined;
+  let repackWarning: string | undefined;
+  let repack = false;
+  if (policy.preserve) {
+    const single = batches.length === 1 && batches[0]!.texture;
+    if (single) {
+      const texture = batches[0]!.texture!;
+      const limit = Math.min(policy.maxTextureSize ?? 128, 128);
+      if (Math.max(texture.width, texture.height) <= limit)
+        return preserveSourceTexture(batches[0]!, options, limit);
+    }
+    if (policy.repack === 'islands') {
+      repack = true;
+      repackWarning =
+        '源贴图按 UV 岛重新打包到 128，以保留有效像素密度；空白图集区域已移除。';
+    } else if (single) {
+      return preserveSourceTexture(batches[0]!, options, policy.maxTextureSize);
+    } else {
+      fallbackWarning = '保留源贴图需要单材质和单贴图；已回退到常规图集。';
+    }
+  }
   const inputs: AtlasInput[] = batches.map((batch) => ({
     key: batch.key,
     materialName: batch.name,
@@ -192,27 +229,29 @@ export async function convertBatches(
   const report = reporter(options.onProgress);
   report('规划 128×128 图集…', `${inputs.length} 个材质`);
   await nextFrame();
-  const budget = options.textureMode !== 'legacy';
+  const budget = !repack && options.textureMode !== 'legacy';
   // Bedrock samples skin textures with nearest filtering, so no gutter is
   // needed. The 2 px this frees per chart goes back into content resolution.
   const layout = planAtlas(
     inputs,
     128,
     0,
-    budget
-      ? {
-          budget:
-            options.textureTarget === 'density'
-              ? 'texel-density'
-              : options.textureTarget === 'retention'
-                ? 'texel-retention'
-                : 'texel-balanced',
-          ...(options.materialWeights && Object.keys(options.materialWeights).length
-            ? { weights: options.materialWeights }
-            : {}),
-          ...(options.atlasSharing ? { sharing: 'safe' as const } : {}),
-        }
-      : {},
+    repack
+      ? { allocation: 'source-area', splitIslands: true }
+      : budget
+        ? {
+            budget:
+              options.textureTarget === 'density'
+                ? 'texel-density'
+                : options.textureTarget === 'retention'
+                  ? 'texel-retention'
+                  : 'texel-balanced',
+            ...(options.materialWeights && Object.keys(options.materialWeights).length
+              ? { weights: options.materialWeights }
+              : {}),
+            ...(options.atlasSharing ? { sharing: 'safe' as const } : {}),
+          }
+        : {},
   );
   // Hole filling is intentionally disabled for now: moving charts into other
   // charts' holes produced opaque black patches in the exported texture when
@@ -417,6 +456,8 @@ export async function convertBatches(
       : {}),
     ...(options.rig ? { rig: options.rig } : {}),
   });
+  if (fallbackWarning) geometryReport.warnings.push(fallbackWarning);
+  if (repackWarning) geometryReport.warnings.push(repackWarning);
   report('打包皮肤包…', `${geometryReport.triangles.toLocaleString('zh-CN')} 面`);
   await nextFrame();
   const files = options.preview
@@ -440,6 +481,100 @@ export async function convertBatches(
     binding,
     ...(geometryReport.parts ? { parts: geometryReport.parts } : {}),
     ...(options.preview ? { preview: true } : {}),
+  };
+}
+
+/**
+ * Preserve the source texture and UVs for a single-material model. YSM models
+ * already ship a prepared atlas; this avoids the 128×128 repack and keeps the
+ * original layout, capped by the resolved texture policy.
+ */
+async function preserveSourceTexture(
+  batch: SourceBatch,
+  options: ConvertOptions,
+  maxSize?: number,
+): Promise<ConvertResult> {
+  const texture = batch.texture!;
+  const sourceWidth = texture.width;
+  const sourceHeight = texture.height;
+  if (!(sourceWidth > 0 && sourceHeight > 0)) throw new Error('源贴图尺寸无效');
+  // Skin packs are limited to 128px by the Minecraft client; clamp here even
+  // when an external caller supplied a larger texture budget.
+  const limit = Math.min(maxSize ?? 128, 128);
+  const scale = limit ? Math.min(1, limit / Math.max(sourceWidth, sourceHeight)) : 1;
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('无法创建贴图画布');
+  // Match the Node preserved-texture path: high-quality downscale for HD YSM
+  // textures, never the browser's implicit low-quality default.
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(texture.image, 0, 0, width, height);
+  const png = await canvasPng(canvas);
+  const textureUrl = canvas.toDataURL('image/png');
+  const progress = reporter(options.onProgress);
+  progress('保留源贴图…', `${width}×${height}`);
+  const binding: BindingMode = options.rig ? 'humanoid' : 'static';
+  const { file, report: geometryReport } = buildBedrockGeometry([batch], {
+    height: options.height,
+    doubleSided: options.doubleSided,
+    ...(options.sourceTriangles !== undefined
+      ? { sourceTriangles: options.sourceTriangles }
+      : {}),
+    ...(options.rig ? { rig: options.rig } : {}),
+    textureSize: { width, height },
+  });
+  const files = options.preview
+    ? {}
+    : buildSkinPack({
+        geometry: file,
+        png,
+        identifier: 'geometry.skin0',
+        packName: options.name.trim(),
+      });
+  const usage = await measureAtlasUsage(canvas, [batch], { width, height });
+  const pixels = width * height;
+  const key = batch.materialKey ?? batch.key;
+  const material = usage.materials.find((item) => item.key === key) ?? usage.materials[0];
+  const textureReport: TextureReport = {
+    allocatedUtilization: 1,
+    sampledUtilization: usage.sampledUtilization,
+    uvUtilization: usage.uvUtilization,
+    contentUtilization: 1,
+    sampledPixels: usage.sampledPixels,
+    uvPixels: usage.uvPixels,
+    contentPixels: pixels,
+    allocatedPixels: pixels,
+    gutterPixels: 0,
+    emptyPixels: 0,
+    gutterUtilization: 0,
+    emptyUtilization: 0,
+    chartCoverage: pixels > 0 ? usage.uvPixels / pixels : undefined,
+    size: Math.max(width, height),
+    materials: [{
+      key,
+      name: batch.name,
+      pixels: material?.pixels ?? 0,
+      ...(material?.uvPixels !== undefined ? { uvPixels: material.uvPixels } : {}),
+    }],
+  };
+  return {
+    files,
+    geometry: file,
+    png,
+    report: geometryReport,
+    textureReport,
+    textureCoverage: usage.sampledUtilization,
+    textureUrl,
+    triangles: geometryReport.triangles,
+    binding,
+    ...(geometryReport.parts ? { parts: geometryReport.parts } : {}),
+    ...(options.preview ? { preview: true } : {}),
+    texturePreserved: true,
   };
 }
 

@@ -78,7 +78,7 @@ export async function prepareModelInput(
     expanded.files.map((file) => ({ path: modelFilePath(file), bytes: file.size })),
   );
   if (!candidates.length)
-    throw new Error('没有找到支持的模型文件。支持 GLB、glTF、VRM、PMX、FBX、OBJ、DAE、STL、PLY，也可以导入包含模型和贴图的 ZIP。');
+    throw new Error('没有找到支持的模型文件。支持 GLB、glTF、VRM、PMX、FBX、OBJ、DAE、STL、PLY、YSM 模型文件夹，也可以导入包含模型和贴图的 ZIP。');
   return { files: expanded.files, candidates, warnings: expanded.warnings };
 }
 
@@ -167,7 +167,7 @@ export async function loadModelJob(
     assertActive(isCurrent);
 
     if (!files.some((file) => formatOf(file.name))) {
-      throw new Error('没有找到支持的模型文件。支持 GLB、glTF、VRM、PMX、FBX、OBJ、DAE、STL、PLY，也可以导入包含模型和贴图的 ZIP。');
+      throw new Error('没有找到支持的模型文件。支持 GLB、glTF、VRM、PMX、FBX、OBJ、DAE、STL、PLY、YSM 模型文件夹，也可以导入包含模型和贴图的 ZIP。');
     }
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
     if (totalBytes > 512 * 1024 * 1024) {
@@ -188,7 +188,10 @@ export async function loadModelJob(
     const armRig = detectArmRig(loaded.scene);
     report('提取网格…', `${loaded.stats.triangles.toLocaleString('zh-CN')} 个三角面`);
     await nextFrame();
-    const extracted = extractModel(loaded.scene, { rig });
+    const extracted = extractModel(loaded.scene, {
+      rig,
+      semanticGroups: loaded.format === 'ysm',
+    });
     await nextFrame();
     if (rig) {
       const classified = extracted.batches.some((batch) =>
@@ -230,6 +233,14 @@ export interface ConvertExtractedOptions {
   textureMode?: 'legacy' | 'budget';
   textureTarget?: 'density' | 'retention' | 'balanced';
   atlasSharing?: boolean;
+  /** Importer texture suggestion; explicit user settings still win. */
+  textureHint?: import('../../src/texture-policy.ts').TextureHint | null;
+  /** The user explicitly asked for a packed atlas. */
+  forceAtlas?: boolean;
+  /** Explicit maximum source texture edge. */
+  maxTextureSize?: number;
+  /** True only when maxTextureSize is an explicit user setting. */
+  maxTextureSizeExplicit?: boolean;
   /** Stop before assembling the skin-pack ZIP. */
   preview?: boolean;
   /** Humanoid rig from the extraction, required for humanoid binding. */
@@ -351,6 +362,10 @@ export async function renderConvertedBatches(
     ...(options.textureTarget ? { textureTarget: options.textureTarget } : {}),
     ...(options.weights ? { materialWeights: options.weights } : {}),
     ...(options.atlasSharing ? { atlasSharing: true } : {}),
+    ...(options.textureHint ? { textureHint: options.textureHint } : {}),
+    ...(options.forceAtlas ? { forceAtlas: true } : {}),
+    ...(options.maxTextureSize !== undefined ? { maxTextureSize: options.maxTextureSize } : {}),
+    ...(options.maxTextureSizeExplicit ? { maxTextureSizeExplicit: true } : {}),
     ...(options.preview ? { preview: true } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });

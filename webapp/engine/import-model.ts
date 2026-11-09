@@ -14,8 +14,11 @@ import {
 } from '../../src/model-candidates.ts';
 import { vrmHumanoidRoles } from './humanoid.ts';
 import { normalizePath } from './paths.ts';
-import { indexResources } from './resources.ts';
+import { indexResources, type ResourceIndex } from './resources.ts';
 import { applyVrmMtoonMaterials } from './vrm-materials.ts';
+import { loadYsmScene } from './ysm.ts';
+import type { TextureHint } from '../../src/texture-policy.ts';
+import type { ReductionHint } from '../../src/reduce-policy.ts';
 
 /** Formats this loader can open directly; PMX is converted first, PMD is desktop-only. */
 export type ModelFormat = Exclude<CandidateFormat, 'pmx' | 'pmd'>;
@@ -28,6 +31,10 @@ export interface LoadedModel {
   stats: { triangles: number; meshes: number; materials: number; textures: number };
   /** VRM 0.x/1.0 humanoid metadata, when the source provides it. */
   humanoidRoles?: Record<string, THREE.Object3D>;
+  /** Importer texture suggestion; explicit conversion settings still win. */
+  textureHint?: TextureHint;
+  /** Importer default for triangle retention; explicit user settings still win. */
+  reductionHint?: ReductionHint;
   dispose: () => void;
 }
 
@@ -61,7 +68,7 @@ export async function loadModelFiles(
       MODEL_FORMAT_RANK[a.format] - MODEL_FORMAT_RANK[b.format] ||
       a.path.localeCompare(b.path));
   if (!candidates.length) {
-    throw new Error('没有找到支持的模型文件。请选择 GLB、glTF、VRM、FBX、OBJ、DAE、STL 或 PLY。');
+    throw new Error('没有找到支持的模型文件。请选择 GLB、glTF、VRM、FBX、OBJ、DAE、STL、PLY 或 YSM 模型文件夹。');
   }
   const wanted = options.main;
   const main = wanted === undefined
@@ -133,7 +140,7 @@ export async function loadModelFiles(
   const revoke = () => { for (const url of created) URL.revokeObjectURL(url); };
 
   try {
-    const { scene, format, humanoidRoles } = await parseModel(main.file, mainUrl, main.format, files, manager, warnings);
+    const { scene, format, humanoidRoles, name: parsedName, textureHint, reductionHint } = await parseModel(main.file, mainUrl, main.format, files, manager, warnings, index);
     // OBJ/MTL textures are started by preload() and may still be decoding when
     // OBJLoader resolves. Wait for the manager to go idle so stats and the
     // atlas see the actual images.
@@ -151,7 +158,7 @@ export async function loadModelFiles(
     }
     const stats = collectStats(scene);
     if (!stats.meshes) throw new Error('模型里没有网格。');
-    const name = main.file.name.replace(/\.[^.]+$/, '') || '我的 4D 皮肤';
+    const name = parsedName ?? (main.file.name.replace(/\.[^.]+$/, '') || '我的 4D 皮肤');
     let disposed = false;
     return {
       name,
@@ -160,6 +167,8 @@ export async function loadModelFiles(
       warnings,
       stats,
       ...(humanoidRoles && Object.keys(humanoidRoles).length ? { humanoidRoles } : {}),
+      ...(textureHint ? { textureHint } : {}),
+      ...(reductionHint ? { reductionHint } : {}),
       dispose: () => {
         if (disposed) return;
         disposed = true;
@@ -180,11 +189,26 @@ async function parseModel(
   files: File[],
   manager: THREE.LoadingManager,
   warnings: string[],
+  index: ResourceIndex,
 ): Promise<{
   scene: THREE.Object3D;
   format: ModelFormat;
   humanoidRoles?: Record<string, THREE.Object3D>;
+  name?: string;
+  textureHint?: TextureHint;
+  reductionHint?: ReductionHint;
 }> {
+  if (format === 'ysm') {
+    const ysm = await loadYsmScene(index, modelFilePath(file), manager, warnings);
+    return {
+      scene: ysm.scene,
+      format,
+      name: ysm.name,
+      textureHint: ysm.textureHint,
+      reductionHint: ysm.reductionHint,
+      ...(ysm.humanoidRoles ? { humanoidRoles: ysm.humanoidRoles } : {}),
+    };
+  }
   if (format === 'glb' || format === 'gltf') {
     const loader = new GLTFLoader(manager);
     try {

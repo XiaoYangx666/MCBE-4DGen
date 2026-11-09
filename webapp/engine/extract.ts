@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { dominantHumanoidPart } from '../../src/humanoid-binding.ts';
+import { dominantHumanoidPart, HUMANOID_PARTS } from '../../src/humanoid-binding.ts';
+import { semanticPartGroup } from '../../src/part-groups.ts';
 import { humanoidPivots, type HumanoidRig } from './humanoid.ts';
 import { sourceAlphaOf } from './preview-materials.ts';
 import {
@@ -71,6 +72,17 @@ interface MaterialFields {
 
 const IDENTITY_NORMAL = new THREE.Matrix3();
 
+/** Ancestor names from the outermost object down to `object`. */
+function objectPath(object: THREE.Object3D): string[] {
+  const names: string[] = [];
+  let current: THREE.Object3D | null = object;
+  while (current) {
+    names.unshift(current.name);
+    current = current.parent;
+  }
+  return names;
+}
+
 export interface ExtractOptions {
   /** Rotate the whole model around its origin before baking, in degrees. */
   rotationYDegrees?: number;
@@ -78,6 +90,8 @@ export interface ExtractOptions {
   bakeSkinning?: boolean;
   /** Complete humanoid rig; when set, triangles are classified per part. */
   rig?: HumanoidRig | null;
+  /** Add semantic submodel labels (YSM FOX/hair/tail) for the part browser. */
+  semanticGroups?: boolean;
 }
 
 /**
@@ -150,8 +164,15 @@ export function extractModel(
     const skinWeight = geometry.getAttribute('skinWeight');
     const skeleton = skinned.isSkinnedMesh ? skinned.skeleton : null;
     const classify = !!rig && !!skeleton && !!skinIndex && !!skinWeight;
+    const rawRigidPart = mesh.userData._playerPart;
+    const rigidPart =
+      typeof rawRigidPart === 'string' && (HUMANOID_PARTS as readonly string[]).includes(rawRigidPart)
+        ? rawRigidPart as HumanoidPart
+        : null;
     const partScores = new Map<HumanoidPart, number>();
+    const subtree = options.semanticGroups ? semanticPartGroup(objectPath(object)) : undefined;
     const partOfTriangle = (a: number, b: number, c: number): HumanoidPart => {
+      if (rigidPart) return rigidPart;
       if (!classify) return 'body';
       partScores.clear();
       for (let corner = 0; corner < 3; corner++) {
@@ -187,6 +208,7 @@ export function extractModel(
           mesh: baseName,
           group: groupIndex,
           materialKey,
+          ...(subtree ? { subtree } : {}),
         });
       }
       const start = Math.max(0, group.start);

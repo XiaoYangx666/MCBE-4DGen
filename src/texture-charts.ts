@@ -1,10 +1,13 @@
 import type { Document, Material, Primitive } from "@gltf-transform/core";
 import { compactPrimitive } from "@gltf-transform/functions";
 import { createHash } from "node:crypto";
-import { buildUvCharts } from "./texture-chart-math.ts";
+import { buildUvCharts, splitUvIslands } from "./texture-chart-math.ts";
 
 /** Split disconnected UV islands without changing positions, normals, rigid ownership or triangles. */
-export function textureCharts(doc: Document): [Material | null, Primitive[]][] {
+export function textureCharts(
+  doc: Document,
+  options: { merge?: boolean } = {},
+): [Material | null, Primitive[]][] {
   const root = doc.getRoot();
   const groups = new Map<string, Primitive[]>();
   const textureKeys = new Map(
@@ -70,7 +73,9 @@ export function textureCharts(doc: Document): [Material | null, Primitive[]][] {
         triangles.push({ p, ids });
       }
     }
-    const charts = buildUvCharts(uvs, { materials });
+    const charts = options.merge === false
+      ? splitUvIslands(uvs, { materials })
+      : buildUvCharts(uvs, { materials });
     const partitions: Map<Primitive, number[]>[] = charts.map((chart) => {
       const partition = new Map<Primitive, number[]>();
       for (const triangle of chart.triangles) {

@@ -35,6 +35,7 @@ const help = [
   '',
   'Output: manifest.json, skins.json, geometry.json, skin0.png, texts/, and optionally .zip.',
   'Input formats: ' + INPUT_FORMATS.join(', '),
+  'YSM folder format: pass the model folder\'s ysm.json',
   'Default static binding attaches the whole model to body; --binding humanoid uses VRM player limbs.',
 ].join('\n');
 
@@ -104,6 +105,7 @@ async function main() {
   if (command !== 'convert') throw new Error('Unknown command: ' + command + '\n' + help);
   let out: string | undefined, packName = 'Custom Skin Pack', height = 32;
   let ratio: number | undefined, textureSize = 256, atlas: number | undefined;
+  let textureSizeExplicit = false;
   let importer: 'auto' | 'native' | 'wasm' = 'auto', archive = true;
   let binding: 'static' | 'humanoid' = 'static';
   let profilePath: string | undefined;
@@ -127,7 +129,7 @@ async function main() {
       ratio = positive(requireValue(flag), flag);
       if (ratio > 1) throw new Error('--ratio must not exceed 1');
     }
-    else if (flag === '--max-texture') textureSize = positive(requireValue(flag), flag, true);
+    else if (flag === '--max-texture') { textureSize = positive(requireValue(flag), flag, true); textureSizeExplicit = true; }
     else if (flag === '--atlas') atlas = positive(requireValue(flag), flag, true);
     else if (flag === '--backend') importer = backend(requireValue(flag));
     else if (flag === '--no-zip') archive = false;
@@ -164,9 +166,19 @@ async function main() {
       Object.keys(value).some((key) => !['shoulderOutset', 'armSpreadDegrees', 'materialRules', 'boneMap', 'rotationYDegrees'].includes(key))) throw new Error('Invalid humanoid profile fields');
     profile = value as HumanoidProfile;
   }
-  const humanoid = binding === 'humanoid' ? await exportHumanoid(model, { height, textureSize, ...(profile ? { profile } : {}), ...(atlas ? { atlas } : {}) }) : null;
-  const optimized = humanoid ? null : await optimizeModel(model, options);
-  const exported = humanoid ?? await exportBedrockGeometry(bindStatic(optimized!.model), { identifier: 'geometry.skin0', skinTextureSize: 128 });
+  const userTexture = {
+    ...(atlas !== undefined ? { forceAtlas: true } : {}),
+    ...(textureSizeExplicit ? { maxTextureSizeExplicit: true } : {}),
+  };
+  const humanoid = binding === 'humanoid' ? await exportHumanoid(model, { height, textureSize, ...(profile ? { profile } : {}), ...(atlas !== undefined ? { atlas } : {}), ...userTexture }) : null;
+  const optimized = humanoid ? null : await optimizeModel(model, {
+    ...options,
+    texture: { ...options.texture, ...userTexture },
+  });
+  const exported = humanoid ?? await exportBedrockGeometry(bindStatic(optimized!.model), {
+    identifier: 'geometry.skin0',
+    ...(optimized!.preserved ? { maxSkinTextureSize: 128 } : { skinTextureSize: 128 }),
+  });
   const files = buildSkinPack({ geometry: exported.file, png: exported.png, packName, identifier: 'geometry.skin0' });
   await validateSkinPackFiles(files);
   const zip = archive ? await zipSkinPack(files) : null;

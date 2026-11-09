@@ -113,7 +113,14 @@ export function applyArmPose(rig: ArmRig, degrees: number) {
     if (direction.lengthSq() < 1e-10) continue;
     direction.normalize();
     axis.crossVectors(up, direction);
-    if (axis.lengthSq() < 1e-10) continue;
+    if (axis.lengthSq() < 1e-10) {
+      // YSM arms usually rest straight down, where up × direction is zero.
+      // Rotate around the character's forward axis instead; the side keeps
+      // left/right spread mirrored.
+      const side = Math.sign(pivot.x);
+      if (!side) continue;
+      axis.set(0, 0, side);
+    }
     axis.normalize();
 
     delta.setFromAxisAngle(axis, (spread * Math.PI) / 180);

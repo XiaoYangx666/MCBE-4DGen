@@ -1,4 +1,9 @@
 import type { HumanoidProfile } from './humanoid.ts';
+import type { IntermediateModel } from './model.ts';
+import type { ReductionHint } from './reduce-policy.ts';
+
+/** Source format stored on a loaded model. */
+export type SourceFormat = IntermediateModel['source']['format'];
 
 /** Per-material summary returned when a model session is created. */
 export interface MaterialSummary {
@@ -34,6 +39,8 @@ export interface PartSummary {
   triangles: number;
   vertices: number;
   instancePart: boolean;
+  /** Optional submodel label, e.g. YSM `FOX`, `Hair` or `Tail`. */
+  group?: string;
 }
 
 /** Editing settings persisted on a model library entry. */
@@ -72,6 +79,8 @@ export interface ModelEntry {
   stats?: { triangles: number; materials: number; bytes: number };
   previewKey?: string;
   sourceAvailable?: boolean;
+  /** Source format, used by the library preview to choose pixel-art sampling. */
+  format?: SourceFormat;
 }
 
 /** Response of opening a model in the workbench. */
@@ -79,6 +88,10 @@ export interface LoadedSession {
   id: string;
   modelId: string;
   name: string;
+  /** Source format, used by the preview to choose pixel-art sampling. */
+  format: SourceFormat;
+  /** Importer default for triangle retention; explicit saved settings still win. */
+  reductionHint?: ReductionHint;
   settings: EditSettings | null;
   profile: HumanoidProfile | null;
   materials: MaterialSummary[];
