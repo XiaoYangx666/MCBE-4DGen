@@ -1,4 +1,8 @@
 import type { HumanoidProfile } from './humanoid.ts';
+import type { IntermediateModel } from './model.ts';
+
+/** Source format stored on a loaded model. */
+export type SourceFormat = IntermediateModel['source']['format'];
 
 /** Per-material summary returned when a model session is created. */
 export interface MaterialSummary {
@@ -73,7 +77,7 @@ export interface ModelEntry {
   previewKey?: string;
   sourceAvailable?: boolean;
   /** Source format, used by the library preview to choose pixel-art sampling. */
-  format?: string;
+  format?: SourceFormat;
 }
 
 /** Response of opening a model in the workbench. */
@@ -82,7 +86,7 @@ export interface LoadedSession {
   modelId: string;
   name: string;
   /** Source format, used by the preview to choose pixel-art sampling. */
-  format: string;
+  format: SourceFormat;
   settings: EditSettings | null;
   profile: HumanoidProfile | null;
   materials: MaterialSummary[];

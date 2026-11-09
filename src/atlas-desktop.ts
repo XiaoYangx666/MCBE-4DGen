@@ -486,6 +486,7 @@ export async function optimizeTexturesWithBudget(
   return {
     model,
     png,
+    preserved: false,
     report: {
       originalTextures: inspection.textures.map((entry) => ({
         width: entry.width,

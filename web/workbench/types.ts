@@ -3,6 +3,7 @@ import type {
   EditSettings,
   MaterialSummary,
   PartSummary,
+  SourceFormat,
 } from "../../src/api-types";
 import type { HumanoidProfile } from "../../src/humanoid";
 
@@ -14,7 +15,7 @@ export type Session = {
   id: string;
   name: string;
   /** Source format, used by the preview to choose pixel-art sampling. */
-  format?: string;
+  format?: SourceFormat;
   profile: HumanoidProfile | null;
   materials: MaterialRow[];
   parts?: PartSummary[];

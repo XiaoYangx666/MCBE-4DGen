@@ -47,7 +47,18 @@ export async function buildPreviewGlb(
 ): Promise<Uint8Array> {
   await MeshoptEncoder.ready;
   const preview = cloneDocument(document);
-  await preview.transform(prune({ keepExtras: true }), meshopt({ encoder: MeshoptEncoder, level: "medium" }));
+  // Synthetic humanoid role nodes can be empty leaves (for example a hand role
+  // that only stores a pivot). Prune removes those unless extras protect them,
+  // which would break the workbench pose preview. Scope the exception to
+  // documents that actually contain such role markers.
+  const keepRoleLeaves = document.getRoot().listNodes().some((node) =>
+    typeof node.getExtras()._humanoidRole === "string" &&
+    !node.getMesh() &&
+    node.listChildren().length === 0);
+  await preview.transform(
+    prune(keepRoleLeaves ? { keepExtras: true } : {}),
+    meshopt({ encoder: MeshoptEncoder, level: "medium" }),
+  );
   await Promise.all(preview.getRoot().listTextures().map((texture) => downscale(texture, textureLimit)));
   return new Uint8Array(await io.writeBinary(preview));
 }

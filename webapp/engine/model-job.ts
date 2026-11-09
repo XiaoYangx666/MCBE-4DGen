@@ -230,8 +230,14 @@ export interface ConvertExtractedOptions {
   textureMode?: 'legacy' | 'budget';
   textureTarget?: 'density' | 'retention' | 'balanced';
   atlasSharing?: boolean;
-  /** Keep the single source texture and UVs instead of repacking an atlas. */
-  preserveTexture?: boolean;
+  /** Importer texture suggestion; explicit user settings still win. */
+  textureHint?: import('../../src/texture-policy.ts').TextureHint | null;
+  /** The user explicitly asked for a packed atlas. */
+  forceAtlas?: boolean;
+  /** Explicit maximum source texture edge. */
+  maxTextureSize?: number;
+  /** True only when maxTextureSize is an explicit user setting. */
+  maxTextureSizeExplicit?: boolean;
   /** Stop before assembling the skin-pack ZIP. */
   preview?: boolean;
   /** Humanoid rig from the extraction, required for humanoid binding. */
@@ -353,7 +359,10 @@ export async function renderConvertedBatches(
     ...(options.textureTarget ? { textureTarget: options.textureTarget } : {}),
     ...(options.weights ? { materialWeights: options.weights } : {}),
     ...(options.atlasSharing ? { atlasSharing: true } : {}),
-    ...(options.preserveTexture ? { preserveTexture: true } : {}),
+    ...(options.textureHint ? { textureHint: options.textureHint } : {}),
+    ...(options.forceAtlas ? { forceAtlas: true } : {}),
+    ...(options.maxTextureSize !== undefined ? { maxTextureSize: options.maxTextureSize } : {}),
+    ...(options.maxTextureSizeExplicit ? { maxTextureSizeExplicit: true } : {}),
     ...(options.preview ? { preview: true } : {}),
     ...(options.onProgress ? { onProgress: options.onProgress } : {}),
   });

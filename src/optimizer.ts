@@ -12,7 +12,7 @@ export interface PreparedOptimization { model: IntermediateModel; report: { prep
 export async function optimizeModel(input: IntermediateModel, options: { prepare?: PrepareOptions; mesh?: MeshOptions; texture?: TextureOptions; prepared?: PreparedOptimization; onPrepared?: (state:PreparedOptimization) => void } = {}) {
   if (options.prepared) {
     const texture = await optimizeTextures(options.prepared.model, options.texture);
-    return {model:texture.model, atlas:texture.png, report:{...options.prepared.report, texture:texture.report}};
+    return {model:texture.model, atlas:texture.png, preserved:texture.preserved, report:{...options.prepared.report, texture:texture.report}};
   }
   const prepared = options.prepare ? await prepareStaticModel(input, options.prepare.scene === undefined ? {} : { scene: options.prepare.scene }) : null;
   const mesh = await optimizeMesh(prepared?.model ?? input, options.mesh);
@@ -21,7 +21,7 @@ export async function optimizeModel(input: IntermediateModel, options: { prepare
     ...(prepared && fitted ? { preparation: { ...prepared.report, ...fitted.report, before: prepared.report.before, finalTriangles: mesh.report.after } } : {}), mesh:mesh.report}};
   options.onPrepared?.(state);
   const texture = await optimizeTextures(state.model, options.texture);
-  return { model: texture.model, atlas: texture.png, report: {
+  return { model: texture.model, atlas: texture.png, preserved: texture.preserved, report: {
     ...(prepared && fitted ? { preparation: { ...prepared.report, ...fitted.report, before: prepared.report.before, finalTriangles: mesh.report.after } } : {}),
     mesh: mesh.report, texture: texture.report } };
 }

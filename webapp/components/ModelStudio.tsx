@@ -508,7 +508,7 @@ export function ModelStudio({
         textureMode: 'budget',
         textureTarget,
         atlasSharing: true,
-        preserveTexture: model?.format === 'ysm',
+        textureHint: model?.textureHint,
         rig: binding === 'humanoid' ? extracted.rig : null,
         onProgress: setProgress,
       });
@@ -1008,7 +1008,7 @@ export function ModelStudio({
         <div className="model-drop-overlay" aria-hidden="true">
           <Icon name="upload" size={30} />
           <b>松开以导入模型</b>
-          <span>GLB / VRM / PMX / 含贴图的 ZIP / YSM 文件夹</span>
+          <span>GLB / VRM / PMX / 含贴图的 ZIP</span>
         </div>
       )}
       {!compact && (

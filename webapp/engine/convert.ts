@@ -18,6 +18,7 @@ import { nextFrame } from './frame.ts';
 import { validateName } from './names.ts';
 import { reporter, type ProgressHandler } from './progress.ts';
 import type { HumanoidPart, SourceBatch } from './types.ts';
+import { resolveTexturePolicy, type TextureHint } from '../../src/texture-policy.ts';
 
 export type BindingMode = 'static' | 'humanoid';
 
@@ -40,8 +41,14 @@ export interface ConvertOptions {
   atlasSharing?: boolean;
   /** Charge retention demand for sampled UV area. */
   coverageAware?: boolean;
-  /** Keep a single source texture and its UVs instead of repacking the 128 atlas. */
-  preserveTexture?: boolean;
+  /** Importer texture suggestion; explicit user settings still win. */
+  textureHint?: TextureHint | null;
+  /** The user explicitly asked for a packed atlas. */
+  forceAtlas?: boolean;
+  /** Explicit maximum source texture edge. */
+  maxTextureSize?: number;
+  /** True only when maxTextureSize is an explicit user setting. */
+  maxTextureSizeExplicit?: boolean;
   /**
    * Preview mode still plans/renders the atlas and exports geometry, but skips
    * assembling the final skin-pack ZIP. The result can be finalised later
@@ -160,6 +167,8 @@ export interface ConvertResult {
   excludedMaterialKeys?: string[];
   /** True when this result stopped before assembling the skin-pack ZIP. */
   preview?: boolean;
+  /** True when the source texture and UVs were kept instead of packed. */
+  texturePreserved?: boolean;
   /** Weights used to produce this result, for honest preview estimates. */
   materialWeights?: Record<string, number>;
 }
@@ -172,8 +181,17 @@ export async function convertBatches(
   if (!source.length) throw new Error('没有可导出的材质');
   // UVs are rewritten for the atlas, so keep the extracted batches reusable.
   const batches = source.map((batch) => ({ ...batch }));
-  if (options.preserveTexture && batches.length === 1 && batches[0]!.texture)
-    return preserveSourceTexture(batches[0]!, options);
+  const policy = resolveTexturePolicy(options.textureHint, {
+    ...(options.forceAtlas ? { forceAtlas: true } : {}),
+    ...(options.maxTextureSize !== undefined ? { maxTextureSize: options.maxTextureSize } : {}),
+    ...(options.maxTextureSizeExplicit ? { maxTextureSizeExplicit: true } : {}),
+  });
+  let fallbackWarning: string | undefined;
+  if (policy.preserve) {
+    if (batches.length === 1 && batches[0]!.texture)
+      return preserveSourceTexture(batches[0]!, options, policy.maxTextureSize);
+    fallbackWarning = '保留源贴图需要单材质和单贴图；已回退到常规图集。';
+  }
   const inputs: AtlasInput[] = batches.map((batch) => ({
     key: batch.key,
     materialName: batch.name,
@@ -421,6 +439,7 @@ export async function convertBatches(
       : {}),
     ...(options.rig ? { rig: options.rig } : {}),
   });
+  if (fallbackWarning) geometryReport.warnings.push(fallbackWarning);
   report('打包皮肤包…', `${geometryReport.triangles.toLocaleString('zh-CN')} 面`);
   await nextFrame();
   const files = options.preview
@@ -450,16 +469,20 @@ export async function convertBatches(
 /**
  * Preserve the source texture and UVs for a single-material model. YSM models
  * already ship a prepared atlas; this avoids the 128×128 repack and keeps the
- * original 128/256/512 texture.
+ * original layout, capped by the resolved texture policy.
  */
 async function preserveSourceTexture(
   batch: SourceBatch,
   options: ConvertOptions,
+  maxSize?: number,
 ): Promise<ConvertResult> {
   const texture = batch.texture!;
-  const width = texture.width;
-  const height = texture.height;
-  if (!(width > 0 && height > 0)) throw new Error('源贴图尺寸无效');
+  const sourceWidth = texture.width;
+  const sourceHeight = texture.height;
+  if (!(sourceWidth > 0 && sourceHeight > 0)) throw new Error('源贴图尺寸无效');
+  const scale = maxSize ? Math.min(1, maxSize / Math.max(sourceWidth, sourceHeight)) : 1;
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -488,23 +511,31 @@ async function preserveSourceTexture(
         identifier: 'geometry.skin0',
         packName: options.name.trim(),
       });
+  const usage = await measureAtlasUsage(canvas, [batch], { width, height });
   const pixels = width * height;
+  const key = batch.materialKey ?? batch.key;
+  const material = usage.materials.find((item) => item.key === key) ?? usage.materials[0];
   const textureReport: TextureReport = {
     allocatedUtilization: 1,
-    sampledUtilization: 1,
-    uvUtilization: 1,
+    sampledUtilization: usage.sampledUtilization,
+    uvUtilization: usage.uvUtilization,
     contentUtilization: 1,
-    sampledPixels: pixels,
-    uvPixels: pixels,
+    sampledPixels: usage.sampledPixels,
+    uvPixels: usage.uvPixels,
     contentPixels: pixels,
     allocatedPixels: pixels,
     gutterPixels: 0,
     emptyPixels: 0,
     gutterUtilization: 0,
     emptyUtilization: 0,
-    chartCoverage: 1,
+    chartCoverage: pixels > 0 ? usage.uvPixels / pixels : undefined,
     size: Math.max(width, height),
-    materials: [{ key: batch.materialKey ?? batch.key, name: batch.name, pixels }],
+    materials: [{
+      key,
+      name: batch.name,
+      pixels: material?.pixels ?? 0,
+      ...(material?.uvPixels !== undefined ? { uvPixels: material.uvPixels } : {}),
+    }],
   };
   return {
     files,
@@ -512,12 +543,13 @@ async function preserveSourceTexture(
     png,
     report: geometryReport,
     textureReport,
-    textureCoverage: 1,
+    textureCoverage: usage.sampledUtilization,
     textureUrl,
     triangles: geometryReport.triangles,
     binding,
     ...(geometryReport.parts ? { parts: geometryReport.parts } : {}),
     ...(options.preview ? { preview: true } : {}),
+    texturePreserved: true,
   };
 }
 

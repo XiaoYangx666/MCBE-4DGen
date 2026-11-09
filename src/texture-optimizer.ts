@@ -9,6 +9,7 @@ import { textureCharts } from "./texture-charts.ts";
 import { bakeBaseColorPixels } from "./texture-pixels.ts";
 import { optimizeTexturesWithBudget } from "./atlas-desktop.ts";
 import { materialKeyMap } from "./parts.ts";
+import { resolveTexturePolicy, type ResolvedTexturePolicy } from "./texture-policy.ts";
 import {
   normalizeWrapMode,
   tileEdge,
@@ -38,8 +39,10 @@ export interface TextureOptions {
   atlasSharing?: boolean;
   /** With `atlasBudget`, charge retention demand for sampled UV area. */
   atlasCoverageAware?: boolean;
-  /** Keep a single source texture and its UVs instead of repacking an atlas. */
-  preserveTexture?: boolean;
+  /** The user explicitly asked for a packed atlas. */
+  forceAtlas?: boolean;
+  /** True only when maxTextureSize came from an explicit user setting. */
+  maxTextureSizeExplicit?: boolean;
 }
 interface Rect {
   x: number;
@@ -234,12 +237,22 @@ export async function optimizeTextures(
     )
   )
     throw new Error("Invalid atlas budget");
-  if (options.preserveTexture) {
-    const preserved = await preserveSingleTexture(input, options);
+  const policy = resolveTexturePolicy(input.source.textureHint, {
+    ...(options.forceAtlas ? { forceAtlas: true } : {}),
+    ...(options.maxTextureSize !== undefined
+      ? { maxTextureSize: options.maxTextureSize }
+      : {}),
+    ...(options.maxTextureSizeExplicit ? { maxTextureSizeExplicit: true } : {}),
+  });
+  let fallbackWarning: string | undefined;
+  if (policy.preserve) {
+    const preserved = await preserveSingleTexture(input, options, policy);
     if (preserved) return preserved;
+    fallbackWarning =
+      "Source texture preservation requires one material and one texture; the normal atlas path was used instead.";
   }
-  if (options.atlasBudget)
-    return optimizeTexturesWithBudget(input, {
+  if (options.atlasBudget) {
+    const result = await optimizeTexturesWithBudget(input, {
       size: options.compactSize ?? options.atlasSize ?? 128,
       padding: options.padding ?? 1,
       target: options.atlasBudget,
@@ -248,6 +261,10 @@ export async function optimizeTextures(
       ...(options.atlasSharing ? { sharing: true } : {}),
       ...(options.atlasCoverageAware ? { coverageAware: true } : {}),
     });
+    if (fallbackWarning) result.model.warnings.push(fallbackWarning);
+    return result;
+  }
+  const maxTextureSize = policy.maxTextureSize;
   validateModel(input);
   const inspection = await inspectModel(input);
   const model: IntermediateModel = {
@@ -281,10 +298,10 @@ export async function optimizeTextures(
       ? { width: metadata.width!, height: metadata.height! }
       : null;
     const scale =
-      source && options.maxTextureSize
+      source && maxTextureSize
         ? Math.min(
             1,
-            options.maxTextureSize / Math.max(source.width, source.height),
+            maxTextureSize / Math.max(source.width, source.height),
           )
         : 1;
     const w = source ? Math.max(1, Math.round(source.width * scale)) : 4;
@@ -811,10 +828,12 @@ export async function optimizeTextures(
   model.warnings.push(
     "Atlas preserves base color and alpha only; PBR lighting/shader effects are not reproduced.",
   );
+  if (fallbackWarning) model.warnings.push(fallbackWarning);
   validateModel(model);
   return {
     model,
     png,
+    preserved: false,
     report: {
       originalTextures: inspection.textures.map((t) => ({
         width: t.width,
@@ -879,10 +898,14 @@ export async function optimizeTextures(
 /**
  * Preserve a single source texture and its UVs. YSM models already ship one
  * prepared atlas; repacking it only resamples and loses detail. Returns null
- * when the document is not a single-material/single-texture model, so callers
- * can fall back to the normal atlas path.
+ * when the document is not a single-material/single-texture model, so the
+ * caller can fall back to the normal atlas path with a warning.
  */
-async function preserveSingleTexture(input: IntermediateModel, options: TextureOptions) {
+async function preserveSingleTexture(
+  input: IntermediateModel,
+  options: TextureOptions,
+  policy: ResolvedTexturePolicy,
+) {
   const inspection = await inspectModel(input);
   const model: IntermediateModel = {
     ...input,
@@ -899,9 +922,11 @@ async function preserveSingleTexture(input: IntermediateModel, options: TextureO
   if (!image) return null;
   let metadata = await sharp(image).metadata();
   if (!metadata.width || !metadata.height) return null;
-  let width = metadata.width;
-  let height = metadata.height;
-  const limit = options.maxTextureSize;
+  const sourceWidth = metadata.width;
+  const sourceHeight = metadata.height;
+  let width = sourceWidth;
+  let height = sourceHeight;
+  const limit = policy.maxTextureSize;
   if (limit && Math.max(width, height) > limit) {
     const resized = await sharp(image)
       .resize({ width: limit, height: limit, fit: "inside", withoutEnlargement: true })
@@ -912,17 +937,33 @@ async function preserveSingleTexture(input: IntermediateModel, options: TextureO
     metadata = await sharp(image).metadata();
     width = metadata.width!;
     height = metadata.height!;
+  } else if (metadata.format !== "png") {
+    // Callers may preserve a JPEG/WebP source in the future; the pack writer
+    // only accepts PNG bytes regardless of the source file extension.
+    const converted = await sharp(image).png().toBuffer();
+    image = new Uint8Array(converted);
+    texture.setImage(image).setMimeType("image/png");
+    metadata = await sharp(image).metadata();
+    width = metadata.width!;
+    height = metadata.height!;
   }
   const png = new Uint8Array(image);
-  const name = materials[0]!.getName() || "YSM";
+  const name = materials[0]!.getName() || "Source";
   const key = `m:${name}#1`;
   const pixels = width * height;
+  const usage = await measurePreservedUsage(
+    root.listMeshes().flatMap((mesh) => mesh.listPrimitives()),
+    png,
+    width,
+    height,
+  );
   model.warnings.push(
-    "YSM source texture and UVs were preserved; the texture was not repacked into an atlas.",
+    "Source texture and UVs were preserved; the texture was not repacked into an atlas.",
   );
   return {
     model,
     png,
+    preserved: true,
     report: {
       originalTextures: inspection.textures.map((t) => ({
         width: t.width,
@@ -933,25 +974,31 @@ async function preserveSingleTexture(input: IntermediateModel, options: TextureO
         width,
         height,
         bytes: png.length,
-        sampledUtilization: 1,
-        uvUtilization: 1,
+        sampledUtilization: usage.sampledPixels / pixels,
+        uvUtilization: usage.uvPixels / pixels,
         contentUtilization: 1,
         allocatedUtilization: 1,
-        sampledPixels: pixels,
-        uvPixels: pixels,
+        sampledPixels: usage.sampledPixels,
+        uvPixels: usage.uvPixels,
         contentPixels: pixels,
         allocatedPixels: pixels,
         gutterPixels: 0,
         emptyPixels: 0,
         gutterUtilization: 0,
         emptyUtilization: 0,
-        chartCoverage: 1,
+        chartCoverage: pixels > 0 ? usage.uvPixels / pixels : undefined,
       },
       filter: "nearest" as const,
       padding: 0,
       allocation: "source-area" as const,
       materialWeights: options.materialWeights ?? {},
-      materials: [{ name, key, pixels, uvPixels: pixels, regions: [0] }],
+      materials: [{
+        name,
+        key,
+        pixels: usage.sampledPixels,
+        uvPixels: usage.uvPixels,
+        regions: [0],
+      }],
       regions: [{
         id: 0,
         material: name,
@@ -963,12 +1010,73 @@ async function preserveSingleTexture(input: IntermediateModel, options: TextureO
         y: 0,
         width,
         height,
-        source: { width, height },
+        source: { width: sourceWidth, height: sourceHeight },
         resized: { width, height },
         tiles: [1, 1] as [number, number],
-        crop: { x: 0, y: 0, width, height },
+        crop: { x: 0, y: 0, width: sourceWidth, height: sourceHeight },
       }],
       warnings: model.warnings,
     },
   };
+}
+
+/** Rasterize UV triangles against the preserved image to report honest usage. */
+async function measurePreservedUsage(
+  primitives: readonly Primitive[],
+  image: Uint8Array,
+  width: number,
+  height: number,
+): Promise<{ sampledPixels: number; uvPixels: number }> {
+  const raw = await sharp(image).ensureAlpha().raw().toBuffer();
+  const used = new Uint8Array(width * height);
+  const uvUsed = new Uint8Array(width * height);
+  const edge = (p: number[], q: number[], x: number, y: number) =>
+    (q[0]! - p[0]!) * (y - p[1]!) - (q[1]! - p[1]!) * (x - p[0]!);
+  for (const primitive of primitives) {
+    const uv = primitive.getAttribute("TEXCOORD_0");
+    if (!uv) continue;
+    const indices =
+      primitive.getIndices()?.getArray() ??
+      Uint32Array.from({ length: uv.getCount() }, (_, index) => index);
+    for (let index = 0; index < indices.length; index += 3) {
+      const points = [indices[index]!, indices[index + 1]!, indices[index + 2]!].map((id) => {
+        const value: number[] = [];
+        uv.getElement(id, value);
+        return [value[0]! * width, value[1]! * height];
+      });
+      const [a, b, c] = points as [number[], number[], number[]];
+      if (Math.abs(edge(a, b, c[0]!, c[1]!)) < 1e-12) {
+        const x = Math.max(0, Math.min(width - 1, Math.floor((a[0]! + b[0]! + c[0]!) / 3)));
+        const y = Math.max(0, Math.min(height - 1, Math.floor((a[1]! + b[1]! + c[1]!) / 3)));
+        const index2 = y * width + x;
+        uvUsed[index2] = 1;
+        if (raw[index2 * 4 + 3]! > 0) used[index2] = 1;
+        continue;
+      }
+      const x0 = Math.max(0, Math.floor(Math.min(a[0]!, b[0]!, c[0]!)));
+      const x1 = Math.min(width - 1, Math.ceil(Math.max(a[0]!, b[0]!, c[0]!)));
+      const y0 = Math.max(0, Math.floor(Math.min(a[1]!, b[1]!, c[1]!)));
+      const y1 = Math.min(height - 1, Math.ceil(Math.max(a[1]!, b[1]!, c[1]!)));
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const values = [
+            edge(a, b, x + 0.5, y + 0.5),
+            edge(b, c, x + 0.5, y + 0.5),
+            edge(c, a, x + 0.5, y + 0.5),
+          ];
+          if (!(values.every((value) => value >= 0) || values.every((value) => value <= 0))) continue;
+          const index2 = y * width + x;
+          uvUsed[index2] = 1;
+          if (raw[index2 * 4 + 3]! > 0) used[index2] = 1;
+        }
+      }
+    }
+  }
+  let sampledPixels = 0;
+  let uvPixels = 0;
+  for (let index = 0; index < used.length; index++) {
+    sampledPixels += used[index]!;
+    uvPixels += uvUsed[index]!;
+  }
+  return { sampledPixels, uvPixels };
 }

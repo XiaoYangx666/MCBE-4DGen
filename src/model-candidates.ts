@@ -103,7 +103,7 @@ export function listModelCandidates(
     if (!format) continue;
     candidates.push({
       path: entry.path,
-      name: modelFileName(entry.path),
+      name: modelDisplayName(entry.path),
       format,
       bytes: entry.bytes ?? 0,
     });

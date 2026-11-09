@@ -1131,14 +1131,17 @@ export interface AtlasUsageOptions {
 export async function measureAtlasUsage(
   canvas: HTMLCanvasElement,
   batches: readonly { key?: string; name: string; positions: Float32Array; uvs: Float32Array | null }[],
-  size: number,
+  size: number | { width: number; height: number },
   options: AtlasUsageOptions = {},
 ): Promise<AtlasUsage> {
+  const width = typeof size === 'number' ? size : size.width;
+  const height = typeof size === 'number' ? size : size.height;
+  const pixels = width * height;
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return { sampledUtilization: 0, uvUtilization: 0, sampledPixels: 0, uvPixels: 0, uvMask: new Uint8Array(size * size), materials: [] };
-  const alpha = context.getImageData(0, 0, size, size).data;
-  const used = new Uint8Array(size * size);
-  const uvUsed = new Uint8Array(size * size);
+  if (!context) return { sampledUtilization: 0, uvUtilization: 0, sampledPixels: 0, uvPixels: 0, uvMask: new Uint8Array(pixels), materials: [] };
+  const alpha = context.getImageData(0, 0, width, height).data;
+  const used = new Uint8Array(pixels);
+  const uvUsed = new Uint8Array(pixels);
   const masks = new Map<string, Uint8Array>();
   const uvMasks = new Map<string, Uint8Array>();
   const names = new Map<string, string>();
@@ -1146,7 +1149,7 @@ export async function measureAtlasUsage(
     const map = uv ? uvMasks : masks;
     let mask = map.get(key);
     if (!mask) {
-      mask = new Uint8Array(size * size);
+      mask = new Uint8Array(pixels);
       map.set(key, mask);
     }
     return mask;
@@ -1167,17 +1170,17 @@ export async function measureAtlasUsage(
     const triangles = Math.min(batch.positions.length / 9, uvs.length / 6);
     for (let t = 0; t < triangles; t++) {
       const a = t * 3;
-      const ax = uvs[a * 2]! * size;
-      const ay = uvs[a * 2 + 1]! * size;
-      const bx = uvs[(a + 1) * 2]! * size;
-      const by = uvs[(a + 1) * 2 + 1]! * size;
-      const cx = uvs[(a + 2) * 2]! * size;
-      const cy = uvs[(a + 2) * 2 + 1]! * size;
+      const ax = uvs[a * 2]! * width;
+      const ay = uvs[a * 2 + 1]! * height;
+      const bx = uvs[(a + 1) * 2]! * width;
+      const by = uvs[(a + 1) * 2 + 1]! * height;
+      const cx = uvs[(a + 2) * 2]! * width;
+      const cy = uvs[(a + 2) * 2 + 1]! * height;
       const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
       if (Math.abs(area) < 1e-8) {
-        const x = Math.max(0, Math.min(size - 1, Math.floor((ax + bx + cx) / 3)));
-        const y = Math.max(0, Math.min(size - 1, Math.floor((ay + by + cy) / 3)));
-        const index = y * size + x;
+        const x = Math.max(0, Math.min(width - 1, Math.floor((ax + bx + cx) / 3)));
+        const y = Math.max(0, Math.min(height - 1, Math.floor((ay + by + cy) / 3)));
+        const index = y * width + x;
         uvMask[index] = 1;
         uvUsed[index] = 1;
         if (alpha[index * 4 + 3]! !== 0) {
@@ -1187,9 +1190,9 @@ export async function measureAtlasUsage(
         continue;
       }
       const x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx)));
-      const x1 = Math.min(size - 1, Math.ceil(Math.max(ax, bx, cx)));
+      const x1 = Math.min(width - 1, Math.ceil(Math.max(ax, bx, cx)));
       const y0 = Math.max(0, Math.floor(Math.min(ay, by, cy)));
-      const y1 = Math.min(size - 1, Math.ceil(Math.max(ay, by, cy)));
+      const y1 = Math.min(height - 1, Math.ceil(Math.max(ay, by, cy)));
       // Edge functions are linear, so step them along each scanline instead of
       // recomputing three cross products per pixel.
       const e0dx = ay - by;
@@ -1203,7 +1206,7 @@ export async function measureAtlasUsage(
         let e2 = (ax - cx) * (py - cy) - (ay - cy) * (startX - cx);
         for (let x = x0; x <= x1; x++, e0 += e0dx, e1 += e1dx, e2 += e2dx) {
           if (!((e0 >= 0 && e1 >= 0 && e2 >= 0) || (e0 <= 0 && e1 <= 0 && e2 <= 0))) continue;
-          const index = y * size + x;
+          const index = y * width + x;
           uvMask[index] = 1;
           uvUsed[index] = 1;
           if (alpha[index * 4 + 3]! === 0) continue;
@@ -1219,8 +1222,8 @@ export async function measureAtlasUsage(
   let uvCovered = 0;
   for (const value of uvUsed) uvCovered += value;
   return {
-    sampledUtilization: covered / (size * size),
-    uvUtilization: uvCovered / (size * size),
+    sampledUtilization: covered / pixels,
+    uvUtilization: uvCovered / pixels,
     sampledPixels: covered,
     uvPixels: uvCovered,
     uvMask: uvUsed,

@@ -13,9 +13,12 @@
  */
 
 import {
+  HUMANOID_PART_ROLES,
+  HUMANOID_PARTS,
   HUMANOID_REQUIRED_ROLES,
   type HumanoidPart,
 } from './humanoid-binding.ts';
+import type { TextureHint } from './texture-policy.ts';
 
 export type V2 = [number, number];
 export type V3 = [number, number, number];
@@ -89,17 +92,45 @@ export interface YsmMesh {
   parts: YsmMeshPart[];
   textureWidth: number;
   textureHeight: number;
-  warnings: string[];
+  diagnostics: YsmDiagnostic[];
 }
 
 export interface ParsedYsmGeometry {
   geometry: YsmGeometry;
-  warnings: string[];
+  diagnostics: YsmDiagnostic[];
 }
 
 /** Player roles a YSM skeleton must expose before six-part binding is used. */
 export const YSM_HUMANOID_ROLES = HUMANOID_REQUIRED_ROLES;
 export type YsmHumanoidRole = (typeof YSM_HUMANOID_ROLES)[number];
+
+/**
+ * Structured import diagnostics. Runtimes format these into their own user
+ * language; the parser must not embed English or Chinese copy.
+ */
+export type YsmDiagnostic =
+  | { code: 'cube-not-object'; cube: number }
+  | { code: 'cube-without-uv'; cube: number }
+  | { code: 'face-uv-rotation-ignored' }
+  | { code: 'multiple-geometries'; count: number }
+  | { code: 'bone-not-object'; bone: number }
+  | { code: 'bone-without-name'; bone: number }
+  | { code: 'duplicate-bone'; name: string }
+  | { code: 'cyclic-bone'; name: string }
+  | { code: 'missing-parent'; name: string; parent: string }
+  | { code: 'hidden-bones'; names: string[] }
+  | { code: 'missing-role'; role: YsmHumanoidRole }
+  | { code: 'hand-fallback'; side: 'left' | 'right'; name: string }
+  | { code: 'incomplete-rig' }
+  | { code: 'humanoid-mapped' }
+  | { code: 'missing-part-geometry'; parts: HumanoidPart[] }
+  | { code: 'static-binding' }
+  | { code: 'pbr-textures-ignored' }
+  | { code: 'default-texture-missing'; wanted: string; used: string }
+  | { code: 'multiple-textures'; count: number; used: string }
+  | { code: 'arm-model-ignored' }
+  | { code: 'animations-not-evaluated' }
+  | { code: 'imported-texture'; model: string; texture: string };
 
 export interface YsmRig {
   /** Role → world pivot in meters, in the converter's source space. */
@@ -110,7 +141,7 @@ export interface YsmRig {
   parts: Record<string, HumanoidPart>;
   /** True when every required player role was found. */
   complete: boolean;
-  warnings: string[];
+  diagnostics: YsmDiagnostic[];
 }
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -218,9 +249,9 @@ export function selectYsmTexture(manifest: YsmManifest): YsmTexture {
   return manifest.textures[0]!;
 }
 
-function parseCube(value: unknown, warnings: string[], cubeIndex: number): YsmCube | undefined {
+function parseCube(value: unknown, diagnostics: YsmDiagnostic[], cubeIndex: number): YsmCube | undefined {
   if (!record(value)) {
-    warnings.push(`Ignored cube ${cubeIndex}: not an object.`);
+    diagnostics.push({ code: 'cube-not-object', cube: cubeIndex });
     return undefined;
   }
   const origin = vector(value.origin, 3);
@@ -241,7 +272,7 @@ function parseCube(value: unknown, warnings: string[], cubeIndex: number): YsmCu
       const faceSize = vector(faceValue.uv_size, 2);
       if (!faceUv || !faceSize) continue;
       if (finite(faceValue.uv_rotation) && faceValue.uv_rotation !== 0)
-        warnings.push('YSM per-face UV rotation is not supported and was ignored.');
+        diagnostics.push({ code: 'face-uv-rotation-ignored' });
       faces[face] = {
         uv: [faceUv[0]!, faceUv[1]!],
         uv_size: [faceSize[0]!, faceSize[1]!],
@@ -249,7 +280,7 @@ function parseCube(value: unknown, warnings: string[], cubeIndex: number): YsmCu
     }
     if (Object.keys(faces).length) uv = faces;
   }
-  if (!uv) warnings.push(`Ignored cube ${cubeIndex}: no supported UV data.`);
+  if (!uv) diagnostics.push({ code: 'cube-without-uv', cube: cubeIndex });
   return {
     ...(origin ? { origin: origin as V3 } : {}),
     ...(size ? { size: size as V3 } : {}),
@@ -267,12 +298,12 @@ function parseCube(value: unknown, warnings: string[], cubeIndex: number): YsmCu
  */
 export function parseYsmGeometry(value: unknown): ParsedYsmGeometry {
   if (!record(value)) throw new Error('YSM model geometry is not a JSON object');
-  const warnings: string[] = [];
+  const diagnostics: YsmDiagnostic[] = [];
   let geometry: Record<string, unknown>;
   const list = value['minecraft:geometry'];
   if (Array.isArray(list)) {
     if (!list.length) throw new Error('YSM model has an empty minecraft:geometry list');
-    if (list.length > 1) warnings.push(`YSM model contains ${list.length} geometries; only the first was imported.`);
+    if (list.length > 1) diagnostics.push({ code: 'multiple-geometries', count: list.length });
     if (!record(list[0])) throw new Error('YSM model geometry entry is not an object');
     geometry = list[0];
   } else if (Array.isArray(value.bones)) {
@@ -288,12 +319,12 @@ export function parseYsmGeometry(value: unknown): ParsedYsmGeometry {
   const bones: YsmBone[] = [];
   for (const [index, raw] of geometry.bones.entries()) {
     if (!record(raw)) {
-      warnings.push(`Ignored bone ${index}: not an object.`);
+      diagnostics.push({ code: 'bone-not-object', bone: index });
       continue;
     }
     const name = stringOr(raw.name);
     if (!name) {
-      warnings.push(`Ignored bone ${index}: missing a name.`);
+      diagnostics.push({ code: 'bone-without-name', bone: index });
       continue;
     }
     const pivot = vector(raw.pivot, 3);
@@ -301,7 +332,7 @@ export function parseYsmGeometry(value: unknown): ParsedYsmGeometry {
     const parent = stringOr(raw.parent);
     const cubes = Array.isArray(raw.cubes)
       ? raw.cubes
-          .map((cube, cubeIndex) => parseCube(cube, warnings, cubeIndex))
+          .map((cube, cubeIndex) => parseCube(cube, diagnostics, cubeIndex))
           .filter((cube): cube is YsmCube => !!cube)
       : undefined;
     bones.push({
@@ -315,7 +346,7 @@ export function parseYsmGeometry(value: unknown): ParsedYsmGeometry {
     });
   }
   if (!bones.length) throw new Error('YSM model geometry has no named bones');
-  return { geometry: { textureWidth, textureHeight, bones }, warnings };
+  return { geometry: { textureWidth, textureHeight, bones }, diagnostics };
 }
 
 interface Transform {
@@ -618,16 +649,16 @@ export interface YsmMeshOptions {
 interface BoneWorlds {
   byName: Map<string, YsmBone>;
   worlds: Map<string, Transform>;
-  warnings: string[];
+  diagnostics: YsmDiagnostic[];
 }
 
 /** Resolve every bone's world transform once, with cycle and missing-parent diagnostics. */
 function boneWorlds(geometry: YsmGeometry): BoneWorlds {
-  const warnings: string[] = [];
+  const diagnostics: YsmDiagnostic[] = [];
   const byName = new Map<string, YsmBone>();
   for (const bone of geometry.bones) {
     if (byName.has(bone.name)) {
-      warnings.push(`Duplicate YSM bone name "${bone.name}" was merged by name.`);
+      diagnostics.push({ code: 'duplicate-bone', name: bone.name });
       continue;
     }
     byName.set(bone.name, bone);
@@ -638,13 +669,13 @@ function boneWorlds(geometry: YsmGeometry): BoneWorlds {
     const cached = worlds.get(bone.name);
     if (cached) return cached;
     if (resolving.has(bone.name)) {
-      warnings.push(`Cyclic YSM bone hierarchy at "${bone.name}"; the cycle was treated as unparented.`);
+      diagnostics.push({ code: 'cyclic-bone', name: bone.name });
       return IDENTITY;
     }
     resolving.add(bone.name);
     const parent = bone.parent ? byName.get(bone.parent) : undefined;
     if (bone.parent && !parent)
-      warnings.push(`YSM bone "${bone.name}" references missing parent "${bone.parent}"; it was treated as unparented.`);
+      diagnostics.push({ code: 'missing-parent', name: bone.name, parent: bone.parent });
     const local = pivotRotation(mirrorPivot(bone.pivot), mirrorRotation(bone.rotation));
     const world = parent ? multiply(worldOf(parent), local) : local;
     resolving.delete(bone.name);
@@ -652,7 +683,7 @@ function boneWorlds(geometry: YsmGeometry): BoneWorlds {
     return world;
   };
   for (const bone of geometry.bones) worldOf(bone);
-  return { byName, worlds, warnings };
+  return { byName, worlds, diagnostics };
 }
 
 /**
@@ -661,28 +692,59 @@ function boneWorlds(geometry: YsmGeometry): BoneWorlds {
  * matching the rest of the converter's source space.
  */
 export function buildYsmMesh(geometry: YsmGeometry, options: YsmMeshOptions = {}): YsmMesh {
-  const { worlds, warnings } = boneWorlds(geometry);
-  const hidden = new Set(options.hiddenBones ?? []);
-  if (hidden.size) {
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const bone of geometry.bones) {
-        if (bone.parent && hidden.has(bone.parent) && !hidden.has(bone.name)) {
-          hidden.add(bone.name);
-          changed = true;
-        }
+  const worlds = boneWorlds(geometry);
+  const mesh = buildYsmMeshFromWorlds(geometry, options, worlds);
+  return {
+    ...mesh,
+    diagnostics: [...worlds.diagnostics, ...mesh.diagnostics],
+  };
+}
+
+/** Expand hidden bones to their descendants, matching YSM's pre_parallel state. */
+function resolveHiddenBones(geometry: YsmGeometry, seed?: Iterable<string>): Set<string> {
+  const hidden = new Set(seed ?? []);
+  if (!hidden.size) return hidden;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const bone of geometry.bones) {
+      if (bone.parent && hidden.has(bone.parent) && !hidden.has(bone.name)) {
+        hidden.add(bone.name);
+        changed = true;
       }
     }
-    warnings.push(`Excluded ${hidden.size} YSM bone(s) hidden by default animations: ${[...hidden].join(', ')}.`);
   }
-  const parts: YsmMeshPart[] = [];
-  const usedNames = new Set<string>();
+  return hidden;
+}
+
+function buildYsmMeshFromWorlds(
+  geometry: YsmGeometry,
+  options: YsmMeshOptions,
+  { worlds }: BoneWorlds,
+): YsmMesh {
+  const diagnostics: YsmDiagnostic[] = [];
+  const hidden = resolveHiddenBones(geometry, options.hiddenBones);
+  if (hidden.size) {
+    diagnostics.push({ code: 'hidden-bones', names: [...hidden] });
+  }
+  // Duplicate bone names are merged by name, matching boneWorlds. Keep every
+  // cube attached to the first world transform instead of dropping the second
+  // mesh with a "#2" suffix later.
+  const cubesByBone = new Map<string, { bone: YsmBone; cube: YsmCube }[]>();
   for (const bone of geometry.bones) {
     if (hidden.has(bone.name) || !bone.cubes?.length) continue;
+    let entries = cubesByBone.get(bone.name);
+    if (!entries) {
+      entries = [];
+      cubesByBone.set(bone.name, entries);
+    }
+    for (const cube of bone.cubes) entries.push({ bone, cube });
+  }
+  const parts: YsmMeshPart[] = [];
+  for (const [name, entries] of cubesByBone) {
     const builder = emptyBuilder();
-    const world = worlds.get(bone.name) ?? IDENTITY;
-    for (const cube of bone.cubes) {
+    const world = worlds.get(name) ?? IDENTITY;
+    for (const { bone, cube } of entries) {
       const points = cubePoints(cube, bone.inflate);
       const cubeRotation = pivotRotation(mirrorPivot(cube.pivot), mirrorRotation(cube.rotation));
       const mirroredLayout = bone.mirror === true || cube.mirror === true;
@@ -693,12 +755,9 @@ export function buildYsmMesh(geometry: YsmGeometry, options: YsmMeshOptions = {}
         addQuad(builder, quad, cubeRotation, world, cube.mirror === true, geometry.textureWidth, geometry.textureHeight);
     }
     if (!builder.indices.length) continue;
-    let name = bone.name;
-    for (let suffix = 2; usedNames.has(name); suffix++) name = `${bone.name}#${suffix}`;
-    usedNames.add(name);
     parts.push({
       name,
-      bone: bone.name,
+      bone: name,
       positions: new Float32Array(builder.positions),
       normals: new Float32Array(builder.normals),
       uvs: new Float32Array(builder.uvs),
@@ -706,7 +765,7 @@ export function buildYsmMesh(geometry: YsmGeometry, options: YsmMeshOptions = {}
     });
   }
   if (!parts.length) throw new Error('YSM model produced no renderable geometry');
-  return { parts, textureWidth: geometry.textureWidth, textureHeight: geometry.textureHeight, warnings };
+  return { parts, textureWidth: geometry.textureWidth, textureHeight: geometry.textureHeight, diagnostics };
 }
 
 const normalizeBoneName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -744,18 +803,24 @@ const PART_ROOT: Readonly<Record<'leftUpperArm' | 'rightUpperArm' | 'leftUpperLe
  * should fall back to static whole-body binding otherwise.
  */
 export function buildYsmRig(geometry: YsmGeometry): YsmRig {
-  const { byName, worlds, warnings } = boneWorlds(geometry);
+  const worlds = boneWorlds(geometry);
+  const rig = buildYsmRigFromWorlds(geometry, worlds);
+  return { ...rig, diagnostics: [...worlds.diagnostics, ...rig.diagnostics] };
+}
+
+function buildYsmRigFromWorlds(geometry: YsmGeometry, { byName, worlds }: BoneWorlds): YsmRig {
+  const diagnostics: YsmDiagnostic[] = [];
   const roleBones = new Map<YsmHumanoidRole, YsmBone>();
   for (const role of YSM_HUMANOID_ROLES) {
     const bone = findBone(geometry.bones, YSM_ROLE_CANDIDATES[role]);
     if (bone) roleBones.set(role, bone);
-    else warnings.push(`YSM six-part binding is missing the ${role} bone.`);
+    else diagnostics.push({ code: 'missing-role', role });
   }
   for (const side of ['left', 'right'] as const) {
     const handRole = `${side}Hand` as const;
     const hand = roleBones.get(handRole);
     if (hand && !normalizeBoneName(hand.name).includes('hand'))
-      warnings.push(`YSM ${side} arm has no hand bone; using "${hand.name}" as the hand pivot.`);
+      diagnostics.push({ code: 'hand-fallback', side, name: hand.name });
   }
   const partRoots = new Map<string, HumanoidPart>();
   const head = roleBones.get('head');
@@ -788,9 +853,8 @@ export function buildYsmRig(geometry: YsmGeometry): YsmRig {
     roles[role] = [pivot[0] / 16, pivot[1] / 16, pivot[2] / 16];
   }
   const complete = YSM_HUMANOID_ROLES.every((role) => roles[role] !== undefined);
-  if (!complete)
-    warnings.push('YSM model does not expose a complete head/body/arms/legs rig; six-part binding is unavailable.');
-  return { roles, roleBones: roleBoneNames, parts, complete, warnings };
+  if (!complete) diagnostics.push({ code: 'incomplete-rig' });
+  return { roles, roleBones: roleBoneNames, parts, complete, diagnostics };
 }
 
 export interface YsmBoneMesh {
@@ -806,48 +870,228 @@ export interface YsmBoneMesh {
 
 export interface YsmBoneMeshSet {
   bones: YsmBoneMesh[];
-  warnings: string[];
+  diagnostics: YsmDiagnostic[];
   textureWidth: number;
   textureHeight: number;
 }
 
+/** One node in the runtime-neutral YSM scene graph. */
+export interface YsmSceneNode {
+  name: string;
+  /** Local translation in meters; roots are relative to the scene origin. */
+  translation: V3;
+  /** Set on synthetic `__ysm_*` role nodes. */
+  role?: YsmHumanoidRole;
+  /** Set on bone and mesh nodes. */
+  part?: HumanoidPart;
+  /** Original bone name. */
+  bone?: string;
+  /** Geometry attached to this node. */
+  mesh?: YsmMeshPart;
+  children: YsmSceneNode[];
+}
+
+export interface YsmScene {
+  roots: YsmSceneNode[];
+  /** Unique bones in source order, with world pivots in meters. */
+  bones: YsmBoneMesh[];
+  roles: Partial<Record<YsmHumanoidRole, V3>>;
+  /** True when role nodes and six-part tags were produced. */
+  humanoid: boolean;
+  textureWidth: number;
+  textureHeight: number;
+  textureHint: TextureHint;
+  diagnostics: YsmDiagnostic[];
+}
+
+/** YSM ships one prepared player atlas, so preserve it unless the user says otherwise. */
+export const YSM_TEXTURE_HINT: TextureHint = { preserve: true, maxSize: 256 };
+
+const subtract = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const negate = (a: V3): V3 => [-a[0], -a[1], -a[2]];
+
 /**
- * Build the original YSM bone tree while keeping geometry in converter space.
- * Callers attach the part roots to the six player role pivots and keep the
- * remaining YSM parent-child relationships inside each part.
+ * Build the complete runtime-neutral scene: synthetic role nodes, hand
+ * reparenting, per-bone local offsets, mesh offsets and player-part tags.
+ * Node and webapp adapters only instantiate nodes from this description.
  */
-export function buildYsmBoneMeshes(geometry: YsmGeometry, options: YsmMeshOptions = {}): YsmBoneMeshSet {
-  const mesh = buildYsmMesh(geometry, options);
-  const { worlds } = boneWorlds(geometry);
-  const rig = buildYsmRig(geometry);
+export function buildYsmScene(geometry: YsmGeometry, options: YsmMeshOptions = {}): YsmScene {
+  const core = boneWorlds(geometry);
+  const mesh = buildYsmMeshFromWorlds(geometry, options, core);
+  const rig = buildYsmRigFromWorlds(geometry, core);
   const partsByBone = new Map<string, YsmMeshPart>();
   for (const part of mesh.parts) partsByBone.set(part.bone, part);
   const roleByBone = new Map<string, YsmHumanoidRole>();
   for (const [role, name] of Object.entries(rig.roleBones)) {
     if (name) roleByBone.set(name, role as YsmHumanoidRole);
   }
-  const bones: YsmBoneMesh[] = geometry.bones.map((bone) => {
-    const role = roleByBone.get(bone.name);
-    const part = partsByBone.get(bone.name);
-    const world = worlds.get(bone.name) ?? IDENTITY;
-    // `worlds` works in Bedrock units (the pivots and cube points are in units),
-    // so convert the resulting world pivot to meters afterwards. Dividing the
-    // input first would leave the translation part unscaled and move rotated
-    // bones far away from their real pivots.
+  // boneWorlds already merged duplicate names; iterate first occurrences once.
+  // Hidden bones (and their descendants) are omitted from the scene entirely.
+  const hidden = resolveHiddenBones(geometry, options.hiddenBones);
+  const uniqueBones = [...core.byName.values()].filter((bone) => !hidden.has(bone.name));
+  const pivots = new Map<string, V3>();
+  const bones: YsmBoneMesh[] = [];
+  for (const bone of uniqueBones) {
+    const world = core.worlds.get(bone.name) ?? IDENTITY;
     const pivot = applyPoint(world, mirrorPivot(bone.pivot));
-    return {
+    const meterPivot: V3 = [pivot[0] / 16, pivot[1] / 16, pivot[2] / 16];
+    pivots.set(bone.name, meterPivot);
+    const role = roleByBone.get(bone.name);
+    const part = rig.parts[bone.name] ?? 'body';
+    const geometryPart = partsByBone.get(bone.name);
+    bones.push({
       name: bone.name,
       ...(bone.parent ? { parent: bone.parent } : {}),
-      pivot: [pivot[0] / 16, pivot[1] / 16, pivot[2] / 16],
-      part: rig.parts[bone.name] ?? 'body',
+      pivot: meterPivot,
+      part,
       ...(role ? { role } : {}),
-      ...(part ? { mesh: part } : {}),
+      ...(geometryPart ? { mesh: geometryPart } : {}),
+    });
+  }
+  const partGeometry = new Set<HumanoidPart>();
+  for (const bone of bones) if (bone.mesh) partGeometry.add(bone.part);
+  const missingParts = HUMANOID_PARTS.filter((part) => !partGeometry.has(part));
+  const humanoid = rig.complete && missingParts.length === 0;
+  const diagnostics: YsmDiagnostic[] = [
+    ...core.diagnostics,
+    ...mesh.diagnostics,
+    ...rig.diagnostics,
+  ];
+  if (humanoid) diagnostics.push({ code: 'humanoid-mapped' });
+  else if (rig.complete && missingParts.length)
+    diagnostics.push({ code: 'missing-part-geometry', parts: missingParts });
+  else diagnostics.push({ code: 'static-binding' });
+
+  const roots: YsmSceneNode[] = [];
+  const roleNodes = new Map<YsmHumanoidRole, YsmSceneNode>();
+  if (humanoid) {
+    for (const role of YSM_HUMANOID_ROLES) {
+      const pivot = rig.roles[role];
+      if (!pivot) continue;
+      const node: YsmSceneNode = {
+        name: `__ysm_${role}`,
+        translation: [...pivot],
+        role,
+        children: [],
+      };
+      roots.push(node);
+      roleNodes.set(role, node);
+    }
+    for (const side of ['left', 'right'] as const) {
+      const armRole = `${side}UpperArm` as const;
+      const handRole = `${side}Hand` as const;
+      const arm = roleNodes.get(armRole);
+      const hand = roleNodes.get(handRole);
+      if (!arm || !hand) continue;
+      const index = roots.indexOf(hand);
+      if (index >= 0) roots.splice(index, 1);
+      hand.translation = subtract(rig.roles[handRole]!, rig.roles[armRole]!);
+      arm.children.push(hand);
+    }
+  }
+
+  const boneNodes = new Map<string, YsmSceneNode>();
+  for (const bone of bones) {
+    const node: YsmSceneNode = {
+      name: bone.name,
+      translation: [0, 0, 0],
+      part: bone.part,
+      bone: bone.name,
+      children: [],
     };
-  });
+    if (bone.mesh) {
+      node.children.push({
+        name: bone.name,
+        translation: negate(bone.pivot),
+        part: bone.part,
+        bone: bone.name,
+        mesh: bone.mesh,
+        children: [],
+      });
+    }
+    boneNodes.set(bone.name, node);
+  }
+  for (const bone of bones) {
+    const node = boneNodes.get(bone.name)!;
+    const pivot = pivots.get(bone.name)!;
+    const parent = bone.parent ? core.byName.get(bone.parent) : undefined;
+    const parentPart = parent ? rig.parts[parent.name] ?? 'body' : undefined;
+    const role = humanoid ? HUMANOID_PART_ROLES[bone.part] : undefined;
+    if (humanoid && role && (!parent || parentPart !== bone.part)) {
+      const rolePivot = rig.roles[role];
+      const roleNode = roleNodes.get(role);
+      if (rolePivot && roleNode) {
+        node.translation = subtract(pivot, rolePivot);
+        roleNode.children.push(node);
+      } else {
+        node.translation = pivot;
+        roots.push(node);
+      }
+    } else if (parent) {
+      node.translation = subtract(pivot, pivots.get(parent.name)!);
+      boneNodes.get(parent.name)!.children.push(node);
+    } else {
+      node.translation = pivot;
+      roots.push(node);
+    }
+  }
   return {
+    roots,
     bones,
-    warnings: [...mesh.warnings, ...rig.warnings],
+    roles: rig.roles,
+    humanoid,
     textureWidth: geometry.textureWidth,
     textureHeight: geometry.textureHeight,
+    textureHint: YSM_TEXTURE_HINT,
+    diagnostics,
+  };
+}
+
+/**
+ * Backwards-compatible flat view used by diagnostics/tests. New code should
+ * consume `buildYsmScene` so the hierarchy and mesh offsets are not rebuilt.
+ */
+export function buildYsmBoneMeshes(geometry: YsmGeometry, options: YsmMeshOptions = {}): YsmBoneMeshSet {
+  const scene = buildYsmScene(geometry, options);
+  return {
+    bones: scene.bones,
+    diagnostics: scene.diagnostics,
+    textureWidth: scene.textureWidth,
+    textureHeight: scene.textureHeight,
+  };
+}
+
+export interface YsmImportPlan {
+  scene: YsmScene;
+  texture: YsmTexture;
+  textureName: string;
+  textureHint: TextureHint;
+  diagnostics: YsmDiagnostic[];
+}
+
+/** Resolve manifest texture choice plus hidden bones into one import plan. */
+export function buildYsmImportPlan(
+  manifest: YsmManifest,
+  geometry: YsmGeometry,
+  animation?: unknown,
+): YsmImportPlan {
+  const hiddenBones = animation ? hiddenYsmBones(animation) : [];
+  const scene = buildYsmScene(geometry, { hiddenBones });
+  const diagnostics: YsmDiagnostic[] = [...scene.diagnostics];
+  const texture = selectYsmTexture(manifest);
+  const textureName = ysmTextureName(texture.uv);
+  if (texture.normal || texture.specular) diagnostics.push({ code: 'pbr-textures-ignored' });
+  if (manifest.defaultTexture && textureName.toLowerCase() !== manifest.defaultTexture.toLowerCase())
+    diagnostics.push({ code: 'default-texture-missing', wanted: manifest.defaultTexture, used: textureName });
+  if (manifest.textures.length > 1)
+    diagnostics.push({ code: 'multiple-textures', count: manifest.textures.length, used: textureName });
+  if (manifest.armModel) diagnostics.push({ code: 'arm-model-ignored' });
+  diagnostics.push({ code: 'animations-not-evaluated' });
+  return {
+    scene,
+    texture,
+    textureName,
+    textureHint: scene.textureHint,
+    diagnostics,
   };
 }

@@ -39,6 +39,31 @@ function rgbaAt(data: Uint8Array, size: number, x: number, y: number) {
   return Array.from(data.subarray((y * size + x) * 4, (y * size + x) * 4 + 4));
 }
 
+test("preserved source textures are re-encoded as PNG and report measured usage", async () => {
+  const doc = await documentFixture();
+  const root = doc.getRoot();
+  const texture = root.listTextures()[0]!;
+  texture.setImage(
+    await sharp({ create: { width: 32, height: 32, channels: 3, background: { r: 20, g: 40, b: 60 } } })
+      .jpeg()
+      .toBuffer(),
+  );
+  const source = model(doc);
+  source.source.textureHint = { preserve: true, maxSize: 256 };
+  const result = await optimizeTextures(source, {});
+  assert.equal(result.preserved, true);
+  assert.deepEqual([...result.png.subarray(0, 4)], [137, 80, 78, 71]);
+  assert.ok(result.report.atlas.uvUtilization! <= 1);
+});
+
+test("preserve falls back with a warning when the model is not single-texture", async () => {
+  const source = await fixture();
+  source.source.textureHint = { preserve: true, maxSize: 256 };
+  const result = await optimizeTextures(source, { compactSize: 128 });
+  assert.equal(result.preserved, false);
+  assert.ok(result.model.warnings.some((warning) => warning.includes("requires one material and one texture")));
+});
+
 test("compact atlas crops disconnected used UV islands, shares equivalent materials and preserves sampled colors and rigid ownership", async () => {
   const doc = await documentFixture(),
     root = doc.getRoot(),

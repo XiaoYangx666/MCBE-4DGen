@@ -385,7 +385,7 @@ export function Viewer({
           if (!cached) disposeObject(object);
           return;
         }
-        if (viewKind !== "result" && (session.format === "ysm" || session.warnings.some((warning) => warning.includes("YSM")))) {
+        if (viewKind !== "result" && session.format === "ysm") {
           object.traverse((child) => {
             if (!(child instanceof THREE.Mesh)) return;
             for (const material of Array.isArray(child.material) ? child.material : [child.material]) {

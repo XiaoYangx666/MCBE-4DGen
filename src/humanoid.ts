@@ -92,8 +92,10 @@ export interface HumanoidExportOptions {
   /** Reuse the pre-reduction model from an earlier conversion of this session. */
   preparedBase?: PreparedHumanoidBase;
   onPreparedBase?: (prepared: PreparedHumanoidBase) => void;
-  /** Keep a single source texture and its UVs instead of repacking a 128 atlas. */
-  preserveTexture?: boolean;
+  /** The user explicitly asked for a packed atlas instead of the importer default. */
+  forceAtlas?: boolean;
+  /** True only when textureSize came from an explicit user setting. */
+  maxTextureSizeExplicit?: boolean;
 }
 
 /** Rigid six-part player binding, using source rig weights, topology and explicit garment rules.
@@ -501,7 +503,7 @@ async function finishHumanoid(
   return textureHumanoid(state, options, timings);
 }
 
-async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:number; atlas?:number; atlasPadding?:number; materialWeights?:Record<string,number>; atlasBudget?:'texel-density'|'texel-retention'|'texel-balanced'; atlasSharing?:boolean; preserveTexture?:boolean; onStage?:(phase:string)=>void}, timings:Record<string,number> = {}) {
+async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:number; atlas?:number; atlasPadding?:number; materialWeights?:Record<string,number>; atlasBudget?:'texel-density'|'texel-retention'|'texel-balanced'; atlasSharing?:boolean; forceAtlas?:boolean; maxTextureSizeExplicit?:boolean; onStage?:(phase:string)=>void}, timings:Record<string,number> = {}) {
   const {pivots, classification} = state;
   let phaseName = 'atlas', phaseStart = performance.now();
   const phase = (name:string) => {timings[phaseName] = Math.round(performance.now()-phaseStart); phaseName=name; phaseStart=performance.now(); options.onStage?.(name);};
@@ -510,14 +512,15 @@ async function textureHumanoid(state: PreparedHumanoid, options: {textureSize:nu
     ...(options.materialWeights ? {materialWeights:options.materialWeights} : {}),
     ...(options.atlasBudget ? {atlasBudget:options.atlasBudget} : {}),
     ...(options.atlasSharing ? {atlasSharing:true} : {}),
-    ...(options.preserveTexture ? {preserveTexture:true} : {}),
+    ...(options.forceAtlas ? {forceAtlas:true} : {}),
+    ...(options.maxTextureSizeExplicit ? {maxTextureSizeExplicit:true} : {}),
     ...(options.atlas ? {atlasSize:options.atlas} : {compactSize:128,padding:options.atlasPadding ?? 0}),
   });
   const optimized = {model:texture.model, report:{texture:texture.report}};
   phase("export");
   const full = await exportBedrockGeometry(bindStatic(optimized.model), {
     identifier: "geometry.skin0",
-    ...(options.preserveTexture ? {} : { skinTextureSize: 128 }),
+    ...(texture.preserved ? {} : { skinTextureSize: 128 }),
     playerParts: true,
   });
   const geometry = full.file["geometry.skin0"]!;

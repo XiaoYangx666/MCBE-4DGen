@@ -4,26 +4,49 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { NodeIO } from '@gltf-transform/core';
 import { importModel } from '../src/importer.ts';
+import { buildPreviewGlb } from '../src/preview-asset.ts';
 import { autoProfile } from '../src/auto-profile.ts';
 import { exportHumanoid } from '../src/humanoid.ts';
-import { modelFormatOf, modelDisplayName } from '../src/model-candidates.ts';
+import { listModelCandidates, modelFormatOf, modelDisplayName } from '../src/model-candidates.ts';
 import { modelPattern } from '../server/model-files.ts';
 import {
   buildYsmBoneMeshes,
+  buildYsmImportPlan,
   buildYsmMesh,
   buildYsmRig,
+  buildYsmScene,
   hiddenYsmBones,
   parseYsmGeometry,
   parseYsmManifest,
   selectYsmTexture,
   YSM_HUMANOID_ROLES,
 } from '../src/ysm-model.ts';
+import { resolveTexturePolicy } from '../src/texture-policy.ts';
+import { optimizeTextures } from '../src/texture-optimizer.ts';
 
 const PNG_64 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAvElEQVR4nOXOoQEAIAzAsOppNP9/yc6IQMSnOff9LB3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdAWB/yxHm1fJEsAAAAASUVORK5CYII=',
   'base64',
 );
+
+/** Minimal 32-bit bottom-left TGA (2×2 px). */
+function tgaBytes(): Buffer {
+  const bytes = Buffer.alloc(18 + 16);
+  bytes[2] = 2; // uncompressed true-color
+  bytes[12] = 2; bytes[13] = 0;
+  bytes[14] = 2; bytes[15] = 0;
+  bytes[16] = 32; bytes[17] = 0x08;
+  for (let index = 0; index < 4; index++) {
+    const offset = 18 + index * 4;
+    bytes[offset] = 10 + index;
+    bytes[offset + 1] = 20;
+    bytes[offset + 2] = 30;
+    bytes[offset + 3] = 255;
+  }
+  return bytes;
+}
 
 async function temporary(work: (dir: string) => Promise<void>) {
   const cache = resolve(dirname(fileURLToPath(import.meta.url)), '../.cache');
@@ -135,7 +158,7 @@ test('YSM pre_parallel animations hide GUI bones and their descendants', () => {
   assert.deepEqual(hidden, ['gui']);
   const mesh = buildYsmMesh(parsed.geometry, { hiddenBones: hidden });
   assert.deepEqual(mesh.parts.map((part) => part.name), ['Body']);
-  assert.ok(mesh.warnings.some((warning) => warning.includes('Excluded 2 YSM bone')));
+  assert.ok(mesh.diagnostics.some((item) => item.code === 'hidden-bones' && item.names.length === 2));
 });
 
 test('YSM rig maps head, body, arms and legs onto the six player parts', () => {
@@ -158,7 +181,7 @@ test('YSM rig falls back to the forearm when a hand bone is missing', () => {
   const parsed = parseYsmGeometry(humanoidGeometry(false));
   const rig = buildYsmRig(parsed.geometry);
   assert.equal(rig.complete, true);
-  assert.ok(rig.warnings.some((warning) => warning.includes('no hand bone')));
+  assert.ok(rig.diagnostics.some((item) => item.code === 'hand-fallback' && item.side === 'left'));
   assert.equal(rig.roles.leftHand?.[1], 14 / 16);
 });
 
@@ -176,7 +199,7 @@ test('YSM rig stays incomplete without arms and legs', () => {
   });
   const rig = buildYsmRig(parsed.geometry);
   assert.equal(rig.complete, false);
-  assert.ok(rig.warnings.some((warning) => warning.includes('six-part binding is unavailable')));
+  assert.ok(rig.diagnostics.some((item) => item.code === 'incomplete-rig'));
 });
 
 test('YSM humanoid import defaults to six-part binding and exports all parts', async () => {
@@ -201,6 +224,9 @@ test('YSM humanoid import defaults to six-part binding and exports all parts', a
     assert.ok(armMesh);
     assert.equal(armBone.getParentNode(), role);
     assert.equal(armMesh.getParentNode(), armBone);
+    const io = new NodeIO();
+    const preview = await io.readBinary(await buildPreviewGlb(model.document, io));
+    assert.ok(preview.getRoot().listNodes().some((node) => node.getName() === '__ysm_leftHand'));
     const result = await exportHumanoid(model, { height: 32, textureSize: 64, profile });
     assert.deepEqual(Object.keys(result.binding.parts).sort(), ['body', 'head', 'leftArm', 'leftLeg', 'rightArm', 'rightLeg']);
     for (const count of Object.values(result.binding.parts)) assert.ok(count > 0);
@@ -210,7 +236,7 @@ test('YSM humanoid import defaults to six-part binding and exports all parts', a
     const restArm = result.file['geometry.skin0']!.bones.find((bone) => bone.name === 'leftArm')!.poly_mesh!.positions;
     const spreadArm = spread.file['geometry.skin0']!.bones.find((bone) => bone.name === 'leftArm')!.poly_mesh!.positions;
     assert.notDeepEqual(restArm, spreadArm);
-    const preserved = await exportHumanoid(model, { height: 32, textureSize: 256, profile, preserveTexture: true });
+    const preserved = await exportHumanoid(model, { height: 32, textureSize: 256, profile });
     assert.equal(preserved.file['geometry.skin0']!.texturewidth, 64);
     assert.equal(preserved.file['geometry.skin0']!.textureheight, 64);
     assert.equal(preserved.binding.texture.atlas.width, 64);
@@ -239,6 +265,71 @@ test('YSM bone pivots stay in meters when ancestor bones are rotated', () => {
     );
     assert.ok(distance < 1e-5, `${role} pivot ${bone.pivot} != ${expected}`);
   }
+});
+
+test('YSM duplicate bones merge cubes instead of dropping a #2 part', () => {
+  const parsed = parseYsmGeometry({
+    format_version: '1.12.0',
+    'minecraft:geometry': [{
+      description: { texture_width: 64, texture_height: 64 },
+      bones: [
+        { name: 'Body', pivot: [0, 0, 0], cubes: [{ origin: [0, 0, 0], size: [1, 1, 1], uv: [0, 0] }] },
+        { name: 'Body', pivot: [0, 0, 0], cubes: [{ origin: [2, 0, 0], size: [1, 1, 1], uv: [0, 0] }] },
+      ],
+    }],
+  });
+  const scene = buildYsmScene(parsed.geometry);
+  assert.equal(scene.bones.length, 1);
+  assert.equal(scene.bones[0]!.mesh!.indices.length, 72);
+  assert.equal(scene.roots.filter((node) => node.name === 'Body').length, 1);
+  assert.ok(scene.diagnostics.some((item) => item.code === 'duplicate-bone'));
+  assert.ok(!scene.roots.some((node) => node.name.startsWith('Body#')));
+});
+
+test('YSM scene description owns role nodes, hierarchy and mesh offsets', () => {
+  const parsed = parseYsmGeometry(humanoidGeometry());
+  const plan = buildYsmImportPlan(parseYsmManifest(manifest()), parsed.geometry);
+  assert.equal(plan.scene.humanoid, true);
+  assert.equal(plan.textureHint.preserve, true);
+  assert.equal(plan.textureHint.maxSize, 256);
+  // Eight roles, but each hand role is nested under its upper-arm role.
+  assert.equal(plan.scene.roots.filter((node) => node.role).length, 6);
+  const arm = plan.scene.roots.find((node) => node.role === 'leftUpperArm')!;
+  const hand = arm.children.find((node) => node.role === 'leftHand')!;
+  const expected = [
+    plan.scene.roles.leftHand![0] - plan.scene.roles.leftUpperArm![0],
+    plan.scene.roles.leftHand![1] - plan.scene.roles.leftUpperArm![1],
+    plan.scene.roles.leftHand![2] - plan.scene.roles.leftUpperArm![2],
+  ];
+  for (let index = 0; index < 3; index++)
+    assert.ok(Math.abs(hand.translation[index]! - expected[index]!) < 1e-6);
+  const headRole = plan.scene.roots.find((node) => node.role === 'head')!;
+  const head = headRole.children.find((node) => node.name === 'Head')!;
+  assert.deepEqual(head.translation, [0, 0, 0]);
+  const headMesh = head.children.find((node) => node.mesh)!;
+  assert.deepEqual(headMesh.translation.map((value) => Number(value.toFixed(4))), [
+    -plan.scene.bones.find((bone) => bone.name === 'Head')!.pivot[0],
+    -plan.scene.bones.find((bone) => bone.name === 'Head')!.pivot[1],
+    -plan.scene.bones.find((bone) => bone.name === 'Head')!.pivot[2],
+  ].map((value) => Number(value.toFixed(4))));
+});
+
+test('YSM hierarchy diagnostics report missing parents and cycles', () => {
+  const cube = { origin: [0, 0, 0], size: [1, 1, 1], uv: [0, 0] };
+  const parsed = parseYsmGeometry({
+    format_version: '1.12.0',
+    'minecraft:geometry': [{
+      description: { texture_width: 64, texture_height: 64 },
+      bones: [
+        { name: 'Orphan', parent: 'Missing', pivot: [0, 0, 0], cubes: [cube] },
+        { name: 'A', parent: 'B', pivot: [0, 0, 0], cubes: [cube] },
+        { name: 'B', parent: 'A', pivot: [0, 0, 0] },
+      ],
+    }],
+  });
+  const scene = buildYsmScene(parsed.geometry);
+  assert.ok(scene.diagnostics.some((item) => item.code === 'missing-parent' && item.parent === 'Missing'));
+  assert.ok(scene.diagnostics.some((item) => item.code === 'cyclic-bone'));
 });
 
 test('YSM box-UV cube becomes 12 triangles in converter space', () => {
@@ -321,6 +412,81 @@ test('importModel reads a YSM folder through ysm.json', () => temporary(async (d
   assert.ok(model.warnings.some((warning) => warning.includes('animations')));
 }));
 
+test('YSM TGA and PNG textures are normalized to PNG and preserved', async () => temporary(async (dir) => {
+  for (const [name, bytes] of [
+    ['default.tga', tgaBytes()],
+    ['default.png', PNG_64],
+  ] as const) {
+    const modelDir = join(dir, `tex_${name.replace('.', '_')}`);
+    await mkdir(join(modelDir, 'models'), { recursive: true });
+    await mkdir(join(modelDir, 'textures'), { recursive: true });
+    await writeFile(join(modelDir, 'ysm.json'), JSON.stringify(manifest([`textures/${name}`])));
+    await writeFile(join(modelDir, 'models', 'main.json'), JSON.stringify(cubeGeometry({
+      origin: [-4, 0, -4],
+      size: [8, 8, 8],
+      uv: [0, 0],
+    })));
+    await writeFile(join(modelDir, 'textures', name), bytes);
+    const model = await importModel(join(modelDir, 'ysm.json'));
+    const texture = model.document.getRoot().listTextures()[0]!;
+    assert.equal(texture.getMimeType(), 'image/png');
+    const optimized = await optimizeTextures(model, {});
+    assert.equal(optimized.preserved, true);
+    assert.equal(optimized.png[0], 137);
+    assert.equal(optimized.png[1], 80);
+    assert.ok(optimized.report.atlas.uvUtilization! < 1);
+    assert.ok(optimized.report.atlas.sampledUtilization! <= optimized.report.atlas.uvUtilization!);
+  }
+}));
+
+test('YSM texture hint caps large atlases but explicit user sizes win', async () => temporary(async (dir) => {
+  const modelDir = join(dir, 'large_ysm');
+  await mkdir(join(modelDir, 'models'), { recursive: true });
+  await mkdir(join(modelDir, 'textures'), { recursive: true });
+  await writeFile(join(modelDir, 'ysm.json'), JSON.stringify(manifest()));
+  await writeFile(join(modelDir, 'models', 'main.json'), JSON.stringify(cubeGeometry({
+    origin: [-4, 0, -4],
+    size: [8, 8, 8],
+    uv: [0, 0],
+  })));
+  await writeFile(join(modelDir, 'textures', 'default.png'), await sharp({
+    create: { width: 1024, height: 1024, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 1 } },
+  }).png().toBuffer());
+  const model = await importModel(join(modelDir, 'ysm.json'));
+  const hinted = await optimizeTextures(model, {});
+  assert.equal(hinted.preserved, true);
+  assert.equal(hinted.report.atlas.width, 256);
+  assert.equal(hinted.report.atlas.height, 256);
+  const explicit = await optimizeTextures(model, { maxTextureSize: 1024, maxTextureSizeExplicit: true });
+  assert.equal(explicit.report.atlas.width, 1024);
+  const forcedAtlas = await optimizeTextures(model, { forceAtlas: true, compactSize: 128 });
+  assert.equal(forcedAtlas.preserved, false);
+  assert.equal(forcedAtlas.report.atlas.width, 128);
+}));
+
+test('texture policy keeps importer defaults below explicit user settings', () => {
+  assert.deepEqual(resolveTexturePolicy({ preserve: true, maxSize: 256 }), {
+    preserve: true,
+    maxTextureSize: 256,
+  });
+  assert.deepEqual(resolveTexturePolicy({ preserve: true, maxSize: 256 }, { maxTextureSize: 512 }), {
+    preserve: true,
+    maxTextureSize: 256,
+  });
+  assert.deepEqual(resolveTexturePolicy(
+    { preserve: true, maxSize: 256 },
+    { maxTextureSize: 512, maxTextureSizeExplicit: true },
+  ), { preserve: true, maxTextureSize: 512 });
+  assert.deepEqual(resolveTexturePolicy({ preserve: true, maxSize: 256 }, { forceAtlas: true }), {
+    preserve: false,
+    maxTextureSize: 256,
+  });
+  assert.deepEqual(resolveTexturePolicy(undefined, { maxTextureSize: 128 }), {
+    preserve: false,
+    maxTextureSize: 128,
+  });
+});
+
 test('YSM manifests are recognised as model candidates', () => {
   assert.equal(modelFormatOf('models/char/ysm.json'), 'ysm');
   assert.equal(modelFormatOf('C:\\models\\char\\ysm.json'), 'ysm');
@@ -329,6 +495,9 @@ test('YSM manifests are recognised as model candidates', () => {
   assert.ok(modelPattern.test('C:\\models\\char\\ysm.json'));
   assert.ok(modelPattern.test('/models/char/ysm.json'));
   assert.ok(!modelPattern.test('/models/char/main.json'));
+  const candidate = listModelCandidates([{ path: 'models/char/ysm.json' }])[0];
+  assert.equal(candidate?.name, 'char');
+  assert.equal(candidate?.format, 'ysm');
 });
 
 test('webapp ZIP expansion keeps YSM json sidecars', async () => {
@@ -433,6 +602,93 @@ test('webapp import lists a YSM folder as a model candidate', async () => {
   assert.equal(prepared.candidates[0]?.path, 'char/ysm.json');
 });
 
+test('Node and webapp instantiate the same YSM scene graph', async () => temporary(async (dir) => {
+  const modelDir = join(dir, 'shared_ysm');
+  await mkdir(join(modelDir, 'models'), { recursive: true });
+  await mkdir(join(modelDir, 'textures'), { recursive: true });
+  const manifestJson = JSON.stringify(manifest());
+  const geometryJson = JSON.stringify(humanoidGeometry());
+  await writeFile(join(modelDir, 'ysm.json'), manifestJson);
+  await writeFile(join(modelDir, 'models', 'main.json'), geometryJson);
+  await writeFile(join(modelDir, 'textures', 'default.png'), PNG_64);
+  const nodeModel = await importModel(join(modelDir, 'ysm.json'));
+
+  const THREE = await import('three');
+  const { indexResources } = await import('../webapp/engine/resources.ts');
+  const { loadYsmScene } = await import('../webapp/engine/ysm.ts');
+  const entries: Array<[string, string | Uint8Array]> = [
+    ['char/ysm.json', manifestJson],
+    ['char/models/main.json', geometryJson],
+    ['char/textures/default.png', PNG_64],
+  ];
+  const files = entries.map(([path, content]) => {
+    const file = new File(
+      [content instanceof Uint8Array ? content as Uint8Array<ArrayBuffer> : content],
+      path.slice(path.lastIndexOf('/') + 1),
+      { type: path.endsWith('.png') ? 'image/png' : 'application/json' },
+    );
+    Object.defineProperty(file, 'webkitRelativePath', { value: path });
+    return file;
+  });
+  const prototype = THREE.Loader.prototype as unknown as { loadAsync: () => Promise<unknown> };
+  const original = prototype.loadAsync;
+  prototype.loadAsync = async () => new THREE.Texture();
+  try {
+    const loaded = await loadYsmScene(
+      indexResources(files, 'char/ysm.json'),
+      'char/ysm.json',
+      new THREE.LoadingManager(),
+      [],
+    );
+    type Entry = {
+      path: string;
+      translation: number[];
+      role: string | undefined;
+      part: string | undefined;
+      mesh: boolean;
+    };
+    const nodeEntries: Entry[] = [];
+    const nodeScene = nodeModel.document.getRoot().getDefaultScene()!;
+    const walkNode = (node: import('@gltf-transform/core').Node, path: string[]) => {
+      const extras = node.getExtras();
+      nodeEntries.push({
+        path: [...path, node.getName()].join('/'),
+        translation: node.getTranslation(),
+        role: typeof extras._humanoidRole === 'string' ? extras._humanoidRole : undefined,
+        part: typeof extras._playerPart === 'string' ? extras._playerPart : undefined,
+        mesh: !!node.getMesh(),
+      });
+      for (const child of node.listChildren()) walkNode(child, [...path, node.getName()]);
+    };
+    for (const child of nodeScene.listChildren()) walkNode(child, []);
+    const webEntries: Entry[] = [];
+    const walkWeb = (object: import('three').Object3D, path: string[]) => {
+      if ((object as import('three').Mesh).isMesh) return;
+      webEntries.push({
+        path: [...path, object.name].join('/'),
+        translation: object.position.toArray(),
+        role: typeof object.userData._humanoidRole === 'string' ? object.userData._humanoidRole : undefined,
+        part: typeof object.userData._playerPart === 'string' ? object.userData._playerPart : undefined,
+        mesh: object.children.some((child) => (child as import('three').Mesh).isMesh),
+      });
+      for (const child of object.children) walkWeb(child, [...path, object.name]);
+    };
+    for (const child of loaded.scene.children) walkWeb(child, []);
+    assert.equal(nodeEntries.length, webEntries.length);
+    for (let index = 0; index < nodeEntries.length; index++) {
+      const node = nodeEntries[index]!;
+      const web = webEntries[index]!;
+      assert.equal(web.path, node.path);
+      assert.deepEqual(web.translation.map((value) => Number(value.toFixed(6))), node.translation.map((value) => Number(value.toFixed(6))));
+      assert.equal(web.role, node.role);
+      assert.equal(web.part, node.part);
+      assert.equal(web.mesh, node.mesh);
+    }
+  } finally {
+    prototype.loadAsync = original;
+  }
+}));
+
 test('webapp YSM loader builds one mesh per visible bone', async () => {
   const THREE = await import('three');
   const { indexResources } = await import('../webapp/engine/resources.ts');
@@ -484,8 +740,8 @@ test('webapp YSM loader builds one mesh per visible bone', async () => {
     );
     assert.equal(loaded.name, 'Test YSM');
     assert.ok(loaded.scene.getObjectByName('Body'));
-    assert.equal(loaded.scene.getObjectByName('Gui')?.children.length, 0);
-    assert.ok(warnings.some((warning) => warning.includes('Excluded 1 YSM bone')));
+    assert.equal(loaded.scene.getObjectByName('Gui'), undefined);
+    assert.ok(warnings.some((warning) => warning.includes('已排除默认动画隐藏的 1 根 YSM 骨骼')));
   } finally {
     prototype.loadAsync = original;
   }

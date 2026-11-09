@@ -2,19 +2,16 @@ import { Document, type Node } from '@gltf-transform/core';
 import { realpath } from 'node:fs/promises';
 import { basename, dirname, extname } from 'node:path';
 import sharp from 'sharp';
-import { HUMANOID_PART_ROLES, HUMANOID_PARTS, type HumanoidPart } from './humanoid-binding.ts';
 import type { IntermediateModel } from './model.ts';
 import { ModelResources } from './resources.ts';
 import { decodeTGA } from './tga.ts';
 import { validateModel } from './validate-model.ts';
 import {
-  buildYsmBoneMeshes,
-  buildYsmRig,
-  hiddenYsmBones,
+  buildYsmImportPlan,
   parseYsmGeometry,
   parseYsmManifest,
-  selectYsmTexture,
-  ysmTextureName,
+  type YsmDiagnostic,
+  type YsmSceneNode,
 } from './ysm-model.ts';
 
 export interface YsmImportOptions {
@@ -44,6 +41,79 @@ async function readTexture(bytes: Uint8Array, path: string): Promise<{ image: Ui
   return { image: new Uint8Array(png), hasAlpha: !!converted.hasAlpha };
 }
 
+/** English wording for shared YSM diagnostics; the webapp has its own formatter. */
+function ysmWarning(diagnostic: YsmDiagnostic): string {
+  switch (diagnostic.code) {
+    case 'cube-not-object':
+      return `Ignored cube ${diagnostic.cube}: not an object.`;
+    case 'cube-without-uv':
+      return `Ignored cube ${diagnostic.cube}: no supported UV data.`;
+    case 'face-uv-rotation-ignored':
+      return 'YSM per-face UV rotation is not supported and was ignored.';
+    case 'multiple-geometries':
+      return `YSM model contains ${diagnostic.count} geometries; only the first was imported.`;
+    case 'bone-not-object':
+      return `Ignored bone ${diagnostic.bone}: not an object.`;
+    case 'bone-without-name':
+      return `Ignored bone ${diagnostic.bone}: missing a name.`;
+    case 'duplicate-bone':
+      return `Duplicate YSM bone name "${diagnostic.name}" was merged by name.`;
+    case 'cyclic-bone':
+      return `Cyclic YSM bone hierarchy at "${diagnostic.name}"; the cycle was treated as unparented.`;
+    case 'missing-parent':
+      return `YSM bone "${diagnostic.name}" references missing parent "${diagnostic.parent}"; it was treated as unparented.`;
+    case 'hidden-bones':
+      return `Excluded ${diagnostic.names.length} YSM bone(s) hidden by default animations: ${diagnostic.names.join(', ')}.`;
+    case 'missing-role':
+      return `YSM six-part binding is missing the ${diagnostic.role} bone.`;
+    case 'hand-fallback':
+      return `YSM ${diagnostic.side} arm has no hand bone; using "${diagnostic.name}" as the hand pivot.`;
+    case 'incomplete-rig':
+      return 'YSM model does not expose a complete head/body/arms/legs rig; six-part binding is unavailable.';
+    case 'humanoid-mapped':
+      return 'YSM skeleton was mapped to the six player parts (head, body, arms, legs); tail, hair and other secondary bones stay attached to the nearest part.';
+    case 'missing-part-geometry':
+      return `YSM model has no geometry for ${diagnostic.parts.join(', ')}; static whole-body binding will be used.`;
+    case 'static-binding':
+      return 'YSM model does not expose a complete head/body/arms/legs rig; static whole-body binding will be used.';
+    case 'pbr-textures-ignored':
+      return 'YSM PBR normal/specular maps are ignored; only the base-color texture is imported.';
+    case 'default-texture-missing':
+      return `YSM default texture "${diagnostic.wanted}" was not found; using "${diagnostic.used}" instead.`;
+    case 'multiple-textures':
+      return `YSM model has ${diagnostic.count} textures; only the default texture "${diagnostic.used}" was imported.`;
+    case 'arm-model-ignored':
+      return 'YSM arm model is ignored; only the player body is imported.';
+    case 'animations-not-evaluated':
+      return 'YSM animations, animation controllers, locators and Molang expressions are not evaluated; the static model pose is used.';
+    case 'imported-texture':
+      return `YSM model "${diagnostic.model}" was imported with the default texture "${diagnostic.texture}".`;
+  }
+}
+
+function instantiateYsmNode(doc: Document, scene: ReturnType<Document['createScene']>, descriptor: YsmSceneNode, material: ReturnType<Document['createMaterial']>, buffer: ReturnType<Document['createBuffer']>, parent?: Node): void {
+  const node = doc.createNode(descriptor.name).setTranslation(descriptor.translation);
+  const extras = {
+    ...(descriptor.role ? { _humanoidRole: descriptor.role } : {}),
+    ...(descriptor.part ? { _playerPart: descriptor.part } : {}),
+  };
+  if (Object.keys(extras).length) node.setExtras(extras);
+  if (descriptor.mesh) {
+    const mesh = descriptor.mesh;
+    const primitive = doc.createPrimitive()
+      .setAttribute('POSITION', doc.createAccessor().setType('VEC3').setArray(mesh.positions as Float32Array<ArrayBuffer>).setBuffer(buffer))
+      .setAttribute('NORMAL', doc.createAccessor().setType('VEC3').setArray(mesh.normals as Float32Array<ArrayBuffer>).setBuffer(buffer))
+      .setAttribute('TEXCOORD_0', doc.createAccessor().setType('VEC2').setArray(mesh.uvs as Float32Array<ArrayBuffer>).setBuffer(buffer))
+      .setIndices(doc.createAccessor().setType('SCALAR').setArray(mesh.indices as Uint32Array<ArrayBuffer>).setBuffer(buffer))
+      .setMaterial(material);
+    node.setMesh(doc.createMesh(descriptor.name).addPrimitive(primitive));
+  }
+  if (parent) parent.addChild(node);
+  else scene.addChild(node);
+  for (const child of descriptor.children)
+    instantiateYsmNode(doc, scene, child, material, buffer, node);
+}
+
 /**
  * Import the folder-format body of a Yes Steve Model model. `input` is the
  * `ysm.json` file; its containing directory is the model root. Animations,
@@ -55,51 +125,32 @@ export async function importYsmModel(input: string, options: YsmImportOptions = 
   const resources = new ModelResources(root);
   const warnings: string[] = [];
   const warn = (message: string) => { if (!warnings.includes(message)) warnings.push(message); };
+  const warnDiagnostics = (diagnostics: readonly YsmDiagnostic[]) => {
+    for (const diagnostic of diagnostics) warn(ysmWarning(diagnostic));
+  };
   options.onStage?.('正在读取 YSM 模型清单…');
   const manifest = parseYsmManifest(JSON.parse(new TextDecoder().decode(await resources.read(basename(path)))));
   options.onStage?.('正在解析 YSM 几何…');
   const parsed = parseYsmGeometry(JSON.parse(new TextDecoder().decode(await resources.read(manifest.mainModel))));
-  parsed.warnings.forEach(warn);
-  let hiddenBones: string[] = [];
+  let animation: unknown;
   if (manifest.mainAnimation) {
     try {
-      hiddenBones = hiddenYsmBones(JSON.parse(new TextDecoder().decode(await resources.read(manifest.mainAnimation))));
+      animation = JSON.parse(new TextDecoder().decode(await resources.read(manifest.mainAnimation)));
     } catch (error) {
       warn(`YSM animation file "${manifest.mainAnimation}" could not be read; hidden GUI/overlay bones were not excluded: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  const boneSet = buildYsmBoneMeshes(parsed.geometry, { hiddenBones });
-  boneSet.warnings.forEach(warn);
-  const rig = buildYsmRig(parsed.geometry);
-  rig.warnings.forEach(warn);
-  const partGeometry = new Set<HumanoidPart>();
-  for (const bone of boneSet.bones) if (bone.mesh) partGeometry.add(bone.part);
-  const missingParts = HUMANOID_PARTS.filter((part) => !partGeometry.has(part));
-  const humanoid = rig.complete && missingParts.length === 0;
-  if (humanoid)
-    warn('YSM skeleton was mapped to the six player parts (head, body, arms, legs); tail, hair and other secondary bones stay attached to the nearest part.');
-  else if (rig.complete && missingParts.length)
-    warn(`YSM model has no geometry for ${missingParts.join(', ')}; static whole-body binding will be used.`);
-  else
-    warn('YSM model does not expose a complete head/body/arms/legs rig; static whole-body binding will be used.');
-  const texture = selectYsmTexture(manifest);
-  const chosenName = ysmTextureName(texture.uv);
-  if (texture.normal || texture.specular)
-    warn('YSM PBR normal/specular maps are ignored; only the base-color texture is imported.');
-  if (manifest.defaultTexture && chosenName.toLowerCase() !== manifest.defaultTexture.toLowerCase())
-    warn(`YSM default texture "${manifest.defaultTexture}" was not found; using "${chosenName}" instead.`);
-  if (manifest.textures.length > 1)
-    warn(`YSM model has ${manifest.textures.length} textures; only the default texture "${chosenName}" was imported.`);
+  const plan = buildYsmImportPlan(manifest, parsed.geometry, animation);
+  warnDiagnostics([...parsed.diagnostics, ...plan.diagnostics]);
+  const modelName = manifest.name ?? basename(root);
+  warnDiagnostics([{ code: 'imported-texture', model: modelName, texture: plan.textureName }]);
   options.onStage?.('正在读取 YSM 贴图…');
-  const image = await readTexture(await resources.read(texture.uv), texture.uv);
-  if (manifest.armModel) warn('YSM arm model is ignored; only the player body is imported.');
-  warn('YSM animations, animation controllers, locators and Molang expressions are not evaluated; the static model pose is used.');
-  warn(`YSM model "${manifest.name ?? basename(root)}" was imported with the default texture "${chosenName}".`);
+  const image = await readTexture(await resources.read(plan.texture.uv), plan.texture.uv);
 
   const doc = new Document();
   const buffer = doc.createBuffer();
   const scene = doc.createScene('YSM');
-  const textureAsset = doc.createTexture(basename(texture.uv)).setImage(image.image).setMimeType('image/png');
+  const textureAsset = doc.createTexture(basename(plan.texture.uv)).setImage(image.image).setMimeType('image/png');
   const material = doc.createMaterial('YSM')
     .setBaseColorTexture(textureAsset)
     .setMetallicFactor(0)
@@ -107,76 +158,8 @@ export async function importYsmModel(input: string, options: YsmImportOptions = 
     .setDoubleSided(true)
     .setAlphaMode(image.hasAlpha ? 'MASK' : 'OPAQUE')
     .setAlphaCutoff(0.5);
-  const roleNodes = new Map<string, Node>();
-  if (humanoid) {
-    for (const [role, pivot] of Object.entries(rig.roles)) {
-      if (!pivot) continue;
-      const node = doc.createNode(`__ysm_${role}`)
-        .setTranslation(pivot)
-        .setExtras({ _humanoidRole: role });
-      scene.addChild(node);
-      roleNodes.set(role, node);
-    }
-    for (const side of ['left', 'right'] as const) {
-      const armRole = `${side}UpperArm`;
-      const handRole = `${side}Hand`;
-      const arm = roleNodes.get(armRole)!;
-      const hand = roleNodes.get(handRole)!;
-      const armPivot = rig.roles[armRole as 'leftUpperArm' | 'rightUpperArm']!;
-      const handPivot = rig.roles[handRole as 'leftHand' | 'rightHand']!;
-      scene.removeChild(hand);
-      hand.setTranslation([
-        handPivot[0] - armPivot[0],
-        handPivot[1] - armPivot[1],
-        handPivot[2] - armPivot[2],
-      ]);
-      arm.addChild(hand);
-    }
-  }
-  const nodes = new Map<string, Node>();
-  const byName = new Map(boneSet.bones.map((bone) => [bone.name, bone]));
-  for (const bone of boneSet.bones) {
-    const node = doc.createNode(bone.name);
-    node.setExtras({ _playerPart: bone.part });
-    nodes.set(bone.name, node);
-    if (!bone.mesh) continue;
-    const mesh = bone.mesh;
-    const primitive = doc.createPrimitive()
-      .setAttribute('POSITION', doc.createAccessor().setType('VEC3').setArray(mesh.positions as Float32Array<ArrayBuffer>).setBuffer(buffer))
-      .setAttribute('NORMAL', doc.createAccessor().setType('VEC3').setArray(mesh.normals as Float32Array<ArrayBuffer>).setBuffer(buffer))
-      .setAttribute('TEXCOORD_0', doc.createAccessor().setType('VEC2').setArray(mesh.uvs as Float32Array<ArrayBuffer>).setBuffer(buffer))
-      .setIndices(doc.createAccessor().setType('SCALAR').setArray(mesh.indices as Uint32Array<ArrayBuffer>).setBuffer(buffer))
-      .setMaterial(material);
-    const meshNode = doc.createNode(bone.name)
-      .setTranslation([-bone.pivot[0], -bone.pivot[1], -bone.pivot[2]])
-      .setExtras({ _playerPart: bone.part })
-      .setMesh(doc.createMesh(bone.name).addPrimitive(primitive));
-    node.addChild(meshNode);
-  }
-  for (const bone of boneSet.bones) {
-    const node = nodes.get(bone.name)!;
-    const parent = bone.parent ? byName.get(bone.parent) : undefined;
-    const role = humanoid ? HUMANOID_PART_ROLES[bone.part] : undefined;
-    if (humanoid && role && (!parent || parent.part !== bone.part)) {
-      const pivot = rig.roles[role]!;
-      node.setTranslation([
-        bone.pivot[0] - pivot[0],
-        bone.pivot[1] - pivot[1],
-        bone.pivot[2] - pivot[2],
-      ]);
-      roleNodes.get(role)!.addChild(node);
-    } else if (parent) {
-      node.setTranslation([
-        bone.pivot[0] - parent.pivot[0],
-        bone.pivot[1] - parent.pivot[1],
-        bone.pivot[2] - parent.pivot[2],
-      ]);
-      nodes.get(parent.name)!.addChild(node);
-    } else {
-      node.setTranslation(bone.pivot);
-      scene.addChild(node);
-    }
-  }
+  for (const descriptor of plan.scene.roots)
+    instantiateYsmNode(doc, scene, descriptor, material, buffer);
   doc.getRoot().setDefaultScene(scene);
   const model: IntermediateModel = {
     document: doc,
@@ -186,6 +169,7 @@ export async function importYsmModel(input: string, options: YsmImportOptions = 
       units: 'meters',
       coordinates: 'right-handed-y-up',
       importer: 'ysm',
+      textureHint: plan.textureHint,
     },
     warnings,
   };

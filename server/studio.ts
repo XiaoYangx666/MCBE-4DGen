@@ -210,7 +210,7 @@ export class Studio {
     await scan(dirname(source));
     return createHash('sha1')
       .update(
-        `${source}:${info?.size ?? 0}:${info?.mtimeMs ?? 0}:${PREVIEW_TEXTURE_LIMIT}:${dependencies.sort().join(';')}:v8`,
+        `${source}:${info?.size ?? 0}:${info?.mtimeMs ?? 0}:${PREVIEW_TEXTURE_LIMIT}:${dependencies.sort().join(';')}:v9`,
       )
       .digest('hex');
   }
