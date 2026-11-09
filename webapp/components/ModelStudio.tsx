@@ -448,6 +448,7 @@ export function ModelStudio({
             rotationYDegrees: rotationY,
             bakeSkinning: binding === 'humanoid' || armSpread !== 0,
             rig: binding === 'humanoid' ? humanoidRig.current : null,
+            semanticGroups: model.format === 'ysm',
           });
         } finally {
           if (root) {
@@ -622,7 +623,7 @@ export function ModelStudio({
       material: part.materialName,
     }));
     const names = partDisplayNames(partInputs);
-    const groups = partGroupNames(partInputs);
+    const fallbackGroups = partGroupNames(partInputs);
     const byMaterial = new Map<string, string[]>();
     parts.forEach((part, index) => {
       const list = byMaterial.get(part.materialKey) ?? [];
@@ -635,7 +636,7 @@ export function ModelStudio({
       return {
         id: part.id,
         name,
-        group: groups[index]!,
+        group: part.subtree ?? fallbackGroups[index]!,
         meta: `${part.triangles.toLocaleString('zh-CN')} 面${
           name === label ? '' : ` · ${label}`
         }`,

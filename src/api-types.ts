@@ -39,6 +39,8 @@ export interface PartSummary {
   triangles: number;
   vertices: number;
   instancePart: boolean;
+  /** Optional submodel label, e.g. YSM `FOX`, `Hair` or `Tail`. */
+  group?: string;
 }
 
 /** Editing settings persisted on a model library entry. */

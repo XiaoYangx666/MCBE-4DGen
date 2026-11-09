@@ -188,7 +188,10 @@ export async function loadModelJob(
     const armRig = detectArmRig(loaded.scene);
     report('提取网格…', `${loaded.stats.triangles.toLocaleString('zh-CN')} 个三角面`);
     await nextFrame();
-    const extracted = extractModel(loaded.scene, { rig });
+    const extracted = extractModel(loaded.scene, {
+      rig,
+      semanticGroups: loaded.format === 'ysm',
+    });
     await nextFrame();
     if (rig) {
       const classified = extracted.batches.some((batch) =>

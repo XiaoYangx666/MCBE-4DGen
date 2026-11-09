@@ -56,7 +56,7 @@ export function ModelPartsPanel({
     return parts.map((part, index) => ({
       id: part.id,
       name: names[index]!,
-      group: part.mesh?.trim() || part.node?.trim() || "模型结构",
+      group: part.group?.trim() || part.mesh?.trim() || part.node?.trim() || "模型结构",
       meta: `${part.triangles.toLocaleString("zh-CN")} 面${
         names[index] === (part.materialName || "未命名材质")
           ? ""

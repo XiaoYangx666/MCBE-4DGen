@@ -26,6 +26,7 @@ import {
 import { resolveTexturePolicy } from '../src/texture-policy.ts';
 import { optimizeTextures } from '../src/texture-optimizer.ts';
 import { resolveDefaultReductionRatio } from '../src/reduce-policy.ts';
+import { assignParts } from '../src/parts.ts';
 
 const PNG_64 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAvElEQVR4nOXOoQEAIAzAsOppNP9/yc6IQMSnOff9LB3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdDSAS0d0NIBLR3Q0gEtHdAWB/yxHm1fJEsAAAAASUVORK5CYII=',
@@ -439,6 +440,32 @@ test('importModel reads a YSM folder through ysm.json', () => temporary(async (d
   assert.ok(model.warnings.some((warning) => warning.includes('animations')));
 }));
 
+test('YSM parts expose semantic FOX and Hair groups', async () => temporary(async (dir) => {
+  const modelDir = join(dir, 'grouped_ysm');
+  await mkdir(join(modelDir, 'models'), { recursive: true });
+  await mkdir(join(modelDir, 'textures'), { recursive: true });
+  await writeFile(join(modelDir, 'ysm.json'), JSON.stringify(manifest()));
+  await writeFile(join(modelDir, 'models', 'main.json'), JSON.stringify({
+    format_version: '1.12.0',
+    'minecraft:geometry': [{
+      description: { texture_width: 64, texture_height: 64 },
+      bones: [
+        { name: 'Root', pivot: [0, 0, 0] },
+        { name: 'AllBody', parent: 'Root', pivot: [0, 12, 0], cubes: [{ origin: [-2, 12, -1], size: [4, 12, 2], uv: [0, 0] }] },
+        { name: 'Head', parent: 'AllBody', pivot: [0, 24, 0] },
+        { name: 'Hair', parent: 'Head', pivot: [0, 27, 0], cubes: [{ origin: [-4, 24, -4], size: [8, 4, 8], uv: [0, 0] }] },
+        { name: 'FOX', parent: 'Root', pivot: [0, 0, 0] },
+        { name: 'FoxBody', parent: 'FOX', pivot: [0, 0, 0], cubes: [{ origin: [-2, 0, -2], size: [4, 4, 4], uv: [0, 0] }] },
+      ],
+    }],
+  }));
+  await writeFile(join(modelDir, 'textures', 'default.png'), PNG_64);
+  const model = await importModel(join(modelDir, 'ysm.json'));
+  const parts = assignParts(model.document, true);
+  assert.ok(parts.some((part) => part.group === 'FOX' && part.triangles > 0));
+  assert.ok(parts.some((part) => part.group === 'Hair' && part.triangles > 0));
+}));
+
 test('YSM TGA and PNG textures are normalized to PNG and preserved', async () => temporary(async (dir) => {
   for (const [name, bytes] of [
     ['default.tga', tgaBytes()],
@@ -605,7 +632,9 @@ test('webapp YSM loader exposes a complete six-part rig', async () => {
     assert.notDeepEqual(before, after);
     const { extractModel } = await import('../webapp/engine/extract.ts');
     const { PART_CODE } = await import('../webapp/engine/types.ts');
-    const extracted = extractModel(loaded.scene, { rig });
+    const extracted = extractModel(loaded.scene, { rig, semanticGroups: true });
+    assert.ok(extracted.batches.some((batch) =>
+      batch.sourcePartTable?.some((part) => part.name === 'Hair' && part.subtree === 'Hair')));
     const codes = new Set(extracted.batches.flatMap((batch) => Array.from(batch.parts ?? [])));
     for (const part of ['body', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'] as const)
       assert.ok(codes.has(PART_CODE[part]), `missing ${part} triangles`);

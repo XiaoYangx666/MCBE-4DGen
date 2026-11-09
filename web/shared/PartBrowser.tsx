@@ -144,9 +144,9 @@ export function PartBrowser({
           const kept = groupIds.filter((id) => includedParts.has(id)).length;
           return (
             <div className="texture-part-group" key={group}>
-              {groups.length > 1 && (
+              {list.length > 1 && (
                 <div className="texture-part-group-head">
-                  <span title={group}>网格 · {group}</span>
+                  <span title={group}>分组 · {group}</span>
                   <small>
                     {kept}/{list.length}
                   </small>
@@ -158,6 +158,15 @@ export function PartBrowser({
                     }
                   >
                     保留本组
+                  </button>
+                  <button
+                    type="button"
+                    disabled={disabled || kept === 0}
+                    onClick={() =>
+                      onSetParts([...includedParts].filter((id) => !groupIds.includes(id)))
+                    }
+                  >
+                    删除本组
                   </button>
                 </div>
               )}

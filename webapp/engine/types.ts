@@ -31,6 +31,8 @@ export interface SourcePart {
   group?: number;
   /** Stable material key that owns this part's triangles. */
   materialKey?: string;
+  /** Optional submodel label, e.g. YSM `FOX`, `Hair` or `Tail`. */
+  subtree?: string;
 }
 
 /**

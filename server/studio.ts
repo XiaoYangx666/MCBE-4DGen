@@ -343,7 +343,7 @@ export class Studio {
       if (node.getMesh()) instances.push(node.getMesh()!);
     });
     // Assign ids once so every later stage sees the same part identity.
-    const parts: PartSummary[] = assignParts(model.document).map((part) => ({
+    const parts: PartSummary[] = assignParts(model.document, model.source.format === 'ysm').map((part) => ({
       id: part.id,
       name: part.name,
       nodeIndex: part.nodeIndex,
@@ -355,6 +355,7 @@ export class Studio {
       triangles: part.triangles,
       vertices: part.vertices,
       instancePart: part.instancePart,
+      ...(part.group ? { group: part.group } : {}),
     }));
     const keys = materialKeyMap(model.document);
     const labels = materialDisplayLabels(
